@@ -1,0 +1,314 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 abdulahmad and contributors
+ *
+ * v1 checks: dest-rect (T1 T2 T5 T8 T9), defaults (T14), keys (T16),
+ * Scale Mode sub-options + live preview (T12), no Native (T4/L12),
+ * file-menu show policy (T10 T11).
+ */
+#include "overbar/overbar.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static int fails;
+
+#define CHECK(cond) do { \
+    if (!(cond)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); fails++; } \
+} while (0)
+
+static void test_scaler_console(void)
+{
+    ob_view_in in;
+    ob_view_out v;
+    int num, den;
+
+    memset(&in, 0, sizeof in);
+    in.window_w = 960;
+    in.window_h = 720;
+    in.height = OB_HEIGHT_FIT;
+    in.dar_h = 240;
+    in.src_h = 224;
+
+    /* T1: H40 320x224. Dest 4:3 of a 240-high canvas. PAR 1.0, not 0.938. */
+    in.src_w = 320;
+    ob_view(&in, &v);
+    CHECK(v.src_h == 224);
+    CHECK(v.src_w == 320);
+    CHECK(v.canvas_w == v.canvas_h * 4 / 3);
+    CHECK(v.canvas_w == 960 && v.canvas_h == 720);
+    CHECK(v.blit_h == 720 * 224 / 240);          /* 672: 224/240 of dest, not a 240 texture */
+    CHECK(v.blit_h != v.canvas_h);
+    ob_view_par(&v, &num, &den);
+    CHECK(num == 1 && den == 1);
+
+    /* T2: H32 / SNES 256x224. Same DAR; PAR 5:4. */
+    in.src_w = 256;
+    ob_view(&in, &v);
+    CHECK(v.src_h == 224);
+    CHECK(v.canvas_w == 960 && v.canvas_h == 720);
+    CHECK(v.blit_h == 672);
+    ob_view_par(&v, &num, &den);
+    CHECK(num == 5 && den == 4);
+
+    /* T5 negative: 256x224 stretched to 4:3 using height 224 must not match T2. */
+    in.dar_h = 224;
+    ob_view(&in, &v);
+    ob_view_par(&v, &num, &den);
+    CHECK(!(num == 5 && den == 4));
+    CHECK(v.blit_h == v.canvas_h);               /* unpadded: source fills dest height */
+
+    /* Integer: unit from 240, not 224. */
+    in.dar_h = 240;
+    in.src_w = 320;
+    in.height = OB_HEIGHT_INTEGER;
+    in.window_w = 1920;
+    in.window_h = 1080;
+    ob_view(&in, &v);
+    CHECK(v.canvas_h % 240 == 0);
+    CHECK(v.canvas_w == v.canvas_h * 4 / 3);
+    CHECK(v.blit_h == v.canvas_h * 224 / 240);
+    ob_view_par(&v, &num, &den);
+    CHECK(num == 1 && den == 1);
+
+    /* T9: 31 kHz line-double; dest still 4:3 of the 240 canvas. */
+    in.line_double = 1;
+    ob_view(&in, &v);
+    CHECK(v.canvas_h % 480 == 0);
+    CHECK(v.canvas_w == v.canvas_h * 4 / 3);
+    ob_view_par(&v, &num, &den);
+    CHECK(num == 1 && den == 1);
+}
+
+static void test_scaler_vga(void)
+{
+    ob_view_in in;
+    ob_view_out v;
+    memset(&in, 0, sizeof in);
+    in.src_w = 320;
+    in.src_h = 200;
+    in.dar_h = 200;
+    in.window_w = 960;
+    in.window_h = 720;
+    in.height = OB_HEIGHT_FIT;
+    ob_view(&in, &v);
+    CHECK(v.blit_w == v.canvas_w);
+    CHECK(v.blit_h == v.canvas_h);               /* VGA: source fills the 4:3 canvas */
+    CHECK(v.canvas_w == v.canvas_h * 4 / 3);
+}
+
+static void test_defaults(void)
+{
+    ob_host d, hh;
+    ob_host_init(&d, OB_PORT_PC95, OB_PROFILE_DESKTOP);
+    CHECK(d.refresh == OB_REFRESH_VRR);
+    CHECK(d.vsync == 0);
+    CHECK(d.stats == 0);
+    CHECK(d.hires.mode == OB_MODE_SHARP && d.hires.sharp == OB_SHARP_1X);
+    CHECK(d.lores.mode == OB_MODE_SHARP && d.lores.sharp == OB_SHARP_LO_3X);
+    CHECK(d.lores.height == OB_HEIGHT_FIT && d.hires.height == OB_HEIGHT_FIT);
+    CHECK(d.has_hires);
+    ob_host_free(&d);
+
+    ob_host_init(&hh, OB_PORT_SNES, OB_PROFILE_HANDHELD);
+    CHECK(hh.refresh == OB_REFRESH_60);
+    CHECK(hh.vsync == 1);
+    CHECK(hh.stats == 0);
+    CHECK(hh.lores.mode == OB_MODE_SHARP && hh.lores.sharp == OB_SHARP_1X);
+    CHECK(hh.console_dar);
+    CHECK(hh.lores.height == OB_HEIGHT_FIT);
+    CHECK(!hh.has_hires);
+    ob_host_free(&hh);
+
+    CHECK(ob_profile_detect("KMSDRM", 0) == OB_PROFILE_HANDHELD);
+    CHECK(ob_profile_detect("x11", 0) == OB_PROFILE_DESKTOP);
+    CHECK(ob_profile_detect("x11", 1) == OB_PROFILE_HANDHELD);
+}
+
+static void test_ini_first_launch(void)
+{
+    ob_host h;
+    char path[] = "/tmp/overbar-test-settings.ini";
+    remove(path);
+    ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+    CHECK(ob_host_load_ini(&h, path) == 0);
+    CHECK(h.wrote_defaults);
+    CHECK(h.refresh == OB_REFRESH_VRR);
+    CHECK(h.lores.mode == OB_MODE_SHARP);
+    CHECK(h.lores.sharp == OB_SHARP_1X);
+    ob_host_free(&h);
+
+    ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+    CHECK(ob_host_load_ini(&h, path) == 1);
+    CHECK(!h.wrote_defaults);
+    CHECK(h.refresh == OB_REFRESH_VRR);
+    ob_host_free(&h);
+    remove(path);
+}
+
+static void test_keys(void)
+{
+    ob_host h;
+    ob_host_init(&h, OB_PORT_GENERIC, OB_PROFILE_DESKTOP);
+    CHECK(ob_map_key(OB_SCANCODE_GRAVE) == OB_HOSTKEY_OVERLAY);
+    CHECK(ob_map_key(OB_SCANCODE_F11) == OB_HOSTKEY_OVERLAY);
+    CHECK(ob_map_key(OB_SCANCODE_F12) == OB_HOSTKEY_STATS);
+    CHECK(ob_map_pad_back() == OB_HOSTKEY_OVERLAY);
+    CHECK(ob_map_key(41) == OB_HOSTKEY_NONE);     /* Esc is not overlay */
+    CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_GRAVE));
+    CHECK(h.overlay_open);
+    CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_F11));
+    CHECK(!h.overlay_open);
+    CHECK(ob_stats_toggle_key(&h, OB_SCANCODE_F12));
+    CHECK(h.stats == 1);
+    CHECK(!ob_overlay_toggle_key(&h, OB_SCANCODE_F12));
+    ob_host_free(&h);
+}
+
+static void test_scale_mode_options(void)
+{
+    ob_host h;
+    ob_item items[OB_ITEMS_MAX];
+    int n;
+    ob_host_init(&h, OB_PORT_SNES, OB_PROFILE_DESKTOP);
+    CHECK(!ob_snes_has_native());
+
+    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_SCALE_MODE));
+    CHECK(ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
+    CHECK(ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
+    CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
+    CHECK(!ob_items_contain(items, n, OB_ID_MISTER_H));
+    CHECK(!ob_items_contain_label(items, n, "Native"));
+    CHECK(!ob_items_contain_label(items, n, "Picture Native"));
+
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_CRT);
+    CHECK(h.live_preview);
+    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_CRT_LOOK));
+    CHECK(ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
+    CHECK(!ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
+    CHECK(!ob_items_contain(items, n, OB_ID_MISTER_RESET));
+
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_MISTER);
+    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_MISTER_H));
+    CHECK(ob_items_contain(items, n, OB_ID_MISTER_RESET));
+    CHECK(ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
+    CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
+
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_SCALE2X);
+    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
+    CHECK(!ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
+    CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
+    CHECK(!ob_items_contain(items, n, OB_ID_MISTER_H));
+
+    n = ob_main_items(&h, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_ONLINE));
+    CHECK(!h.online_ready);
+    ob_host_free(&h);
+}
+
+static void test_overlay_live_preview(void)
+{
+    ob_host h;
+    uint32_t px[320 * 224];
+    int i, found_crt = 0;
+    ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+    ob_overlay_open(&h);
+    CHECK(h.overlay_open);
+    /* Main → Video */
+    for (i = 0; i < h.overlay.count; i++)
+        if (h.overlay.items[i].id == OB_ID_VIDEO) { h.overlay.sel = i; break; }
+    ob_overlay_input(&h, MDRT_MENU_OK);
+    CHECK(h.overlay_page == OB_PAGE_VIDEO);
+    CHECK(h.lores.mode == OB_MODE_SHARP);
+
+    /* Scale Mode is a choice; step until CRT (live-preview). */
+    for (i = 0; i < h.overlay.count; i++)
+        if (h.overlay.items[i].id == OB_ID_SCALE_MODE) { h.overlay.sel = i; break; }
+    while (h.lores.mode != OB_MODE_CRT) {
+        ob_scale_mode before = h.lores.mode;
+        ob_overlay_input(&h, MDRT_MENU_RIGHT);
+        CHECK(h.live_preview);
+        CHECK(h.lores.mode != before || h.lores.mode == OB_MODE_XBR4X);
+        if (h.lores.mode == before) break;
+    }
+    CHECK(h.lores.mode == OB_MODE_CRT);
+    for (i = 0; i < h.overlay.count; i++)
+        if (h.overlay.items[i].id == OB_ID_CRT_LOOK) found_crt = 1;
+    CHECK(found_crt);
+    for (i = 0; i < h.overlay.count; i++)
+        CHECK(h.overlay.items[i].id != OB_ID_SHARP_AMOUNT);
+
+    memset(px, 0xFF, sizeof px);
+    ob_overlay_draw(&h, px, 320, 224, 320);
+    CHECK((px[0] & 0xFFFFFF) != 0xFFFFFF);       /* darkened + drawn */
+
+    ob_overlay_close(&h);
+    ob_host_free(&h);
+}
+
+static void test_filemenu_policy(void)
+{
+    ob_host h;
+    ob_item ov[OB_ITEMS_MAX], bar[OB_ITEMS_MAX];
+    int nbar, nov, i, j, shared = 0;
+    ob_host_init(&h, OB_PORT_PC95, OB_PROFILE_DESKTOP);
+    CHECK(ob_filemenu_wanted(1, 0, 0) == 1);     /* windowed desktop: bar */
+    CHECK(ob_filemenu_wanted(1, 1, 0) == 0);     /* fullscreen: no bar */
+    CHECK(ob_filemenu_wanted(0, 0, 1) == 0);     /* handheld: overlay only */
+    CHECK(ob_filemenu_wanted(1, 0, 1) == 0);
+
+    ob_filemenu_init(NULL);
+    ob_filemenu_show(1);
+    ob_filemenu_sync(&h);
+    CHECK(ob_filemenu_client_size(NULL, NULL) == 0);
+
+    nbar = ob_filemenu_items(&h, bar, OB_ITEMS_MAX);
+    nov = ob_video_items(&h, OB_CLASS_LORES, ov, OB_ITEMS_MAX);
+    for (i = 0; i < nbar; i++)
+        for (j = 0; j < nov; j++)
+            if (bar[i].id == ov[j].id && bar[i].id == OB_ID_SCALE_MODE) shared = 1;
+    CHECK(shared);
+    CHECK(ob_items_contain(bar, nbar, OB_ID_SCALE_MODE));
+    CHECK(!ob_items_contain_label(bar, nbar, "Native"));
+    ob_host_free(&h);
+}
+
+static void test_view_from_host(void)
+{
+    ob_host h;
+    ob_view_in in;
+    ob_view_out v;
+    int num, den;
+    ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+    ob_view_from_host(&h, OB_CLASS_LORES, 320, 224, 960, 720, &in);
+    CHECK(in.dar_h == 240);
+    CHECK(in.src_h == 224);
+    CHECK(in.height == OB_HEIGHT_FIT);
+    ob_view(&in, &v);
+    ob_view_par(&v, &num, &den);
+    CHECK(num == 1 && den == 1);
+    ob_host_free(&h);
+}
+
+int main(void)
+{
+    test_scaler_console();
+    test_scaler_vga();
+    test_defaults();
+    test_ini_first_launch();
+    test_keys();
+    test_scale_mode_options();
+    test_overlay_live_preview();
+    test_filemenu_policy();
+    test_view_from_host();
+    if (fails) {
+        fprintf(stderr, "%d check(s) failed\n", fails);
+        return 1;
+    }
+    puts("ok");
+    return 0;
+}
