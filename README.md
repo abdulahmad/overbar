@@ -19,7 +19,13 @@ This is **v1**: the standalone skeleton. Game-port wiring is a later unit. Host-
 | Scale Mode | Sharp / CRT Monitor / MiSTer / RetroArch / Scale2x / Scale3x / MMPX 2x / 4x / xBR 2x / 3x / 4x. Overlay shows **only that mode’s options** and live-previews |
 | SNES Picture | **No Native 1:1.** Always the 240-high 4:3 DAR (PAR 5:4 on 256×224) |
 
-Looks (MiSTer GLES path, Lottes, shipped shaders, Capture GIF, netplay) land in later units. Pixel-art magnifiers are listed; the filters themselves still live in PulseMan until copied.
+Looks (MiSTer GLES shaders, Lottes, shipped shaders, Capture GIF, netplay) land in later units. Pixel-art magnifiers are listed; the filters themselves still live in PulseMan until copied. CRT / MiSTer / RetroArch stay on the Video page on a handheld; if the present cannot run them the overlay says it fell back to Sharp.
+
+## Handheld / PortMaster / RG35XX
+
+`ob_profile_from_env` treats PortMaster (`CFW_NAME`, `PORTMASTER`, `OVERBAR_HANDHELD`) and Anbernic names (`RG35XX*`) plus SDL `kmsdrm` / `rpi` / `mali` / `vivante` as handheld. First launch is **60 Hz + vsync**, not VRR. The file-menu bar stays off. Present is **SDL_Renderer** (GLES2 if the driver offers it). Desktop OpenGL is never required and is never picked on a handheld. `ob_present_apply_hints` sets `SDL_RENDER_DRIVER=opengles2` before `SDL_Init` so KMSDRM does not look for libGL.
+
+The game ports ship the PortMaster zip/control files. This repo is the host they link.
 
 ## Build
 
@@ -31,11 +37,12 @@ make test
 
 `liboverbar.a` is what a game port will link. A client:
 
-1. `ob_host_init` with the port and `ob_profile_detect(SDL_GetCurrentVideoDriver(), getenv("OVERBAR_HANDHELD") != NULL)`
-2. `ob_host_load_ini` (missing file writes L15 defaults once)
-3. Each frame: `ob_view_from_host` + `ob_view` for the dest rect; `ob_overlay_draw` if open
-4. Keys: `ob_overlay_toggle_key` / `ob_stats_toggle_key` (do not bind overlay to Esc)
-5. Windowed desktop: `ob_filemenu_wanted` then the later Win32/GTK/Cocoa bar; same `ob_host` as the overlay
+1. `ob_present_apply_hints(ob_profile_from_env())` then `SDL_Init`
+2. `ob_host_init` with the port and `ob_profile_detect(SDL_GetCurrentVideoDriver(), ob_handheld_env())`
+3. `ob_host_load_ini` (missing file writes L15 defaults once)
+4. Each frame: `ob_view_from_host` + `ob_view` for the dest rect; SDL_Renderer copy (or `ob_present_sdl_*` when built with `OVERBAR_SDL`); `ob_overlay_draw` if open
+5. Keys: `ob_overlay_toggle_key` / `ob_stats_toggle_key` (do not bind overlay to Esc)
+6. Windowed desktop: `ob_filemenu_wanted` then the later Win32/GTK/Cocoa bar; handheld / KMSDRM / fullscreen: overlay only
 
 ## Scaling (L5)
 
@@ -67,7 +74,7 @@ GIF record is not F11 (Capture page). Screenshot is not F12.
 ```
 include/overbar/overbar.h   public API
 include/mdrt/menu.h         PulseMan overlay menu (copied)
-src/                        menu model, overlay, file-menu stubs, scaler, defaults
+src/                        menu model, overlay, file-menu stubs, scaler, present, defaults
 third_party/pulseman/       copied PulseMan menu.c (original copyright)
 licenses/                   third-party texts
 shaders/                    user-dropped RetroArch shaders (L10; not shipped)

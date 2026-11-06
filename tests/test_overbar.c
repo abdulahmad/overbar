@@ -5,6 +5,7 @@
  * Scale Mode sub-options + live preview (T12), no Native (T4/L12),
  * file-menu show policy (T10 T11).
  */
+#define _POSIX_C_SOURCE 200112L
 #include "overbar/overbar.h"
 
 #include <stdio.h>
@@ -97,9 +98,21 @@ static void test_scaler_vga(void)
     CHECK(v.canvas_w == v.canvas_h * 4 / 3);
 }
 
+static void clear_handheld_env(void)
+{
+    unsetenv("OVERBAR_HANDHELD");
+    unsetenv("PORTMASTER");
+    unsetenv("CFW_NAME");
+    unsetenv("DEVICE_NAME");
+    unsetenv("SDL_VIDEODRIVER");
+    unsetenv("SDL_RENDER_DRIVER");
+    unsetenv("SDL_OPENGL_ES_DRIVER");
+}
+
 static void test_defaults(void)
 {
     ob_host d, hh;
+    clear_handheld_env();
     ob_host_init(&d, OB_PORT_PC95, OB_PROFILE_DESKTOP);
     CHECK(d.refresh == OB_REFRESH_VRR);
     CHECK(d.vsync == 0);
@@ -108,6 +121,7 @@ static void test_defaults(void)
     CHECK(d.lores.mode == OB_MODE_SHARP && d.lores.sharp == OB_SHARP_LO_3X);
     CHECK(d.lores.height == OB_HEIGHT_FIT && d.hires.height == OB_HEIGHT_FIT);
     CHECK(d.has_hires);
+    CHECK(d.present == OB_PRESENT_GL);
     ob_host_free(&d);
 
     ob_host_init(&hh, OB_PORT_SNES, OB_PROFILE_HANDHELD);
@@ -118,11 +132,81 @@ static void test_defaults(void)
     CHECK(hh.console_dar);
     CHECK(hh.lores.height == OB_HEIGHT_FIT);
     CHECK(!hh.has_hires);
+    CHECK(hh.present == OB_PRESENT_SDL);
     ob_host_free(&hh);
 
     CHECK(ob_profile_detect("KMSDRM", 0) == OB_PROFILE_HANDHELD);
     CHECK(ob_profile_detect("x11", 0) == OB_PROFILE_DESKTOP);
     CHECK(ob_profile_detect("x11", 1) == OB_PROFILE_HANDHELD);
+    CHECK(ob_profile_detect("mali", 0) == OB_PROFILE_HANDHELD);
+}
+
+static void test_handheld_detect_and_present(void)
+{
+    ob_host h;
+    ob_item items[OB_ITEMS_MAX];
+    int n;
+    uint32_t src[320 * 224], dst[640 * 480];
+    ob_view_in in;
+    ob_view_out v;
+    clear_handheld_env();
+    CHECK(ob_handheld_env() == 0);
+    CHECK(ob_profile_from_env() == OB_PROFILE_DESKTOP);
+    setenv("CFW_NAME", "muOS", 1);
+    CHECK(ob_handheld_env() == 1);
+    CHECK(ob_profile_from_env() == OB_PROFILE_HANDHELD);
+    unsetenv("CFW_NAME");
+    setenv("DEVICE_NAME", "RG35XX-PLUS", 1);
+    CHECK(ob_profile_from_env() == OB_PROFILE_HANDHELD);
+    unsetenv("DEVICE_NAME");
+    setenv("OVERBAR_HANDHELD", "1", 1);
+    CHECK(ob_profile_from_env() == OB_PROFILE_HANDHELD);
+    unsetenv("OVERBAR_HANDHELD");
+
+    CHECK(ob_present_pick(OB_PROFILE_HANDHELD, 0, 1) == OB_PRESENT_SDL);
+    CHECK(ob_present_pick(OB_PROFILE_HANDHELD, 1, 1) == OB_PRESENT_GLES2);
+    CHECK(ob_present_pick(OB_PROFILE_DESKTOP, 0, 1) == OB_PRESENT_GL);
+    CHECK(ob_present_pick(OB_PROFILE_DESKTOP, 0, 0) == OB_PRESENT_SDL);
+    CHECK(ob_look_supported(OB_MODE_SHARP, OB_PRESENT_SDL));
+    CHECK(!ob_look_supported(OB_MODE_MISTER, OB_PRESENT_SDL));
+    CHECK(ob_look_supported(OB_MODE_MISTER, OB_PRESENT_GLES2));
+    CHECK(ob_look_fallback_note(OB_MODE_CRT, OB_PRESENT_SDL) != NULL);
+    CHECK(ob_look_fallback_note(OB_MODE_SHARP, OB_PRESENT_SDL) == NULL);
+
+    ob_host_init(&h, OB_PORT_SNES, OB_PROFILE_HANDHELD);
+    CHECK(h.refresh == OB_REFRESH_60);
+    CHECK(h.vsync == 1);
+    CHECK(h.present == OB_PRESENT_SDL);
+    CHECK(ob_filemenu_wanted(1, 0, 1) == 0);
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_MISTER);
+    CHECK(h.fallback_note != NULL);
+    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_PRESENT_NOTE));
+    CHECK(ob_items_contain(items, n, OB_ID_SCALE_MODE));
+    ob_host_set_present(&h, 1, 0);
+    CHECK(h.present == OB_PRESENT_GLES2);
+    CHECK(h.fallback_note == NULL);
+
+    ob_present_apply_hints(OB_PROFILE_HANDHELD);
+    CHECK(getenv("SDL_RENDER_DRIVER") && !strcmp(getenv("SDL_RENDER_DRIVER"), "opengles2"));
+    CHECK(getenv("OVERBAR_HANDHELD") && !strcmp(getenv("OVERBAR_HANDHELD"), "1"));
+
+    memset(&in, 0, sizeof in);
+    in.src_w = 320;
+    in.src_h = 224;
+    in.dar_h = 240;
+    in.window_w = 640;
+    in.window_h = 480;
+    in.height = OB_HEIGHT_FIT;
+    ob_view(&in, &v);
+    CHECK(v.canvas_w == v.canvas_h * 4 / 3);
+    memset(src, 0xFF, sizeof src);
+    memset(dst, 0, sizeof dst);
+    ob_present_soft(src, 320, 224, dst, 640, 480, 640, &v);
+    CHECK(dst[v.blit_y * 640 + v.blit_x] == 0xFFFFFFFFu);
+    CHECK(dst[0] == 0);          /* letterbox, not source texels */
+    ob_host_free(&h);
+    clear_handheld_env();
 }
 
 static void test_ini_first_launch(void)
@@ -299,6 +383,7 @@ int main(void)
     test_scaler_console();
     test_scaler_vga();
     test_defaults();
+    test_handheld_detect_and_present();
     test_ini_first_launch();
     test_keys();
     test_scale_mode_options();

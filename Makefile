@@ -8,10 +8,15 @@ CFLAGS ?= -std=c99 -Wall -Wextra -Werror -Iinclude
 LIB_OBJS = \
 	src/scaler.o \
 	src/host.o \
+	src/present.o \
 	src/menu.o \
 	src/overlay.o \
 	src/filemenu.o \
 	third_party/pulseman/menu.o
+ifdef SDL
+CFLAGS += -DOVERBAR_SDL $(shell pkg-config --cflags sdl2)
+LIB_OBJS += src/present_sdl.o
+endif
 
 .PHONY: all test clean
 
