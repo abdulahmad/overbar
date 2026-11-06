@@ -194,6 +194,7 @@ typedef struct ob_host {
     ob_class video_class;       /* which Scale Mode tree the Video page edits */
     int live_preview;           /* 1: a menu change is already in the host (always on) */
     int wrote_defaults;
+    int request_quit;           /* overlay Quit: the client should exit */
     char ini_path[512];
     ob_addon addons[OB_ADDONS_MAX];
     int naddons;

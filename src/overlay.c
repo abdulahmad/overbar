@@ -81,7 +81,7 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
     if (id == MDRT_MENU_NOTHING) return 1;
     switch (id) {
     case OB_ID_RESUME: ob_overlay_close(h); return 0;
-    case OB_ID_QUIT: ob_overlay_close(h); return 0;
+    case OB_ID_QUIT: h->request_quit = 1; ob_overlay_close(h); return 0;
     case OB_ID_VIDEO: go_page(h, OB_PAGE_VIDEO); return 1;
     case OB_ID_SOUND: go_page(h, OB_PAGE_SOUND); return 1;
     case OB_ID_INPUT: go_page(h, OB_PAGE_INPUT); return 1;
@@ -90,10 +90,22 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
     case OB_ID_KEYS: go_page(h, OB_PAGE_KEYS); return 1;
     case OB_ID_BACK: go_page(h, OB_PAGE_MAIN); return 1;
     default: {
+        int i;
         mdrt_menu_item *it = mdrt_menu_find(&h->overlay, id);
         int value = it ? it->value : 0;
-        ob_class cls = h->video_class;
-        ob_host_apply(h, cls, id, value);
+        for (i = 0; i < h->naddons; i++) {
+            if (h->addons[i].id == id && h->addons[i].open) {
+                h->addons[i].open(h->addon_ctx);
+                ob_overlay_build(h);
+                mdrt_menu_select(&h->overlay, id);
+                return 1;
+            }
+        }
+        if (id == OB_ID_CONTROLLERS) {
+            /* client opens its pad setup; overlay stays */
+            return id;
+        }
+        ob_host_apply(h, h->video_class, id, value);
         /* Rebuild so Scale Mode sub-options match the new choice (live preview). */
         ob_overlay_build(h);
         if (it) mdrt_menu_select(&h->overlay, id);
