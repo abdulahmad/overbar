@@ -4,7 +4,8 @@
  * The lockstep core (overbar/net.h): machines in this process over 127.0.0.1, each stepping with
  * its own random buttons; every machine must see the same buttons for every step, each machine's
  * own where it put them (delay steps on). Also: packet loss, both connect, a refused identity and
- * version, a desync, and a goodbye. */
+ * version, a desync, and a goodbye. And rollback: a toy game whose state is a hash of every
+ * button it was run with, played with lag and loss; every final step must agree. */
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -69,6 +70,7 @@ static ob_net *make(int role, int port, const char *addr, int here, int all, int
     char err[200];
     ob_net *n;
     memset(&o, 0, sizeof o);
+    memset(&g, 0, sizeof g);
     snprintf(o.name, sizeof o.name, "%s", name);
     o.role = role;
     snprintf(o.addr, sizeof o.addr, "%s", addr ? addr : "");
@@ -379,6 +381,132 @@ static void goodbye(void)
     free_all(3);
 }
 
+/* ---- rollback ---- */
+
+#define RB_STEPS 600
+typedef struct toy {
+    uint64_t h;                         /* the game: every button it ran with, hashed */
+    uint64_t final[RB_STEPS + 200];     /* its hash after each final step */
+    uint16_t btn[RB_STEPS + 200][OB_NET_MAX_PADS];
+    int finals, restarts, replays;
+    uint32_t high;                      /* the most steps run: new steps go at 120 a second, replays at once */
+    uint32_t saves, loads;
+} toy;
+static toy T[3];
+static int rb_resumable = 1;      /* 0: the game never at a resumable point (it plays in lockstep) */
+
+static size_t toy_save(void *user, void *out, size_t cap)
+{
+    toy *t = user;
+    t->saves++;
+    if (cap >= sizeof t->h) memcpy(out, &t->h, sizeof t->h);
+    return sizeof t->h;
+}
+static int toy_load(void *user, const void *in, size_t size)
+{
+    toy *t = user;
+    if (size != sizeof t->h) return -1;
+    memcpy(&t->h, in, size);
+    t->loads++;
+    return 0;
+}
+/* machine i's buttons for step s: held for a while, then another */
+static uint16_t toy_buttons(int i, int pad, uint32_t s)
+{
+    uint32_t x = (uint32_t)(i * 7919 + pad * 104729) ^ (s / (uint32_t)(5 + 3 * i + pad)) * 2654435761u;
+    x ^= x >> 15; x *= 2246822519u; x ^= x >> 13;
+    return (uint16_t)(x & 0x0FFF);
+}
+
+static ob_net *make_rb(int role, int port, const char *addr, int here, int all, int delay, const char *name, toy *t, int window)
+{
+    ob_online o;
+    ob_net_game g;
+    ob_net_states st;
+    char err[200];
+    ob_net *n;
+    memset(&o, 0, sizeof o);
+    memset(&g, 0, sizeof g);
+    snprintf(o.name, sizeof o.name, "%s", name);
+    o.role = role;
+    snprintf(o.addr, sizeof o.addr, "%s", addr ? addr : "");
+    o.port = port; o.delay = delay; o.here = here; o.all = all;
+    st.user = t; st.save = toy_save; st.load = toy_load;
+    g.identity = "toy"; g.pads = 4; g.states = &st; g.rollback = window;
+    n = ob_net_new(&o, &g, err, sizeof err);
+    if (!n) printf("ob_net_new: %s\n", err);
+    return n;
+}
+
+static int rb_run(int k, double secs)
+{
+    double start = seconds(), until = start + secs;
+    for (;;) {
+        int i, done = 0, moved = 0;
+        for (i = 0; i < k; i++) {
+            ob_net *n = M[i].n;
+            toy *t = &T[i];
+            uint32_t cur = ob_net_step_count(n);
+            uint16_t local[OB_NET_MAX_PADS], all[OB_NET_MAX_PADS];
+            unsigned pads = ob_net_my_pads(n);
+            int p, j = 0, r;
+            if (t->finals >= RB_STEPS && cur > RB_STEPS) { ob_net_poll(n); done++; continue; }
+            if (cur >= t->high && cur > (uint32_t)((seconds() - start) * 120)) { ob_net_poll(n); continue; }
+            for (p = 0; p < OB_NET_MAX_PADS; p++)
+                if (pads >> p & 1) local[j++] = toy_buttons(i, p, cur + (uint32_t)ob_net_delay(n));
+            r = ob_net_frame(n, rb_resumable, local, all);
+            if (r < 0) { printf("machine %d ended at step %u: %s\n", i, (unsigned)cur, ob_net_why(n)); return 0; }
+            if (r == OB_NET_RESTART) { t->restarts++; moved = 1; continue; }
+            if (r != OB_NET_RUN) continue;
+            moved = 1;
+            if (cur + 1 > t->high) t->high = cur + 1;
+            for (p = 0; p < OB_NET_MAX_PADS; p++) t->h = (t->h ^ all[p]) * 0x100000001B3ull + cur;
+            t->replays += ob_net_replaying(n);
+            if (cur < RB_STEPS + 200) { t->final[cur] = t->h; memcpy(t->btn[cur], all, sizeof all); }   /* (a replay's replaces) */
+            if (cur % 60 == 59) ob_net_check(n, cur, t->h);
+            if (ob_net_confirmed(n) > RB_STEPS + 1) t->finals = RB_STEPS;   /* (every step up to here as it stays) */
+        }
+        if (done == k) return 1;
+        if (seconds() > until) { printf("rollback stepping timed out\n"); return 0; }
+        if (!moved) nap();
+    }
+}
+
+static void rollback(int lag_ms, int loss)
+{
+    char addr[32], line[120];
+    int port = BASE_PORT + 80 + lag_ms / 10 + loss, i, s, p, bad = 0;
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    memset(T, 0, sizeof T);
+    M[0].n = make_rb(0, port, NULL, 1, 3, 1, "Rob", &T[0], 0);
+    M[1].n = make_rb(1, 0, addr, 1, 3, 0, "Sue", &T[1], 0);
+    M[2].n = make_rb(1, 0, addr, 1, 3, 0, "Tim", &T[2], 0);
+    CHECK(M[0].n && M[1].n && M[2].n, "rollback machines open");
+    if (!M[0].n || !M[1].n || !M[2].n) { free_all(3); return; }
+    for (i = 0; i < 3; i++) ob_net_simulate(M[i].n, lag_ms / 2, lag_ms / 4, loss, 2);
+    reset(3);
+    if (!connect_all(3, 10)) { CHECK(0, "rollback connect"); free_all(3); return; }
+    CHECK(rb_run(3, 40), "rollback machines step");
+    for (i = 0; i < 3; i++) {
+        CHECK(T[i].finals >= RB_STEPS, "every step confirmed");
+    }
+    for (i = 1; i < 3; i++)
+        for (s = 0; s < RB_STEPS; s++) if (T[i].final[s] != T[0].final[s]) { bad++; break; }
+    for (s = 1; s < RB_STEPS; s++)       /* each machine's own buttons as it gave them (delay 1) */
+        for (i = 0; i < 3; i++)
+            for (p = 0; p < 3; p++)
+                if (T[0].btn[s][p] != toy_buttons((int)(ob_net_my_pads(M[0].n) >> p & 1 ? 0 : ob_net_my_pads(M[1].n) >> p & 1 ? 1 : 2), p, (uint32_t)s)) { bad++; i = 3; s = RB_STEPS; break; }
+    CHECK(!bad, "rollback machines agree on every final step");
+    if (rb_resumable) CHECK(T[1].loads > 0 && T[1].restarts > 0 && T[1].replays > 0, "guesses went wrong and were played again");
+    else CHECK(!T[0].loads && !T[1].loads && !T[2].loads && !T[1].saves, "no states without a resumable point");
+    CHECK(ob_net_state(M[0].n) == OB_NET_GO, "no desync");
+    ob_net_status(M[1].n, line, sizeof line);
+    CHECK(strstr(line, "rollback") != NULL, "rollback status line");
+    printf("rollback (%d ms, %d%% loss): %s; %d rollbacks, %d steps replayed, %u states saved\n", lag_ms, loss, line,
+           T[1].restarts, T[1].replays, (unsigned)T[1].saves);
+    free_all(3);
+}
+
 int main(void)
 {
     char lan[64];
@@ -394,6 +522,10 @@ int main(void)
     refused_version();
     desync();
     goodbye();
+    rollback(40, 0);
+    rollback(80, 10);
+    rb_resumable = 0;
+    rollback(30, 1);
     printf("LAN address: \"%s\"\n", ob_net_lan_address(lan, sizeof lan));
     if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
     printf("net tests ok\n");
