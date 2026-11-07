@@ -4,3 +4,5 @@
 /tests/test_overbar
 /build/
 .DS_Store
+tools/shots
+tools/shots.exe

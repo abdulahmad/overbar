@@ -1,117 +1,255 @@
-# Overbar
+# Overbar 🎛️
 
-> **Making a port, fork or other derivative work from this repo? You must credit abdulahmad and everyone credited here, clearly, in your own repo and in every release.** See [NOTICE](NOTICE) and [Credits](#credits-and-derivative-works).
+**A ready-made settings menu, scaler and CRT look pack for native ports of retro games.**
 
-A **host harness** around retro game ports: one menu model, one scaler, two shells (overlay + native file menus). Not an NHL-only toolkit — first clients are the NHL 94 Genesis / SNES C ports and the 94/95/96 PC SDL2 ports.
+Overbar is a derivative of [1nputs' PulseMan](https://github.com/1nputs/pulseman). It's what the NHL '94 Genesis and SNES C ports and the NHL 94, 95 and 96 PC ports use for their in-game menu, their picture and their CRT looks.
 
-This is **v1**: the standalone skeleton. Game-port wiring is a later unit. Host-only; no game-logic edits.
+![The Overbar overlay open over a game](docs/images/overlay-main.png)
 
-## What v1 is
+<sub>The screenshots show a rink drawn by `tools/shots.c`. They contain no game art.</sub>
 
-| Piece | Status |
-|---|---|
-| `LICENSE` + `NOTICE` | MIT (PulseMan-copied files keep the pulseman authors; Abdul credit block in NOTICE) |
-| Menu model | Shared tree (Resume, Video, Sound, Input, Capture, Online Play, Keys, Quit) plus addon slots |
-| Overlay | PulseMan `mdrt_menu` pages. `` ` `` and **F11** toggle; **F12** stats. Controller Back still opens it |
-| File menus | Win32/GTK/Cocoa **stubs**. Bar only in windowed desktop; overlay always available; handheld / KMSDRM overlay-only |
-| Scaler dest-rect | nhl95pc `sdl2-port` `video_view` approach: 4:3 dest **as if 240 lines existed**; source stays 224. No 8+8 black blit |
-| Default look | Desktop: **VRR**, Fit, Sharp **3x** (hi-res and lo-res; steps 2x 480p, 3x 720p, 4x 1080p, 5x 1200p, 6x 1440p, 9x 4k). Handheld / KMSDRM: same Fit + Sharp at **60 Hz**, vsync on |
-| Scale Mode | Sharp / CRT Monitor / MiSTer / Scale2x / Scale3x / MMPX 2x / 4x / xBR 2x / 3x / 4x. Overlay shows **only that mode’s options** and live-previews |
-| SNES Picture | **No Native 1:1.** Always the 240-high 4:3 DAR (PAR 5:4 on 256×224) |
+---
 
-Looks (MiSTer GLES shaders, Lottes, shipped shaders, Capture GIF, netplay) land in later units. Pixel-art magnifiers are listed; the filters themselves still live in PulseMan until copied. CRT and MiSTer stay on the Video page on a handheld; if the present cannot run them the overlay says it fell back to Sharp.
+## ✨ For players: what you get
 
-## Handheld / PortMaster / RG35XX
+### 🎮 One menu, always one key away
 
-`ob_profile_from_env` treats PortMaster (`CFW_NAME`, `PORTMASTER`, `OVERBAR_HANDHELD`) and Anbernic names (`RG35XX*`) plus SDL `kmsdrm` / `rpi` / `mali` / `vivante` as handheld. First launch is **60 Hz + vsync**, not VRR. The file-menu bar stays off. Present is **SDL_Renderer** (GLES2 if the driver offers it). Desktop OpenGL is never required and is never picked on a handheld. `ob_present_apply_hints` sets `SDL_RENDER_DRIVER=opengles2` before `SDL_Init` so KMSDRM does not look for libGL.
+- Press **`` ` ``** (the key above Tab) or **F11** to open the menu over the game. On a controller, press **Back**.
+- The game pauses while the menu is open, and every change shows up on the picture right away.
+- A windowed game on Windows also gets a normal **menu bar** at the top of the window. It holds the same settings and shows a check mark next to each current choice.
+- **Esc** is left to the game, so it never opens the menu by accident.
 
-The game ports ship the PortMaster zip/control files. This repo is the host they link.
+| Key | What it does |
+| --- | --- |
+| `` ` `` or **F11** | Open or close the menu |
+| **F12** | Show or hide the stats (frame rate and timing) |
+| Controller **Back** | Open the menu |
+| **Esc** | Back out of a menu page (in the game, it does whatever the game uses it for) |
 
-## Build
+### 📺 A picture that's the right shape
 
-Needs a C99 compiler. No SDL for the tests.
+Consoles drew 224 lines on a TV made for 240, with a little black at the top and bottom. Overbar keeps the pixel shape that 4:3 TV would give (square pixels at 320 wide, 5:4 at 256) and fills your window with the 224 real lines, with no black bars added.
+
+**Picture height** decides how the picture fits the window:
+
+| Setting | What it does |
+| --- | --- |
+| **Fit** | As big as the window allows |
+| **Integer** | A whole number of screen rows per game line, so scanlines stay even |
+| **Overscan** | One step bigger than Integer, trimming a sliver off the top and bottom like a real TV |
+| **Auto-crop** | Overscan when it only trims a few lines, otherwise Integer |
+
+### 🖼️ Looks
+
+Pick a **Scale Mode** in the **Scaling** menu. Only that mode's own options are listed under it.
+
+| Look | What it gives you |
+| --- | --- |
+| **Sharp** | Crisp pixels at 2x to 9x, then smoothed to fit the window. 3x is the default |
+| **CRT Monitor** | Light, medium or strong scanlines; a soft Lottes-style beam; soft with an aperture grille; or your own mix |
+| **MiSTer** | The MiSTer FPGA scaler's filter files: Presets, horizontal and vertical filters, gamma and shadow masks, browsed by folder |
+| **Scale2x, Scale3x, MMPX, xBR** | Pixel-art smoothing filters, where the port has them |
+
+| Sharp | CRT medium | CRT soft |
+| --- | --- | --- |
+| ![Sharp](docs/images/look-sharp.png) | ![CRT medium](docs/images/look-crt-medium.png) | ![CRT soft](docs/images/look-crt-soft.png) |
+| **CRT soft + aperture grille** | **CRT custom** | **MiSTer + shadow mask** |
+| ![CRT soft with aperture grille](docs/images/look-crt-grille.png) | ![CRT custom](docs/images/look-crt-custom.png) | ![MiSTer with a shadow mask](docs/images/look-mister.png) |
+
+Each look is drawn at your window's own size, so the scanlines and masks land on whole screen pixels. With a GPU the looks run as shaders. Without one, Overbar draws them on the CPU, spread across all your cores.
+
+The **custom** CRT look is set in the settings file: `*_custom_scanline_darkness` (0 to 1), `*_custom_gamma`, `*_custom_mask_strength` (0 to 0.3) and `*_custom_sharpness` (0 is soft, 1 is crisp).
+
+![The Scaling menu with CRT Monitor picked](docs/images/overlay-crt.png)
+
+### 🕹️ MiSTer filters
+
+Put the MiSTer `Filters`, `Gamma`, `Shadow_Masks` and `Presets` folders in a `mister` folder next to the game. The MiSTer pages list them the way the MiSTer does, and a check mark shows what's in use. A **Preset** sets all of them at once, and **Reset the MiSTer filters** goes back to the defaults (GS Sharpness 060, the adaptive SLA 030/070 scanlines and gamma 1.13).
+
+![The MiSTer options](docs/images/overlay-mister.png)
+
+### ⏱️ Smooth play
+
+- **Refresh** can be 60 Hz, 70 Hz or VRR (G-Sync and FreeSync). VRR is the default on a desktop.
+- **Vsync** can be turned on or off.
+- **F12** shows the frame rate and timing in a small box in the top right corner.
+
+![The stats box](docs/images/stats.png)
+
+### 💾 Settings that stick
+
+Everything you change is saved to an `.ini` file next to the game, which you can also edit by hand. The first time you run the game, Overbar writes sensible defaults to it.
+
+### 📱 Handhelds
+
+On PortMaster, Anbernic RG35XX and other KMSDRM devices, Overbar knows it's on a handheld. It starts at 60 Hz with vsync on and never needs desktop OpenGL. It skips the menu bar and uses only the overlay, which works with the controller.
+
+### 🏒 Games using Overbar
+
+| Port | Picture |
+| --- | --- |
+| [NHL '94 Genesis in C](https://github.com/abdulahmad/NHL94Genesis-C-Port) | 320x224 |
+| [NHL '94 SNES in C](https://github.com/abdulahmad/NHL94SNES-C-Port) | 256x224 |
+| [NHL 94 PC](https://github.com/abdulahmad/NHL94PC) | 320x200 |
+| [NHL 95 PC](https://github.com/abdulahmad/NHL95PC) | 640x480 menus, 320x200 game |
+| [NHL 96 PC](https://github.com/abdulahmad/NHL96PC) | 640x480 menus, 320x200 game |
+
+---
+
+## 🛠️ For developers: add Overbar to your own port
+
+Overbar is plain C99 with no build system of its own to adopt. Your port compiles its source files with your own compiler and flags. It doesn't call SDL itself (apart from an optional helper), so it fits whatever window and renderer code your port already has.
+
+### 1. 📦 Add it as a submodule
+
+```sh
+git submodule add https://github.com/abdulahmad/overbar.git third_party/overbar
+```
+
+Anyone cloning your port then runs `git clone --recurse-submodules`, or `git submodule update --init` in an existing clone.
+
+### 2. 🔧 Compile it
+
+**With Make:**
+
+```make
+include third_party/overbar/overbar.mk
+
+# $(OVERBAR_SRCS): src/*.c       $(OVERBAR_PULSEMAN_SRC): PulseMan's menu renderer
+# Both file names end in menu.c, so give the PulseMan object its own name.
+CFLAGS += $(OVERBAR_INC) $(OVERBAR_DEFS)
+```
+
+**With a shell script:**
+
+```sh
+OVERBAR=$(tr -d '\r' < third_party/overbar/sources.txt | sed 's|^|third_party/overbar/|')
+cc ... $OVERBAR -Ithird_party/overbar/include -DOB_SDL_BASE ... -lm
+```
+
+`-DOB_SDL_BASE` lets Overbar find the `mister` folder next to the program and draw the looks on several threads. Leave it out if you don't link SDL.
+
+### 3. 🚀 Start it up
+
+```c
+#include "overbar/overbar.h"
+
+static ob_host host;
+
+ob_present_apply_hints(ob_profile_from_env());          /* before SDL_Init */
+SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);
+ob_host_init(&host, OB_PORT_GENERIC,
+             ob_profile_detect(SDL_GetCurrentVideoDriver(), ob_handheld_env()));
+ob_host_load_ini(&host, "mygame.ini");                  /* writes defaults the first time */
+ob_shell_set(&my_shell);                                /* see step 5 */
+```
+
+`OB_PORT_GENERIC` treats the picture as a console's: 224 or so lines shown with the pixel shape of a 240-line 4:3 TV. For a VGA game (320x200, 640x480) set `host.console_dar = 0` and the picture is plain 4:3.
+
+### 4. 🖥️ Every frame
+
+```c
+ob_view_in in;
+ob_view_out v;
+const ob_look *look = &host.lores;
+uint32_t *px;
+int pw, ph;
+
+/* where the picture goes in the window */
+ob_view_from_host(&host, OB_CLASS_LORES, 320, 224, win_w, win_h, &in);
+ob_view(&in, &v);
+
+/* a CRT look or the MiSTer filters: drawn at the picture's size, ready to copy 1:1 */
+if (ob_look_renders(look)
+    && ob_look_render(look, frame, 320, 224, 320, v.blit_w, v.blit_h, &px, &pw, &ph)) {
+    /* upload px (pw x ph, ARGB) and copy it to v.blit_x, v.blit_y, v.blit_w, v.blit_h */
+} else {
+    /* Sharp: nearest to a whole multiple, then smooth to the rect */
+}
+
+if (host.overlay_open) {
+    /* fill a buffer about 0.8 of a game pixel per text pixel with 0x00040404, then: */
+    ob_overlay_draw(&host, overlay_px, ow, oh, ow);
+    /* blend it over the picture (pixels with alpha 0 are see-through) */
+}
+```
+
+The NHL '94 SNES port's `platform/main.c` is a short, complete example, from the window and the overlay to the mouse and the stats box.
+
+### 5. 🔌 Hooks and keys
+
+Overbar calls your port back through an `ob_shell`. Every hook is optional:
+
+| Hook | When Overbar calls it |
+| --- | --- |
+| `picture` | A video setting changed: re-read `host` and set up your renderer |
+| `hold` | The menu opened (1) or closed (0): pause or resume the game |
+| `redraw`, `draw_now` | The menu changed and the picture should be drawn again |
+| `vsync`, `stats` | The player toggled them |
+| `capture` | A Capture page action |
+| `quit` | The player picked Quit |
+
+Send keys and the controller to Overbar before the game sees them:
+
+```c
+if (ob_overlay_toggle_key(&host, scancode)) return;     /* ` and F11 */
+if (ob_stats_toggle_key(&host, scancode)) return;       /* F12 */
+if (host.overlay_open) ob_overlay_input(&host, MDRT_MENU_UP /* DOWN, LEFT, RIGHT, OK, BACK */);
+```
+
+The mouse works too: `ob_overlay_pointer` takes a position in the overlay buffer.
+
+### 6. 🧩 Extras
+
+- **Your own menu entries:** `ob_host_add_addon` adds a row to the main menu that calls your function.
+- **Windows menu bar:** `ob_filemenu_init(hwnd)`, then `ob_filemenu_show(ob_filemenu_wanted(windowed, fullscreen, handheld))`. Pass the window's messages (SDL's `SDL_SYSWMEVENT`) to `ob_filemenu_event`.
+- **Stats box:** `ob_stats_draw` draws three lines in a dark box, and `ob_stats_place` puts it in the top right corner.
+- **Two picture sizes:** a game with a hi-res menu and a lo-res game screen (like NHL 95 PC) keeps a separate look for each, in `host.hires` and `host.lores`.
+
+### 7. ✅ Check it
+
+```sh
+make test              # the tests, no SDL needed
+sh tests/check.sh      # what CI runs: warnings as errors, 32 and 64 bit, the Windows cross compilers
+make shots             # redraws the pictures in this README
+```
+
+A plain build prints warnings without stopping, so a newer compiler still builds Overbar. CI is stricter and treats warnings as errors.
+
+### 🔄 Updating Overbar in a port
+
+Make the change here and push it. Then, in each port:
+
+```sh
+git -C third_party/overbar fetch && git -C third_party/overbar checkout <commit>
+git add third_party/overbar && git commit -m "Overbar <commit>"
+```
+
+`.gitattributes` keeps every text file LF on every checkout, whatever `core.autocrlf` is set to.
+
+### 🗂️ What's inside
 
 ```
-make test
+include/overbar/overbar.h   the whole API
+include/mdrt/menu.h         PulseMan's menu renderer
+src/scaler.c                where the picture goes in the window
+src/look.c                  the CRT looks and MiSTer filters in software
+src/menu.c                  the menu pages, the MiSTer folders and filter files
+src/overlay.c               the overlay, the stats box
+src/filemenu.c              the Windows menu bar
+src/host.c                  settings, defaults, the ini file
+src/present.c               SDL_Renderer, GLES or OpenGL, and the handheld hints
+third_party/pulseman/       PulseMan's menu renderer and font
+tools/shots.c               the README's pictures
+tests/                      the tests
 ```
 
-Warnings are printed but don't stop the build, so a newer compiler still builds Overbar. CI is
-stricter: `sh tests/check.sh` runs the tests with warnings as errors (`WERROR=-Werror`), 64- and
-32-bit, and compiles every source with the strictest port's flags on Linux and on the 32- and 64-bit
-Windows cross compilers.
+---
 
-## Using Overbar from a port
+## 📜 Credits and license
 
-A port has Overbar as a **git submodule** pinned to one Overbar commit, and compiles it from source
-with its own compiler (64-bit UCRT64 or 32-bit MINGW32) and flags:
+Overbar is a derivative of **[PulseMan](https://github.com/1nputs/pulseman) by 1nputs** (MIT License, Copyright (c) 2026 The pulseman authors). The files taken from PulseMan keep their original headers.
 
-```
-git submodule add https://github.com/abdulahmad/overbar.git native/overbar
-git clone --recurse-submodules <port>     # or, in a clone made without it: git submodule update --init
-```
+The rest is Copyright (c) 2026 abdulahmad and contributors, under the MIT License. See [LICENSE](LICENSE), [NOTICE](NOTICE) and [licenses/](licenses/).
 
-- Make-based ports: `include native/overbar/overbar.mk`, then compile `$(OVERBAR_SRCS)` and
-  `$(OVERBAR_PULSEMAN_SRC)` (give that one's object another name, its file name is `menu.c` too)
-  with `$(OVERBAR_INC) $(OVERBAR_DEFS)`.
-- Shell build scripts: read `sources.txt` (`$(sed 's|^|port/overbar/|' port/overbar/sources.txt)`).
-- Change Overbar here (or inside a port's submodule folder), push, then in each port
-  `git -C <path> fetch && git -C <path> checkout <commit>` and commit the bump.
-
-`.gitattributes` keeps every text file LF in every checkout, whatever `core.autocrlf` says.
-
-`liboverbar.a` is what a game port will link. A client:
-
-1. `ob_present_apply_hints(ob_profile_from_env())` then `SDL_Init`
-2. `ob_host_init` with the port and `ob_profile_detect(SDL_GetCurrentVideoDriver(), ob_handheld_env())`
-3. `ob_host_load_ini` (missing file writes L15 defaults once)
-4. Each frame: `ob_view_from_host` + `ob_view` for the dest rect; SDL_Renderer copy (or `ob_present_sdl_*` when built with `OVERBAR_SDL`); `ob_overlay_draw` if open
-5. Keys: `ob_overlay_toggle_key` / `ob_stats_toggle_key` (do not bind overlay to Esc)
-6. Windowed desktop: `ob_filemenu_wanted` then the later Win32/GTK/Cocoa bar; handheld / KMSDRM / fullscreen: overlay only
-
-## Scaling (L5)
-
-The window’s destination rectangle is **4:3 as if the picture were 240 lines tall**. The source texture stays `W×224`. The scaler does not draw 8+8 (or 11+8) black rows into that texture.
-
-| Source | Dest 4:3 of a 240-line canvas | Pixel PAR |
-|---|---|---|
-| 256×224 (H32, SNES) | width = height × 4/3 | **5:4** |
-| 320×224 (H40) | width = height × 4/3 | **1.0** |
-| 256×224 stretched to 4:3 using height 224 | **wrong** | ≈1.167 |
-| 320×224 stretched to 4:3 using height 224 | **wrong** | ≈0.933 |
-
-VGA ports (94/95/96 PC) keep `dar_h = src_h` (200 or 480). 31 kHz line-doubles the **unit**, not the texture.
-
-## Keys (L13)
-
-| Key | Host |
-|---|---|
-| `` ` `` (grave) | Overlay |
-| F11 | Overlay (same) |
-| F12 | Stats |
-| Controller Back | Overlay |
-| Esc | **Not** overlay (PC in-game pause / the game) |
-
-GIF record is not F11 (Capture page). Screenshot is not F12.
-
-## Layout
-
-```
-include/overbar/overbar.h   public API
-include/mdrt/menu.h         PulseMan overlay menu (copied)
-src/                        menu model, overlay, file-menu stubs, scaler, present, defaults
-third_party/pulseman/       copied PulseMan menu.c (original copyright)
-licenses/                   third-party texts
-shaders/                    user-dropped RetroArch shaders (L10; not shipped)
-mister/                     MiSTer data lands later
-tests/                      dest-rect, defaults, keys, Scale Mode, overlay
-```
-
-## Credits and derivative works
-
-This host includes files from [PulseMan](https://github.com/1nputs/pulseman), MIT License, Copyright (c) 2026 The pulseman authors.
-
-Additional host work: Copyright (c) 2026 abdulahmad and contributors.
-
-This project is a derivative of Abdul Ahmad's NHL disassemblies and C ports ([github.com/abdulahmad](https://github.com/abdulahmad)). Credit: **abdulahmad**, and everyone listed in the "Credits and derivative works" section of the relevant game repo README (**chaos**, **StaticEck**, **McMarkis (Mhopkinsinc)**, **Drezz**; special thanks to **smozoma** and **kingraph** where that README lists them). Carry this block in release notes and in any text file shipped inside a release archive.
-
-If you build anything from this repo, put that credit near the top of your README and in every release. See [NOTICE](NOTICE).
+The CRT looks follow the NHL 95 PC SDL2 port's shaders. The soft look is after Timothy Lottes' CRT shader, and the MiSTer filter, gamma and shadow mask files are the MiSTer project's.

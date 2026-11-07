@@ -23,7 +23,7 @@ CFLAGS += -DOVERBAR_SDL $(shell pkg-config --cflags sdl2)
 LIB_OBJS += src/present_sdl.o
 endif
 
-.PHONY: all test check clean
+.PHONY: all test check clean shots
 
 all: liboverbar.a tests/test_overbar
 
@@ -49,10 +49,16 @@ check:
 	done; rm -f check.o
 
 clean:
-	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe check.o
+	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe check.o tools/shots
 
 src/%.o: src/%.c include/overbar/overbar.h src/look_tables.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 third_party/pulseman/menu.o: third_party/pulseman/menu.c include/mdrt/menu.h
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+# the README's pictures (docs/images), from tools/shots.c
+shots: liboverbar.a tools/shots.c
+	mkdir -p docs/images
+	$(CC) $(CFLAGS) -o tools/shots tools/shots.c liboverbar.a -lm
+	./tools/shots docs/images
