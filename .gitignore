@@ -1,0 +1,6 @@
+*.o
+*.a
+*.exe
+/tests/test_overbar
+/build/
+.DS_Store

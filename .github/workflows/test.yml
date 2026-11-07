@@ -1,0 +1,15 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compilers and SDL2 headers
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libsdl2-dev gcc-multilib gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
+          curl -sSLf https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-devel-2.30.9-mingw.tar.gz | tar xz -C "$RUNNER_TEMP"
+      - run: SDL2_MINGW="$RUNNER_TEMP/SDL2-2.30.9" sh tests/check.sh
