@@ -1,12 +1,12 @@
-# Overbar 🎛️
+# Overbar
+
+> **Making a mod, hack, port or other derivative work from this repo? You must credit me (abdulahmad) and everyone credited in this repo, clearly, in your own repo and in every release. See [Credits and derivative works](#credits-and-derivative-works).**
 
 **A ready-made settings menu, scaler and CRT look pack for native ports of retro games.**
 
 Overbar is a derivative of [1nputs' PulseMan](https://github.com/1nputs/pulseman). It's what the NHL '94 Genesis and SNES C ports and the NHL 94, 95 and 96 PC ports use for their in-game menu, their picture and their CRT looks.
 
-![The Overbar overlay open over a game](docs/images/overlay-main.png)
-
-<sub>The screenshots show a rink drawn by `tools/shots.c`. They contain no game art.</sub>
+![The Overbar overlay open over NHL '94 on the Genesis](docs/images/overlay-main.png)
 
 ---
 
@@ -28,7 +28,18 @@ Overbar is a derivative of [1nputs' PulseMan](https://github.com/1nputs/pulseman
 
 ### 📺 A picture that's the right shape
 
-Consoles drew 224 lines on a TV made for 240, with a little black at the top and bottom. Overbar keeps the pixel shape that 4:3 TV would give (square pixels at 320 wide, 5:4 at 256) and fills your window with the 224 real lines, with no black bars added.
+Old games didn't have square pixels, and a plain stretch to the window gets them wrong. Overbar draws each kind of picture the shape its own screen gave it:
+
+- **Genesis, 320 wide:** a console drew 224 lines on a TV made for 240, with a little black at the top and bottom. Overbar keeps the pixel shape that 4:3 TV gives (square pixels) and fills your window with the 224 real lines, with no black bars added.
+- **SNES and the Genesis's narrow mode, 256 wide:** the same 4:3 TV picture, so each pixel is a little wider than tall (5:4), as it was on the TV.
+- **DOS, 320x200:** a VGA monitor stretched those 200 lines to a full 4:3 screen, so each pixel is a little taller than wide. Overbar does the same.
+- **DOS at 31 kHz:** a VGA monitor drew 320x200 at 31 kHz, each line twice (400 lines). Set **Monitor** to 31 kHz with a CRT look and you get those fine, line-doubled scanlines instead of a TV's 200 thick ones.
+
+![A Genesis, a SNES and a DOS screen, each the shape its own screen gave it](docs/images/shapes.png)
+
+| A TV's 200 scanlines (15 kHz) | A VGA monitor's line doubling (31 kHz) |
+| --- | --- |
+| ![320x200 with 15 kHz scanlines](docs/images/dos-15khz.png) | ![320x200 line doubled at 31 kHz](docs/images/dos-31khz.png) |
 
 **Picture height** decides how the picture fits the window:
 
@@ -211,7 +222,7 @@ The mouse works too: `ob_overlay_pointer` takes a position in the overlay buffer
 ```sh
 make test              # the tests, no SDL needed
 sh tests/check.sh      # what CI runs: warnings as errors, 32 and 64 bit, the Windows cross compilers
-make shots             # redraws the pictures in this README
+make shots             # redraws the pictures in this README from docs/samples (needs Python with Pillow)
 ```
 
 A plain build prints warnings without stopping, so a newer compiler still builds Overbar. CI is stricter and treats warnings as errors.
@@ -241,15 +252,26 @@ src/host.c                  settings, defaults, the ini file
 src/present.c               SDL_Renderer, GLES or OpenGL, and the handheld hints
 third_party/pulseman/       PulseMan's menu renderer and font
 tools/shots.c               the README's pictures
+docs/samples/               the sample screens they are drawn from
 tests/                      the tests
 ```
 
 ---
 
-## 📜 Credits and license
+## 📜 Credits and derivative works
 
 Overbar is a derivative of **[PulseMan](https://github.com/1nputs/pulseman) by 1nputs** (MIT License, Copyright (c) 2026 The pulseman authors). The files taken from PulseMan keep their original headers.
 
 The rest is Copyright (c) 2026 abdulahmad and contributors, under the MIT License. See [LICENSE](LICENSE), [NOTICE](NOTICE) and [licenses/](licenses/).
 
-The CRT looks follow the NHL 95 PC SDL2 port's shaders. The soft look is after Timothy Lottes' CRT shader, and the MiSTer filter, gamma and shadow mask files are the MiSTer project's.
+The soft CRT look is after Timothy Lottes' CRT shader, and the MiSTer filter, gamma and shadow mask files are the MiSTer project's.
+
+This project is the result of my work and the work of the people credited above. If you build anything from it, including mods, ROM or EXE hacks, ports, released forks, tools, or any other derivative work, you must credit us:
+
+* Put the credit in your repo's README, near the top and not buried in a footer, and in the notes of every release you publish, including any text file shipped inside a release archive.
+* Name me and link to this repository.
+* Name everyone credited here: chaos, StaticEck, McMarkis (Mhopkinsinc) and Drezz, with special thanks to smozoma and kingraph.
+* If you only use part of this repo (docs, a tool, labels, a file format description), the credit still applies.
+* If you are unsure, over-credit.
+
+Credit is the condition for using this work. Please do not release a derivative without it.

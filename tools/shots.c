@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 abdulahmad and contributors
  *
- * The README's pictures: Overbar's overlay, its pages and its looks over a made-up rink (drawn
- * here, so no game's art is in the repo). `make shots` writes them to docs/images/ as PNG
- * (stored, not compressed: run them through a PNG optimiser before committing).
+ * The README's pictures: Overbar's overlay, picture shapes and looks over three sample
+ * screens (docs/samples: a Genesis 320x224, a SNES 256x224 and a DOS 320x200 one). `make shots`
+ * turns the samples into PPM (this tool reads P6 PPM) and writes docs/images/ as PNG, stored,
+ * not compressed: run them through a PNG optimiser before committing.
+ *
+ *   shots <out dir> <genesis.ppm> <snes.ppm> <dos.ppm>
  */
 #include "overbar/overbar.h"
 
@@ -11,10 +14,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SW 320
-#define SH 224
+typedef struct { uint32_t *px; int w, h; } image;
 
-static uint32_t rink[SW * SH];
+static image gen, snes, dos;
+static const char *out_dir;
 
 /* ---- a PNG with stored (uncompressed) deflate blocks: no zlib needed ---- */
 
@@ -99,91 +102,85 @@ static int write_png(const char *path, const uint32_t *px, int w, int h)
     return 1;
 }
 
-/* ---- the rink ---- */
-
-static void dot(int x, int y, uint32_t c) { if (x >= 0 && y >= 0 && x < SW && y < SH) rink[y * SW + x] = 0xFF000000u | c; }
-static void box(int x0, int y0, int w, int h, uint32_t c) { int x, y; for (y = y0; y < y0 + h; y++) for (x = x0; x < x0 + w; x++) dot(x, y, c); }
-
-static void ring(int cx, int cy, int r, uint32_t c, int fill)
+static image load_ppm(const char *path)
 {
-    int x, y;
-    for (y = -r; y <= r; y++)
-        for (x = -r; x <= r; x++) {
-            int d = x * x + y * y;
-            if (d <= r * r && (fill || d >= (r - 1) * (r - 1))) dot(cx + x, cy + y, c);
+    image im = { NULL, 0, 0 };
+    FILE *f = fopen(path, "rb");
+    int max, i, c;
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); exit(1); }
+    if (fscanf(f, "P6 %d %d %d", &im.w, &im.h, &max) != 3 || max != 255) { fprintf(stderr, "%s: not a P6 PPM\n", path); exit(1); }
+    fgetc(f);
+    im.px = malloc((size_t)im.w * im.h * 4);
+    for (i = 0; i < im.w * im.h; i++) {
+        int r = fgetc(f), g = fgetc(f), b = fgetc(f);
+        if ((c = b) == EOF) break;
+        im.px[i] = 0xFF000000u | (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
+    }
+    fclose(f);
+    return im;
+}
+
+static void save(const char *name, const uint32_t *px, int w, int h)
+{
+    char p[600];
+    snprintf(p, sizeof p, "%s/%s", out_dir, name);
+    write_png(p, px, w, h);
+}
+
+/* Sharp as the ports draw it: nearest to a whole multiple (3x), then bilinear to ow x oh */
+static uint32_t *sharp(const image *im, int ow, int oh)
+{
+    const int k = 3;
+    int bw = im->w * k, bh = im->h * k, x, y;
+    uint32_t *out = malloc((size_t)ow * oh * 4);
+    for (y = 0; y < oh; y++)
+        for (x = 0; x < ow; x++) {
+            float fx = (x + 0.5f) * bw / ow - 0.5f, fy = (y + 0.5f) * bh / oh - 0.5f;
+            int x0 = (int)fx, y0 = (int)fy, t;
+            float ax = fx - x0, ay = fy - y0;
+            uint32_t q[4], o = 0xFF000000u;
+            if (fx < 0) { x0 = 0; ax = 0; }
+            if (fy < 0) { y0 = 0; ay = 0; }
+            q[0] = im->px[(y0 / k) * im->w + x0 / k];
+            q[1] = im->px[(y0 / k) * im->w + (x0 + 1 < bw ? x0 + 1 : x0) / k];
+            q[2] = im->px[((y0 + 1 < bh ? y0 + 1 : y0) / k) * im->w + x0 / k];
+            q[3] = im->px[((y0 + 1 < bh ? y0 + 1 : y0) / k) * im->w + (x0 + 1 < bw ? x0 + 1 : x0) / k];
+            for (t = 0; t < 24; t += 8) {
+                float v = ((q[0] >> t & 255) * (1 - ax) + (q[1] >> t & 255) * ax) * (1 - ay)
+                        + ((q[2] >> t & 255) * (1 - ax) + (q[3] >> t & 255) * ax) * ay;
+                o |= (uint32_t)(v + 0.5f) << t;
+            }
+            out[(size_t)y * ow + x] = o;
         }
-}
-
-/* a skater from above-ish: helmet, shoulders in the team colour, a stick */
-static void skater(int x, int y, uint32_t team, uint32_t trim, int stick)
-{
-    box(x - 4, y - 2, 9, 7, team);
-    box(x - 4, y + 2, 9, 1, trim);
-    box(x - 3, y + 5, 3, 4, 0x203040);
-    box(x + 1, y + 5, 3, 4, 0x203040);
-    ring(x, y - 5, 3, 0xF0C8A0, 1);
-    box(x - 3, y - 8, 7, 3, team);
-    if (stick > 0) { int i; for (i = 0; i < 8; i++) dot(x + 5 + i, y + 2 + i / 2, 0x8B5A2B); box(x + 12, y + 6, 4, 2, 0x202020); }
-    else { int i; for (i = 0; i < 8; i++) dot(x - 5 - i, y + 2 + i / 2, 0x8B5A2B); box(x - 15, y + 6, 4, 2, 0x202020); }
-}
-
-static void draw_rink(void)
-{
-    int x, y;
-    for (y = 0; y < SH; y++)
-        for (x = 0; x < SW; x++) {
-            /* the crowd in the stands: a few colours in a pattern */
-            static const uint32_t crowd[6] = { 0x3A3F5C, 0x5C3A3A, 0x2F4A3A, 0x4A4A2F, 0x6B5A8A, 0x8A6B4A };
-            uint32_t c = crowd[((x / 3) * 7 + (y / 4) * 5 + (x * y) % 3) % 6];
-            rink[y * SW + x] = 0xFF000000u | c;
-        }
-    box(0, 0, SW, 14, 0x101830);                     /* the score bar */
-    box(8, 3, 40, 8, 0xC03030);
-    box(272, 3, 40, 8, 0x3050C0);
-    box(140, 3, 40, 8, 0xE0E0E0);
-    box(10, 26, 300, 190, 0xF0F0F0);                 /* the boards */
-    box(14, 30, 292, 182, 0xE6EEF6);                 /* the ice */
-    for (y = 30; y < 212; y++)                       /* a little shading on the ice */
-        for (x = 14; x < 306; x++)
-            if (((x * 13 + y * 7) % 23) == 0) dot(x, y, 0xD6E2EE);
-    box(159, 30, 3, 182, 0xD02828);                  /* centre line */
-    box(110, 30, 3, 182, 0x2848C8);                  /* blue lines */
-    box(208, 30, 3, 182, 0x2848C8);
-    box(40, 30, 1, 182, 0xD02828);                   /* goal lines */
-    box(279, 30, 1, 182, 0xD02828);
-    ring(160, 121, 22, 0x2848C8, 0);
-    ring(160, 121, 2, 0x2848C8, 1);
-    ring(72, 80, 16, 0xD02828, 0);
-    ring(72, 162, 16, 0xD02828, 0);
-    ring(248, 80, 16, 0xD02828, 0);
-    ring(248, 162, 16, 0xD02828, 0);
-    ring(40, 121, 9, 0x88AAEE, 1);                   /* creases */
-    ring(279, 121, 9, 0x88AAEE, 1);
-    box(14, 30, 26, 182, 0xE6EEF6);
-    box(280, 30, 26, 182, 0xE6EEF6);
-    box(40, 30, 1, 182, 0xD02828);
-    box(279, 30, 1, 182, 0xD02828);
-    box(32, 114, 8, 15, 0xC0C0C0);                   /* nets */
-    box(33, 115, 6, 13, 0xF8F8F8);
-    box(280, 114, 8, 15, 0xC0C0C0);
-    box(281, 115, 6, 13, 0xF8F8F8);
-    skater(130, 110, 0xC03030, 0xFFFFFF, 1);
-    skater(96, 150, 0xC03030, 0xFFFFFF, 1);
-    skater(186, 128, 0x3050C0, 0xF0D040, -1);
-    skater(226, 92, 0x3050C0, 0xF0D040, -1);
-    skater(266, 122, 0x204090, 0xF0D040, -1);        /* the goalie */
-    box(150, 122, 3, 2, 0x101010);                   /* the puck */
-}
-
-/* ---- shots ---- */
-
-static uint32_t *scale_nearest(const uint32_t *src, int sw, int sh, int k)
-{
-    uint32_t *out = malloc((size_t)sw * k * sh * k * 4);
-    int x, y;
-    for (y = 0; y < sh * k; y++)
-        for (x = 0; x < sw * k; x++) out[(size_t)y * sw * k + x] = src[(y / k) * sw + x / k];
     return out;
+}
+
+/* the picture as the look draws it, at ow x oh */
+static uint32_t *look_pic(ob_look *look, const image *im, int ow, int oh)
+{
+    uint32_t *px = NULL, *out;
+    int dw, dh;
+    if (!ob_look_render(look, im->px, im->w, im->h, im->w, ow, oh, &px, &dw, &dh)) return sharp(im, ow, oh);
+    out = malloc((size_t)ow * oh * 4);
+    memcpy(out, px, (size_t)ow * oh * 4);
+    return out;
+}
+
+/* the picture's size in a window of the given height, as ob_view places it */
+static void shape(const image *im, int console, int win_h, int *w, int *h)
+{
+    ob_view_in in;
+    ob_view_out v;
+    memset(&in, 0, sizeof in);
+    in.src_w = im->w;
+    in.src_h = im->h;
+    in.dar_h = console ? 240 : im->h;
+    in.window_w = 4 * win_h;
+    in.window_h = win_h;
+    in.height = OB_HEIGHT_FIT;
+    ob_view(&in, &v);
+    *w = v.blit_w;
+    *h = v.blit_h;
 }
 
 /* the overlay as the ports draw it: the picture dimmed, the menu's buffer at a whole fraction */
@@ -206,56 +203,72 @@ static void overlay_over(ob_host *h, uint32_t *pic, int w, int hgt, int t)
     free(m);
 }
 
-static void go(ob_host *h, int page, int sel_id)
+static void menu_shot(ob_host *h, const char *name, const image *im, int page, int sel_id)
 {
-    int i;
+    int w, hh, i;
+    uint32_t *pic;
+    shape(im, 1, 672, &w, &hh);
+    pic = look_pic(&h->lores, im, w, hh);
+    ob_overlay_open(h);
     h->overlay_page = page;
     ob_overlay_build(h);
     for (i = 0; i < h->overlay.count; i++)
         if (h->overlay.items[i].id == sel_id) h->overlay.sel = i;
-}
-
-static void menu_shot(ob_host *h, const char *path, int page, int sel_id)
-{
-    uint32_t *pic = scale_nearest(rink, SW, SH, 3);
-    ob_overlay_open(h);
-    go(h, page, sel_id);
-    overlay_over(h, pic, SW * 3, SH * 3, 2);
-    write_png(path, pic, SW * 3, SH * 3);
+    overlay_over(h, pic, w, hh, 2);
+    ob_overlay_close(h);
+    save(name, pic, w, hh);
     free(pic);
 }
 
-/* a corner of the rink at 4x the README's size, so the look's detail shows */
-static void look_shot(ob_host *h, const char *path, int mode, int crt)
+/* a part of the picture drawn 4 rows a line, at its own size, so the look's detail shows */
+static void crop_shot(ob_look *look, const char *name, const image *im, int console, int cx, int cy, int cw, int ch)
 {
-    enum { OW = 1280, OH = 896, CX = 300, CY = 200, CW = 480, CH = 336 };
-    uint32_t *px = NULL, *crop = malloc((size_t)CW * CH * 4);
-    int dw, dh, x, y;
-    h->lores.mode = (ob_scale_mode)mode;
-    h->lores.crt = (ob_crt_look)crt;
-    if (ob_look_render(&h->lores, rink, SW, SH, SW, OW, OH, &px, &dw, &dh)) {
-        for (y = 0; y < CH; y++) memcpy(crop + y * CW, px + (size_t)(CY + y) * dw + CX, CW * 4);
-    } else {
-        uint32_t *big = scale_nearest(rink, SW, SH, 4);
-        for (y = 0; y < CH; y++)
-            for (x = 0; x < CW; x++) crop[y * CW + x] = big[(size_t)(CY + y) * SW * 4 + CX + x];
-        free(big);
-    }
-    write_png(path, crop, CW, CH);
+    int w, hh, y;
+    uint32_t *pic, *crop = malloc((size_t)cw * ch * 4);
+    shape(im, console, im->h * 4 * (look->khz31 ? 1 : 1), &w, &hh);
+    pic = look_pic(look, im, w, hh);
+    for (y = 0; y < ch; y++) memcpy(crop + (size_t)y * cw, pic + (size_t)(cy + y) * w + cx, (size_t)cw * 4);
+    save(name, crop, cw, ch);
+    free(pic);
     free(crop);
 }
 
-static void stats_shot(const char *path)
+/* the three samples side by side, each the shape a 4:3 screen gives it, 360 lines tall */
+static void shapes_shot(void)
 {
-    static const char *const lines[3] = { "60.0 fps", "frame 2.1 ms", "Sharp 3x 960x672" };
-    uint32_t *pic = scale_nearest(rink, SW, SH, 3), box[200 * 40];
-    int bw, bh, x, y, w, hh, px0, py0, k;
+    const image *ims[3] = { &gen, &snes, &dos };
+    const int console[3] = { 1, 1, 0 };
+    int w[3], h[3], total = 0, gap = 16, x0, i, y, H = 360;
+    uint32_t *out;
+    for (i = 0; i < 3; i++) { shape(ims[i], console[i], H, &w[i], &h[i]); total += w[i]; }
+    total += gap * 4;
+    out = malloc((size_t)total * (H + 2 * gap) * 4);
+    for (i = 0; i < total * (H + 2 * gap); i++) out[i] = 0xFF181818u;
+    x0 = gap;
+    for (i = 0; i < 3; i++) {
+        uint32_t *p = sharp(ims[i], w[i], h[i]);
+        for (y = 0; y < h[i]; y++) memcpy(out + (size_t)(gap + (H - h[i]) / 2 + y) * total + x0, p + (size_t)y * w[i], (size_t)w[i] * 4);
+        x0 += w[i] + gap;
+        free(p);
+    }
+    save("shapes.png", out, total, H + 2 * gap);
+    free(out);
+}
+
+static void stats_shot(ob_host *h)
+{
+    static const char *const lines[3] = { "60.0 fps", "frame 2.1 ms", "Sharp 3x 960x720" };
+    uint32_t *pic, box[200 * 40];
+    int W, H, bw, bh, x, y, w, hh, px0, py0, k;
+    (void)h;
+    shape(&dos, 0, 720, &W, &H);
+    pic = sharp(&dos, W, H);
     ob_stats_draw(lines, box, 200, 200, 40, &bw, &bh);
-    ob_stats_place(SW * 3, SH * 3, bw, bh, &px0, &py0, &w, &hh);
+    ob_stats_place(W, H, bw, bh, &px0, &py0, &w, &hh);
     k = w / bw;
     for (y = 0; y < hh; y++)
         for (x = 0; x < w; x++) {
-            uint32_t s = box[(y / k) * 200 + x / k], *d = &pic[(py0 + y) * SW * 3 + px0 + x];
+            uint32_t s = box[(y / k) * 200 + x / k], *d = &pic[(py0 + y) * W + px0 + x];
             unsigned a = s >> 24, r, g, b;
             if (!a) continue;
             r = ((s >> 16 & 255) * a + (*d >> 16 & 255) * (255 - a)) / 255;
@@ -263,43 +276,55 @@ static void stats_shot(const char *path)
             b = ((s & 255) * a + (*d & 255) * (255 - a)) / 255;
             *d = 0xFF000000u | r << 16 | g << 8 | b;
         }
-    write_png(path, pic, SW * 3, SH * 3);
+    save("stats.png", pic, W, H);
     free(pic);
 }
 
 int main(int argc, char **argv)
 {
-    const char *dir = argc > 1 ? argv[1] : "docs/images";
-    char p[512];
     ob_host h;
-    draw_rink();
+    ob_look l;
+    if (argc < 5) { fprintf(stderr, "shots <out dir> <genesis.ppm> <snes.ppm> <dos.ppm>\n"); return 1; }
+    out_dir = argv[1];
+    gen = load_ppm(argv[2]);
+    snes = load_ppm(argv[3]);
+    dos = load_ppm(argv[4]);
     ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
-    snprintf(p, sizeof p, "%s/overlay-main.png", dir);
-    menu_shot(&h, p, OB_PAGE_MAIN, OB_ID_VIDEO);
+
+    menu_shot(&h, "overlay-main.png", &gen, OB_PAGE_MAIN, OB_ID_VIDEO);
     h.lores.mode = OB_MODE_CRT;
     h.lores.crt = OB_CRT_SOFT_APERTURE;
-    snprintf(p, sizeof p, "%s/overlay-crt.png", dir);
-    menu_shot(&h, p, OB_PAGE_SCALE_LO, OB_ID_CRT_LOOK);
+    menu_shot(&h, "overlay-crt.png", &snes, OB_PAGE_SCALE_LO, OB_ID_CRT_LOOK);
     h.lores.mode = OB_MODE_MISTER;
-    snprintf(p, sizeof p, "%s/overlay-mister.png", dir);
-    menu_shot(&h, p, OB_PAGE_SCALE_LO, OB_ID_MISTER_PRESET);
-    ob_overlay_close(&h);
-    snprintf(p, sizeof p, "%s/look-sharp.png", dir);
-    look_shot(&h, p, OB_MODE_SHARP, 0);
-    snprintf(p, sizeof p, "%s/look-crt-medium.png", dir);
-    look_shot(&h, p, OB_MODE_CRT, OB_CRT_MEDIUM);
-    snprintf(p, sizeof p, "%s/look-crt-soft.png", dir);
-    look_shot(&h, p, OB_MODE_CRT, OB_CRT_SOFT);
-    snprintf(p, sizeof p, "%s/look-crt-grille.png", dir);
-    look_shot(&h, p, OB_MODE_CRT, OB_CRT_SOFT_APERTURE);
-    snprintf(p, sizeof p, "%s/look-crt-custom.png", dir);
-    look_shot(&h, p, OB_MODE_CRT, OB_CRT_CUSTOM);
+    menu_shot(&h, "overlay-mister.png", &gen, OB_PAGE_SCALE_LO, OB_ID_MISTER_PRESET);
+    shapes_shot();
+    stats_shot(&h);
+
+    /* the looks, on the SNES goal: the GOAL! box and the crease */
+    l = h.lores;
+    l.mode = OB_MODE_SHARP;
+    crop_shot(&l, "look-sharp.png", &snes, 1, 560, 60, 480, 336);
+    l.mode = OB_MODE_CRT;
+    l.crt = OB_CRT_MEDIUM;
+    crop_shot(&l, "look-crt-medium.png", &snes, 1, 560, 60, 480, 336);
+    l.crt = OB_CRT_SOFT;
+    crop_shot(&l, "look-crt-soft.png", &snes, 1, 560, 60, 480, 336);
+    l.crt = OB_CRT_SOFT_APERTURE;
+    crop_shot(&l, "look-crt-grille.png", &snes, 1, 560, 60, 480, 336);
+    l.crt = OB_CRT_CUSTOM;
+    crop_shot(&l, "look-crt-custom.png", &snes, 1, 560, 60, 480, 336);
     /* (with mister/ beside it, the real MiSTer files and a shadow mask; else the built-in stand-ins) */
-    snprintf(h.lores.mister_path[3], sizeof h.lores.mister_path[3], "%s", "Shadow_Masks/Sony PVM (Generic) (~1980).txt");
-    snprintf(p, sizeof p, "%s/look-mister.png", dir);
-    look_shot(&h, p, OB_MODE_MISTER, 0);
-    snprintf(p, sizeof p, "%s/stats.png", dir);
-    stats_shot(p);
+    l.mode = OB_MODE_MISTER;
+    snprintf(l.mister_path[3], sizeof l.mister_path[3], "%s", "Shadow_Masks/Sony PVM (Generic) (~1980).txt");
+    crop_shot(&l, "look-mister.png", &snes, 1, 560, 60, 480, 336);
+
+    /* DOS 320x200 on a 15 kHz TV (200 scanlines) and a 31 kHz VGA monitor (each line twice) */
+    l.mode = OB_MODE_CRT;
+    l.crt = OB_CRT_MEDIUM;
+    l.khz31 = 0;
+    crop_shot(&l, "dos-15khz.png", &dos, 0, 300, 220, 480, 336);
+    l.khz31 = 1;
+    crop_shot(&l, "dos-31khz.png", &dos, 0, 300, 220, 480, 336);
     ob_host_free(&h);
     return 0;
 }

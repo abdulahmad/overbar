@@ -57,8 +57,13 @@ src/%.o: src/%.c include/overbar/overbar.h src/look_tables.h
 third_party/pulseman/menu.o: third_party/pulseman/menu.c include/mdrt/menu.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# the README's pictures (docs/images), from tools/shots.c
+# the README's pictures (docs/images) from the samples in docs/samples, by tools/shots.c; needs
+# Python with Pillow to read the samples. Run from a folder with mister/ beside it for the MiSTer one.
 shots: liboverbar.a tools/shots.c
-	mkdir -p docs/images
+	mkdir -p docs/images build/shots
+	for s in genesis snes dos; do \
+	    python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).convert('RGB').save(sys.argv[2])" \
+	        docs/samples/$$s.png build/shots/$$s.ppm || exit 1; \
+	done
 	$(CC) $(CFLAGS) -o tools/shots tools/shots.c liboverbar.a -lm
-	./tools/shots docs/images
+	./tools/shots docs/images build/shots/genesis.ppm build/shots/snes.ppm build/shots/dos.ppm
