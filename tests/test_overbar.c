@@ -361,9 +361,26 @@ static void test_scale_mode_options(void)
     CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
     CHECK(!ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
 
+    CHECK(h.lores.height == OB_HEIGHT_AUTO_CROP);          /* scanlines: Auto Crop */
     ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_SCALE2X);
+    CHECK(h.lores.height == OB_HEIGHT_FIT);                /* no scanlines: Fit */
     n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
-    CHECK(ob_items_contain(items, n, OB_ID_PRESENT_NOTE));
+    CHECK(ob_items_contain(items, n, OB_ID_PIXEL_SIZE));   /* Scale2x: 2x, 3x, 4x */
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_PIXEL_SIZE, 2);
+    CHECK(h.lores.mode == OB_MODE_SCALE4X);
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_SCALE2X);
+    CHECK(h.lores.mode == OB_MODE_SCALE4X);                /* the same family keeps its size */
+    CHECK(ob_mode_choice_index(OB_MODE_SCALE3X) == ob_mode_choice_index(OB_MODE_SCALE2X));
+    {
+        const char *const *labels;
+        const ob_scale_mode *modes;
+        CHECK(ob_pixel_sizes(OB_MODE_MMPX4X, &labels, &modes) == 2 && modes[1] == OB_MODE_MMPX4X);
+        CHECK(ob_pixel_sizes(OB_MODE_XBR2X, &labels, &modes) == 3 && !strcmp(labels[1], "3x"));
+        CHECK(ob_pixel_sizes(OB_MODE_CRT, &labels, &modes) == 0);
+    }
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_XBR2X);
+    CHECK(h.lores.mode == OB_MODE_XBR2X);
+    n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
     CHECK(!ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
     CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
     CHECK(!ob_items_contain(items, n, OB_ID_MISTER_H));

@@ -11,11 +11,11 @@
 
 static const char *mode_name[OB_MODE_COUNT] = {
     "sharp", "crt", "mister", "retroarch",
-    "scale2x", "scale3x", "mmpx2x", "mmpx4x", "xbr2x", "xbr3x", "xbr4x"
+    "scale2x", "scale3x", "mmpx2x", "mmpx4x", "xbr2x", "xbr3x", "xbr4x", "scale4x"
 };
 static const char *mode_label[OB_MODE_COUNT] = {
     "Sharp", "CRT Monitor", "MiSTer", "RetroArch",
-    "Scale2x", "Scale3x", "MMPX 2x", "MMPX 4x", "xBR 2x", "xBR 3x", "xBR 4x"
+    "Scale2x 2x", "Scale2x 3x", "MMPX 2x", "MMPX 4x", "xBR 2x", "xBR 3x", "xBR 4x", "Scale2x 4x"
 };
 static const char *refresh_name[3] = { "60", "70", "vrr" };
 static const char *pointer_name[3] = { "auto", "show", "hide" };
@@ -234,7 +234,37 @@ int ob_mode_has_khz(ob_scale_mode m)
 
 int ob_mode_is_pixel(ob_scale_mode m)
 {
-    return m >= OB_MODE_SCALE2X;
+    return m >= OB_MODE_SCALE2X && m < OB_MODE_COUNT;
+}
+
+int ob_mode_has_scanlines(ob_scale_mode m)
+{
+    return m == OB_MODE_CRT || m == OB_MODE_MISTER;
+}
+
+ob_scale_mode ob_mode_family(ob_scale_mode m)
+{
+    switch (m) {
+    case OB_MODE_SCALE3X: case OB_MODE_SCALE4X: return OB_MODE_SCALE2X;
+    case OB_MODE_MMPX4X: return OB_MODE_MMPX2X;
+    case OB_MODE_XBR3X: case OB_MODE_XBR4X: return OB_MODE_XBR2X;
+    default: return m;
+    }
+}
+
+/* MMPX is a 2x filter (4x is two passes); it has no 3x */
+int ob_pixel_sizes(ob_scale_mode m, const char *const **labels, const ob_scale_mode **modes)
+{
+    static const char *const three[] = { "2x", "3x", "4x" }, *const two[] = { "2x", "4x" };
+    static const ob_scale_mode scale[] = { OB_MODE_SCALE2X, OB_MODE_SCALE3X, OB_MODE_SCALE4X };
+    static const ob_scale_mode mmpx[] = { OB_MODE_MMPX2X, OB_MODE_MMPX4X };
+    static const ob_scale_mode xbr[] = { OB_MODE_XBR2X, OB_MODE_XBR3X, OB_MODE_XBR4X };
+    switch (ob_mode_family(m)) {
+    case OB_MODE_SCALE2X: *labels = three; *modes = scale; return 3;
+    case OB_MODE_MMPX2X: *labels = two; *modes = mmpx; return 2;
+    case OB_MODE_XBR2X: *labels = three; *modes = xbr; return 3;
+    default: return 0;
+    }
 }
 
 ob_hostkey ob_map_key(int sdl_scancode)
@@ -426,9 +456,20 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
     case OB_ID_FM_CHIP: h->fm_chip = value; break;
     case OB_ID_SCALE_MODE:
         if (value == OB_MODE_RETROARCH) value = OB_MODE_SHARP;
-        look->mode = (ob_scale_mode)value;
+        /* a pixel filter family picked again keeps its size */
+        if (ob_mode_family((ob_scale_mode)value) != ob_mode_family(look->mode)) look->mode = (ob_scale_mode)value;
+        /* scanlines want whole rows a line where that trims only a little (Auto Crop); the
+         * rest fill the window (Fit) */
+        look->height = ob_mode_has_scanlines(look->mode) ? OB_HEIGHT_AUTO_CROP : OB_HEIGHT_FIT;
         h->fallback_note = ob_look_fallback_note(look->mode, h->present);
         break;
+    case OB_ID_PIXEL_SIZE: {
+        const char *const *labels;
+        const ob_scale_mode *modes;
+        int n = ob_pixel_sizes(look->mode, &labels, &modes);
+        if (value >= 0 && value < n) look->mode = modes[value];
+        break;
+    }
     case OB_ID_VIDEO_CLASS: h->video_class = value ? OB_CLASS_HIRES : OB_CLASS_LORES; break;
     case OB_ID_SHARP_AMOUNT: look->sharp = value; break;
     case OB_ID_CRT_LOOK: look->crt = (ob_crt_look)value; break;

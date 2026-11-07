@@ -25,12 +25,11 @@ static const char *const height_choices[] = {
 /* RetroArch is not offered. The enum value stays so an old ini name still parses. */
 static const char *const mode_choices[] = {
     "Sharp", "CRT Monitor", "MiSTer",
-    "Scale2x", "Scale3x", "MMPX 2x", "MMPX 4x", "xBR 2x", "xBR 3x", "xBR 4x"
+    "Scale2x", "MMPX", "xBR"
 };
+/* a pixel filter's size is its own option (ob_pixel_sizes) */
 static const ob_scale_mode mode_values[] = {
-    OB_MODE_SHARP, OB_MODE_CRT, OB_MODE_MISTER,
-    OB_MODE_SCALE2X, OB_MODE_SCALE3X, OB_MODE_MMPX2X, OB_MODE_MMPX4X,
-    OB_MODE_XBR2X, OB_MODE_XBR3X, OB_MODE_XBR4X
+    OB_MODE_SHARP, OB_MODE_CRT, OB_MODE_MISTER, OB_MODE_SCALE2X, OB_MODE_MMPX2X, OB_MODE_XBR2X
 };
 static const char *const sharp_steps[] = {
     "2x (480p)", "3x (720p)", "4x (1080p)", "5x (1200p)", "6x (1440p)", "9x (4k)"
@@ -318,7 +317,7 @@ static int ob_mode_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
     int count = (int)(sizeof mode_values / sizeof mode_values[0]);
     for (i = 0; i < count; i++) {
         ob_item *it = add_action(out, &n, cap, OB_ID_SCALE_MODE, mode_choices[i],
-                                 mode_values[i] == look->mode ? "in use" : NULL);
+                                 mode_values[i] == ob_mode_family(look->mode) ? "in use" : NULL);
         if (it) it->value = mode_values[i];
     }
     add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
@@ -343,6 +342,13 @@ static int ob_opts_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
                    look->sharp >= 0 && look->sharp < OB_SHARP_COUNT ? look->sharp : OB_SHARP_3X);
     else if (m == OB_MODE_CRT)
         add_choice(out, &n, cap, OB_ID_CRT_LOOK, "CRT Monitor", crt_choices, OB_CRT_COUNT, look->crt);
+    else if (ob_mode_is_pixel(m)) {
+        const char *const *labels;
+        const ob_scale_mode *modes;
+        int ns = ob_pixel_sizes(m, &labels, &modes), i, cur = 0;
+        for (i = 0; i < ns; i++) if (modes[i] == m) cur = i;
+        add_choice(out, &n, cap, OB_ID_PIXEL_SIZE, mode_choices[ob_mode_choice_index(m)], labels, ns, cur);
+    }
     else if (m == OB_MODE_MISTER) {
         /* Same depth as the 95 PC bar: each list is a folder tree, not one flat choice. */
         if (n > 0) begin_group(out, &n, cap);
@@ -440,7 +446,7 @@ int ob_mode_choice_value(int index)
 int ob_mode_choice_index(ob_scale_mode m)
 {
     int i, n = (int)(sizeof mode_values / sizeof mode_values[0]);
-    for (i = 0; i < n; i++) if (mode_values[i] == m) return i;
+    for (i = 0; i < n; i++) if (mode_values[i] == ob_mode_family(m)) return i;
     return 0;
 }
 

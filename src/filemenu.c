@@ -203,6 +203,7 @@ static int look_id(int id)
     case OB_ID_SCALE_MODE:
     case OB_ID_SHARP_AMOUNT:
     case OB_ID_CRT_LOOK:
+    case OB_ID_PIXEL_SIZE:
     case OB_ID_PICTURE_HEIGHT:
     case OB_ID_MONITOR_KHZ:
     case OB_ID_MISTER_PRESET:
@@ -234,7 +235,7 @@ static void apply_marks(void)
         if (cmds[c].id == OB_ID_SCALE_MODE && g_host) {
             const ob_look *look = cmds[c].cls ? &g_host->hires : &g_host->lores;
             CheckMenuItem(g_bar, (UINT)(CMD0 + c),
-                          MF_BYCOMMAND | (cmds[c].value == (int)look->mode ? MF_CHECKED : MF_UNCHECKED));
+                          MF_BYCOMMAND | (cmds[c].value == (int)ob_mode_family(look->mode) ? MF_CHECKED : MF_UNCHECKED));
             continue;
         }
         if (look_id(cmds[c].id)) {

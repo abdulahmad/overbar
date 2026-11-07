@@ -62,6 +62,7 @@ typedef enum {
     OB_MODE_XBR2X,
     OB_MODE_XBR3X,
     OB_MODE_XBR4X,
+    OB_MODE_SCALE4X,            /* Scale2x twice (AdvMAME4x) */
     OB_MODE_COUNT
 } ob_scale_mode;
 
@@ -161,6 +162,7 @@ enum {
     OB_ID_OPTS_MENU_LO,
     OB_ID_MISTER_DIR,           /* a folder inside the MiSTer tree */
     OB_ID_MISTER_FILE,          /* a .txt or a preset .ini; value is the kind */
+    OB_ID_PIXEL_SIZE,           /* Scale2x, MMPX, xBR: the size (index into ob_pixel_sizes) */
     OB_ID_ADDON = 1000
 };
 
@@ -287,6 +289,12 @@ int ob_has_hires(const ob_host *h);
 int ob_snes_has_native(void);                             /* always 0: L12 */
 int ob_mode_has_khz(ob_scale_mode m);
 int ob_mode_is_pixel(ob_scale_mode m);                    /* Scale2x..xBR: picture height only */
+/* The pixel filters are three families on the menu (Scale2x, MMPX, xBR), each with a size.
+ * The family's first mode (OB_MODE_SCALE2X, OB_MODE_MMPX2X, OB_MODE_XBR2X), m itself if not one. */
+ob_scale_mode ob_mode_family(ob_scale_mode m);
+/* the family's sizes: n of them, their labels and modes; 0 if m is not a pixel filter */
+int ob_pixel_sizes(ob_scale_mode m, const char *const **labels, const ob_scale_mode **modes);
+int ob_mode_has_scanlines(ob_scale_mode m);               /* CRT and MiSTer: they pick Auto Crop */
 
 const char *ob_mode_label(ob_scale_mode m);
 int ob_sharp_mul(int index);                          /* 2, 3, 4, 5, 6 or 9 */
