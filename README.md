@@ -15,11 +15,11 @@ This is **v1**: the standalone skeleton. Game-port wiring is a later unit. Host-
 | Overlay | PulseMan `mdrt_menu` pages. `` ` `` and **F11** toggle; **F12** stats. Controller Back still opens it |
 | File menus | Win32/GTK/Cocoa **stubs**. Bar only in windowed desktop; overlay always available; handheld / KMSDRM overlay-only |
 | Scaler dest-rect | nhl95pc `sdl2-port` `video_view` approach: 4:3 dest **as if 240 lines existed**; source stays 224. No 8+8 black blit |
-| Default look | Desktop: **VRR**, Fit, Sharp **1X** (hi-res) / **3X** (lo-res). Handheld / KMSDRM: same Fit + Sharp at **60 Hz**, vsync on |
-| Scale Mode | Sharp / CRT Monitor / MiSTer / RetroArch / Scale2x / Scale3x / MMPX 2x / 4x / xBR 2x / 3x / 4x. Overlay shows **only that mode’s options** and live-previews |
+| Default look | Desktop: **VRR**, Fit, Sharp **3x** (hi-res and lo-res; steps 2x 480p, 3x 720p, 4x 1080p, 5x 1200p, 6x 1440p, 9x 4k). Handheld / KMSDRM: same Fit + Sharp at **60 Hz**, vsync on |
+| Scale Mode | Sharp / CRT Monitor / MiSTer / Scale2x / Scale3x / MMPX 2x / 4x / xBR 2x / 3x / 4x. Overlay shows **only that mode’s options** and live-previews |
 | SNES Picture | **No Native 1:1.** Always the 240-high 4:3 DAR (PAR 5:4 on 256×224) |
 
-Looks (MiSTer GLES shaders, Lottes, shipped shaders, Capture GIF, netplay) land in later units. Pixel-art magnifiers are listed; the filters themselves still live in PulseMan until copied. CRT / MiSTer / RetroArch stay on the Video page on a handheld; if the present cannot run them the overlay says it fell back to Sharp.
+Looks (MiSTer GLES shaders, Lottes, shipped shaders, Capture GIF, netplay) land in later units. Pixel-art magnifiers are listed; the filters themselves still live in PulseMan until copied. CRT and MiSTer stay on the Video page on a handheld; if the present cannot run them the overlay says it fell back to Sharp.
 
 ## Handheld / PortMaster / RG35XX
 
@@ -29,11 +29,35 @@ The game ports ship the PortMaster zip/control files. This repo is the host they
 
 ## Build
 
-Needs a C99 compiler. No SDL for the v1 tests.
+Needs a C99 compiler. No SDL for the tests.
 
 ```
 make test
 ```
+
+Warnings are printed but don't stop the build, so a newer compiler still builds Overbar. CI is
+stricter: `sh tests/check.sh` runs the tests with warnings as errors (`WERROR=-Werror`), 64- and
+32-bit, and compiles every source with the strictest port's flags on Linux and on the 32- and 64-bit
+Windows cross compilers.
+
+## Using Overbar from a port
+
+A port has Overbar as a **git submodule** pinned to one Overbar commit, and compiles it from source
+with its own compiler (64-bit UCRT64 or 32-bit MINGW32) and flags:
+
+```
+git submodule add https://github.com/abdulahmad/overbar.git native/overbar
+git clone --recurse-submodules <port>     # or, in a clone made without it: git submodule update --init
+```
+
+- Make-based ports: `include native/overbar/overbar.mk`, then compile `$(OVERBAR_SRCS)` and
+  `$(OVERBAR_PULSEMAN_SRC)` (give that one's object another name, its file name is `menu.c` too)
+  with `$(OVERBAR_INC) $(OVERBAR_DEFS)`.
+- Shell build scripts: read `sources.txt` (`$(sed 's|^|port/overbar/|' port/overbar/sources.txt)`).
+- Change Overbar here (or inside a port's submodule folder), push, then in each port
+  `git -C <path> fetch && git -C <path> checkout <commit>` and commit the bump.
+
+`.gitattributes` keeps every text file LF in every checkout, whatever `core.autocrlf` says.
 
 `liboverbar.a` is what a game port will link. A client:
 

@@ -1,0 +1,7 @@
+src/scaler.c
+src/host.c
+src/present.c
+src/menu.c
+src/overlay.c
+src/filemenu.c
+third_party/pulseman/menu.c
