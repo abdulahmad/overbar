@@ -197,7 +197,8 @@ typedef struct ob_look {
     int khz31;                  /* lo-res CRT/MiSTer: 0 = 15 kHz, 1 = 31 kHz */
     int mask_scale;             /* 1..4 */
     int bright;                 /* 70..150 step 10 */
-    /* Paths under mister/, kind 0 H, 1 V, 2 gamma, 3 mask, 4 preset. Empty is none. */
+    /* Paths under mister/, kind 0 H, 1 V, 2 gamma, 3 mask, 4 the preset last picked (its
+     * filters are copied into 0-3). Empty is none. */
     char mister_path[5][192];
 } ob_look;
 
@@ -248,7 +249,7 @@ typedef struct ob_item {
     char text[96];              /* owned label when it is not a literal */
 } ob_item;
 
-/* dest-rect: 4:3 of a dar_h canvas (240 for consoles); source stays src_h. */
+/* dest-rect: the pixel shape of a 4:3 screen of dar_h lines (240 for consoles), only src_h drawn. */
 typedef struct ob_view_in {
     int src_w, src_h;           /* texture; consoles keep 224 */
     int dar_h;                  /* 240 console, src_h VGA */
@@ -259,7 +260,7 @@ typedef struct ob_view_in {
 } ob_view_in;
 
 typedef struct ob_view_out {
-    int canvas_x, canvas_y, canvas_w, canvas_h;   /* 4:3 dest of the dar_h canvas */
+    int canvas_x, canvas_y, canvas_w, canvas_h;   /* the picture (same as blit: no border) */
     int blit_x, blit_y, blit_w, blit_h;           /* where the source texture maps */
     int src_w, src_h;                             /* unchanged; no pad in the texture */
 } ob_view_out;
@@ -305,6 +306,13 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap);
 int ob_mister_entries(const char *dir_rel, int kind, int at_root, const char *selected,
                      ob_item *out, int cap);
 void ob_mister_pick(ob_host *h, ob_class cls, int kind, const char *rel);
+void ob_mister_defaults(ob_look *look);                   /* the 95 PC defaults (GS 060, SLA 030/070, gamma 1.13) */
+int ob_mister_read_preset(const char *rel, ob_look *look); /* a Presets/....ini onto the look; 0 unreadable */
+int ob_mister_preset_matches(const ob_look *look, const char *rel);
+/* Menu rows mark the current choice with OB_MARK (the font's check) in front, others with two
+ * spaces. ob_mark_strip gives the bare name (the Win32 bar checks with MF_CHECKED instead). */
+#define OB_MARK "\x82"
+const char *ob_mark_strip(const char *label);
 const char *ob_mister_selected(const ob_host *h, ob_class cls, int kind);
 int ob_items_contain(const ob_item *items, int n, int id);
 int ob_items_contain_label(const ob_item *items, int n, const char *label);
@@ -368,6 +376,12 @@ void ob_present_sdl_close(ob_present_sdl *p);
 void ob_overlay_open(ob_host *h);
 void ob_overlay_close(ob_host *h);
 void ob_overlay_build(ob_host *h);                        /* rebuild current page from the host */
+/* F12 stats as 95 PC draws them: lines right aligned in a dark box (ARGB, alpha 0xC0) drawn
+ * into px (cap_w x cap_h, pitch pixels a row); the box's size comes back. ob_stats_place puts it
+ * flush with the window's top right at a whole scale of the window (2x, more above 540 lines). */
+void ob_stats_draw(const char *const lines[3], uint32_t *px, int pitch, int cap_w, int cap_h,
+                   int *box_w, int *box_h);
+void ob_stats_place(int win_w, int win_h, int box_w, int box_h, int *x, int *y, int *w, int *h);
 int ob_overlay_input(ob_host *h, int mdrt_input);         /* applies + live-previews; 1 still open */
 /* A mouse over the overlay buffer. what: 0 move, 1 left click, 2 right click, 3 wheel up, 4 wheel down. */
 int ob_overlay_pointer(ob_host *h, int x, int y, int w, int hgt, int what);

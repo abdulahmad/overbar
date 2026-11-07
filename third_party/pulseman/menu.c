@@ -10,9 +10,9 @@
 #include "mdrt/menu.h"
 
 /* the font, drawn for pulseman: ' ' to '~' and three of the menu's own (0x7F a pointer, 0x80 and
- * 0x81 arrows up and down); a row a byte, bit 4 the leftmost of 5 pixels; rows 0-6 the letter,
+ * 0x81 arrows up and down, and Overbar's 0x82 a check); a row a byte, bit 4 the leftmost of 5 pixels; rows 0-6 the letter,
  * row 7 the descenders */
-static const uint8_t font[98][8] = {
+static const uint8_t font[99][8] = {
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },   /*   */
     { 0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04, 0x00 },   /* ! */
     { 0x0A, 0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00 },   /* " */
@@ -111,6 +111,7 @@ static const uint8_t font[98][8] = {
     { 0x10, 0x18, 0x1C, 0x1E, 0x1C, 0x18, 0x10, 0x00 },   /* pointer */
     { 0x00, 0x04, 0x0E, 0x1F, 0x00, 0x00, 0x00, 0x00 },   /* up */
     { 0x00, 0x1F, 0x0E, 0x04, 0x00, 0x00, 0x00, 0x00 },   /* down */
+    { 0x00, 0x00, 0x01, 0x02, 0x14, 0x08, 0x00, 0x00 },   /* check (Overbar: the current choice) */
 };
 
 #define CW MDRT_MENU_CELL_W
@@ -331,7 +332,7 @@ static int glyphs(uint32_t *px, int w, int h, int pitch, int x, int y, const cha
 {
     for (; *s; s++, x += CW) {
         unsigned c = (uint8_t)*s;
-        const uint8_t *g = font[c >= 32 && c < 32 + 98 ? c - 32 : '?' - 32];
+        const uint8_t *g = font[c >= 32 && c < 32 + 99 ? c - 32 : '?' - 32];
         for (int r = 0; r < 8; r++)
             for (int b = 0; b < 5; b++)
                 if (g[r] >> (4 - b) & 1) put(px, w, h, pitch, x + b, y + r, rgb);

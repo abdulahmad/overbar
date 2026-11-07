@@ -83,7 +83,7 @@ static ob_item *add_action(ob_item *out, int *n, int cap, int id, const char *la
 /* A divider before a group that is not the first thing on the page. */
 static void begin_group(ob_item *out, int *n, int cap)
 {
-    if (*n > 0) add(out, n, cap, 0, OB_ITEM_SEP, NULL);
+    if (*n > 0 && out[*n - 1].kind != OB_ITEM_SEP) add(out, n, cap, 0, OB_ITEM_SEP, NULL);
 }
 
 static void add_text(ob_item *out, int *n, int cap, int id, const char *label, const char *detail)
@@ -144,11 +144,21 @@ static void mister_root(char *out, size_t n)
 
 /* One level of the MiSTer tree, the same shape as the 95 PC bar: folders first,
  * then files. gamma and mask offer None at the top of their own folder. */
+/* The current choice (or the folder it is in) gets a check in front, as the 95 PC bar
+ * checks its menu items; the others get two spaces so the names line up. In front, a long
+ * name cut to fit the row cannot lose the mark. OB_MARK is the font's check glyph. */
 static void own_label(ob_item *it, const char *name, int mark)
 {
     if (!it) return;
-    snprintf(it->text, sizeof it->text, "%s%s", name ? name : "", mark ? " *" : "");
+    snprintf(it->text, sizeof it->text, "%s%s", mark ? OB_MARK " " : "  ", name ? name : "");
     it->label = it->text;
+}
+
+const char *ob_mark_strip(const char *label)
+{
+    if (!label) return "";
+    if (!strncmp(label, OB_MARK " ", 2) || !strncmp(label, "  ", 2)) return label + 2;
+    return label;
 }
 
 int ob_mister_entries(const char *dir_rel, int kind, int at_root, const char *selected,
@@ -234,6 +244,10 @@ int ob_main_items(const ob_host *h, ob_item *out, int cap)
     int n = 0, i;
     add_action(out, &n, cap, OB_ID_RESUME, "Resume", NULL);
     add_action(out, &n, cap, OB_ID_VIDEO, "Video", NULL);
+    /* Scaling is its own menu, as on 95 PC's bar: one for a console (320x224 and 256x224
+     * share it), hi-res and lo-res apart on 95 / 96 PC. */
+    if (h->has_hires) add_action(out, &n, cap, OB_ID_SCALE_HI, "Scaling (Hi-Res)", NULL);
+    add_action(out, &n, cap, OB_ID_SCALE_LO, h->has_hires ? "Scaling (Lo-Res)" : "Scaling", NULL);
     if (h->has_sound) add_action(out, &n, cap, OB_ID_SOUND, "Sound", NULL);
     add_action(out, &n, cap, OB_ID_INPUT, "Input", NULL);
     add_action(out, &n, cap, OB_ID_CAPTURE, "Capture", NULL);
@@ -259,24 +273,33 @@ int ob_video_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
     begin_group(out, &n, cap);
     /* Same three as the 95 PC Display menu. Auto is each game's own rule for when its pointer is drawn. */
     add_choice(out, &n, cap, OB_ID_POINTER, "Windows pointer", pointer_choices, 3, h->pointer % 3);
-    begin_group(out, &n, cap);
-    if (h->has_hires) add_action(out, &n, cap, OB_ID_SCALE_HI, "Scaling (Hi-Res)", NULL);
-    add_action(out, &n, cap, OB_ID_SCALE_LO, h->has_hires ? "Scaling (Lo-Res)" : "Scaling", NULL);
     add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
     return n;
 }
 
-/* Scaling page: Scale Mode and that mode's knobs each open a submenu.
- * Picture height and Monitor sit here, one group each. */
+static int ob_opts_items(const ob_host *h, ob_class cls, ob_item *out, int cap);
+
+/* Scaling page, one level: Scale Mode (a choice on the overlay, a submenu on the bar), then
+ * that mode's own knobs right under it (the MiSTer lists open their folders), then Picture
+ * height and Monitor. */
 static int ob_scale_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
 {
     const ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
-    int n = 0;
+    ob_item opts[OB_ITEMS_MAX];
+    int n = 0, no, i, first;
     int mode_id = cls == OB_CLASS_HIRES ? OB_ID_MODE_MENU_HI : OB_ID_MODE_MENU_LO;
-    int opts_id = cls == OB_CLASS_HIRES ? OB_ID_OPTS_MENU_HI : OB_ID_OPTS_MENU_LO;
     add_action(out, &n, cap, mode_id, "Scale Mode", ob_mode_label(look->mode));
-    begin_group(out, &n, cap);
-    add_action(out, &n, cap, opts_id, "Scale Mode options", NULL);
+    no = ob_opts_items(h, cls, opts, OB_ITEMS_MAX);
+    for (i = 0, first = 1; i < no && n < cap; i++) {
+        if (opts[i].id == OB_ID_BACK) continue;
+        if (opts[i].id == OB_ID_PRESENT_NOTE && !strcmp(opts[i].detail, "none for this mode")) continue;
+        if (opts[i].kind == OB_ITEM_SEP || first) begin_group(out, &n, cap);
+        first = 0;
+        if (opts[i].kind == OB_ITEM_SEP) continue;
+        out[n] = opts[i];
+        if (opts[i].label == opts[i].text) out[n].label = out[n].text;
+        n++;
+    }
     begin_group(out, &n, cap);
     add_choice(out, &n, cap, OB_ID_PICTURE_HEIGHT, "Picture height", height_choices, 4, look->height);
     if (cls == OB_CLASS_LORES) {
@@ -470,6 +493,58 @@ static int m_read_numbers(const char *path, float *vals, int max, int *adaptive,
     return n;
 }
 
+static void m_join(char *out, int n, const char *root, const char *rel);
+
+/* A MiSTer preset (Presets/..., an .ini of hfilter, vfilter, sfilter, gamma, mask, maskmode,
+ * the 95 PC reader's keys) onto a look: the four paths and the mask scale. 0 if unreadable. */
+int ob_mister_read_preset(const char *rel, ob_look *look)
+{
+    char root[1024], path[1200], line[512];
+    char hf[160] = "", vf[160] = "same", gm[160] = "off", mk[160] = "", mm[32] = "off";
+    FILE *f;
+    if (!rel || !rel[0] || !look) return 0;
+    mister_root(root, sizeof root);
+    if (!root[0]) return 0;
+    m_join(path, sizeof path, root, rel);
+    f = fopen(path, "r");
+    if (!f) return 0;
+    while (fgets(line, sizeof line, f)) {
+        char *k = line, *v = strchr(line, '='), *e;
+        if (!v || line[0] == '#' || line[0] == ';' || line[0] == '[') continue;
+        *v++ = 0;
+        for (e = v + strlen(v); e > v && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' '); ) *--e = 0;
+        if (!strcmp(k, "hfilter")) snprintf(hf, sizeof hf, "%s", v);
+        else if (!strcmp(k, "vfilter")) snprintf(vf, sizeof vf, "%s", v);
+        else if (!strcmp(k, "gamma")) snprintf(gm, sizeof gm, "%s", v);
+        else if (!strcmp(k, "mask")) snprintf(mk, sizeof mk, "%s", v);
+        else if (!strcmp(k, "maskmode")) snprintf(mm, sizeof mm, "%s", v);
+    }
+    fclose(f);
+    if (hf[0]) snprintf(look->mister_path[0], sizeof look->mister_path[0], "Filters/%s", hf);
+    else look->mister_path[0][0] = 0;
+    if (!strcmp(vf, "same")) snprintf(look->mister_path[1], sizeof look->mister_path[1], "%s", look->mister_path[0]);
+    else if (vf[0]) snprintf(look->mister_path[1], sizeof look->mister_path[1], "Filters/%s", vf);
+    else look->mister_path[1][0] = 0;
+    if (!gm[0] || !strcmp(gm, "off")) look->mister_path[2][0] = 0;
+    else snprintf(look->mister_path[2], sizeof look->mister_path[2], "Gamma/%s", gm);
+    if (!mk[0] || !strcmp(mm, "off")) look->mister_path[3][0] = 0;
+    else snprintf(look->mister_path[3], sizeof look->mister_path[3], "Shadow_Masks/%s", mk);
+    look->mask_scale = mm[0] >= '1' && mm[0] <= '4' ? mm[0] - '0' : 1;
+    return 1;
+}
+
+int ob_mister_preset_matches(const ob_look *look, const char *rel)
+{
+    ob_look t;
+    int k;
+    if (!look || !rel || !rel[0]) return 0;
+    t = *look;
+    if (!ob_mister_read_preset(rel, &t)) return 0;
+    for (k = 0; k < 4; k++)
+        if (strcmp(t.mister_path[k], look->mister_path[k])) return 0;
+    return t.mask_scale == look->mask_scale;
+}
+
 static void m_join(char *out, int n, const char *root, const char *rel)
 {
     if (!rel || !rel[0]) { out[0] = 0; return; }
@@ -502,19 +577,15 @@ static void m_fallback(void)
 
 static void m_load(const ob_look *look)
 {
-    static const char *def[4] = {
-        "Filters/Upscaling - Recommended/GS_Sharpness_060.txt",
-        "Filters/Scanlines - Adaptive/SLA_Dk_030_Br_070.txt",
-        "Gamma/Pure_Gamma/gamma_113.txt",
-        ""
-    };
     char root[1024], path[1200], sig[4][192];
     float v[2 * 256 * 4];
     int k, n, ad, tb, p, i;
     mister_root(root, sizeof root);
     for (k = 0; k < 4; k++) {
-        const char *rel = look->mister_path[k][0] ? look->mister_path[k] : def[k];
-        m_join(path, sizeof path, root, rel);
+        /* an empty path is none: the built-in kernel, beam, or no gamma (as on 95 PC) */
+        const char *rel = look->mister_path[k];
+        if (rel[0]) m_join(path, sizeof path, root, rel);
+        else path[0] = 0;
         {
             size_t ln = strlen(path);
             if (ln >= sizeof sig[k]) ln = sizeof sig[k] - 1;
@@ -526,7 +597,7 @@ static void m_load(const ob_look *look)
         && !strcmp(sig[2], m_sig[2]) && !strcmp(sig[3], m_sig[3]))
         return;
     m_fallback();
-    n = m_read_numbers(sig[0], v, 2 * 256 * 4, &ad, &tb);
+    n = !sig[0][0] ? 0 : m_read_numbers(sig[0], v, 2 * 256 * 4, &ad, &tb);
     if (n == 64 * 4 || n == 256 * 4 || n == 2 * 256 * 4) {
         int phases = n == 64 * 4 ? 64 : 256;
         for (p = 0; p < 64; p++) {
@@ -535,7 +606,7 @@ static void m_load(const ob_look *look)
             for (k = 0; k < 4; k++) m_htap[p][k] = sum > 0 ? r[k] / sum : 0;
         }
     }
-    n = m_read_numbers(sig[1], v, 2 * 256 * 4, &ad, &tb);
+    n = !sig[1][0] ? 0 : m_read_numbers(sig[1], v, 2 * 256 * 4, &ad, &tb);
     if (n == 2 * 256 * 4 || n == 256 * 4 || n == 64 * 4) {
         float div = tb ? 256.f : 128.f;
         int phases = n == 64 * 4 ? 64 : 256;
@@ -544,7 +615,7 @@ static void m_load(const ob_look *look)
                 for (k = 0; k < 4; k++)
                     m_vtap[i][p][k] = v[(((n == 2 * 256 * 4 ? i : 0) * 256) + p * phases / 256) * 4 + k] / div;
     }
-    n = m_read_numbers(sig[2], v, 256, &ad, &tb);
+    n = !sig[2][0] ? 0 : m_read_numbers(sig[2], v, 256, &ad, &tb);
     if (n == 256) for (i = 0; i < 256; i++) m_gamma[i] = v[i] / 255.f;
     for (k = 0; k < 4; k++) {
         size_t ln = strlen(sig[k]);

@@ -43,7 +43,7 @@ void ob_overlay_build(ob_host *h)
     mdrt_menu *m = &h->overlay;
     mdrt_menu_page(m, page_title(h, h->overlay_page));
     if (h->overlay_page == OB_PAGE_MISTER) memset(h->mister_row, 0, sizeof h->mister_row);
-    if (h->overlay_page == OB_PAGE_VIDEO) {
+    if (h->overlay_page == OB_PAGE_SCALE_HI || h->overlay_page == OB_PAGE_SCALE_LO) {
         if (h->fallback_note)
             snprintf(m->subtitle, sizeof m->subtitle, "%s", h->fallback_note);
         else
@@ -104,10 +104,10 @@ void ob_overlay_close(ob_host *h)
 static int parent_page(const ob_host *h, int page)
 {
     if (page == OB_PAGE_MISTER)
-        return h->video_class == OB_CLASS_HIRES ? OB_PAGE_OPTS_HI : OB_PAGE_OPTS_LO;
+        return h->video_class == OB_CLASS_HIRES ? OB_PAGE_SCALE_HI : OB_PAGE_SCALE_LO;
     if (page == OB_PAGE_MODE_LO || page == OB_PAGE_OPTS_LO) return OB_PAGE_SCALE_LO;
     if (page == OB_PAGE_MODE_HI || page == OB_PAGE_OPTS_HI) return OB_PAGE_SCALE_HI;
-    if (page == OB_PAGE_SCALE_HI || page == OB_PAGE_SCALE_LO) return OB_PAGE_VIDEO;
+    if (page == OB_PAGE_SCALE_HI || page == OB_PAGE_SCALE_LO) return OB_PAGE_MAIN;
     return OB_PAGE_MAIN;
 }
 
@@ -292,4 +292,38 @@ int ob_stats_toggle_key(ob_host *h, int sdl_scancode)
     h->live_preview = 1;
     if (h->ini_path[0]) ob_host_save_ini(h);
     return 1;
+}
+
+/* F12 stats, drawn as the 95 PC SDL port draws them: up to three lines right aligned in a dark
+ * box (alpha 0xC0) that sits flush with the window's top right corner. */
+void ob_stats_draw(const char *const lines[3], uint32_t *px, int pitch, int cap_w, int cap_h,
+                   int *box_w, int *box_h)
+{
+    int i, x, y, bw = 0, bh = 3 * 9 + 1;
+    for (i = 0; i < 3; i++) {
+        int lw = lines[i] ? (int)strlen(lines[i]) * MDRT_MENU_CELL_W + 3 : 0;
+        if (lw > bw) bw = lw;
+    }
+    if (bw > cap_w) bw = cap_w;
+    if (bh > cap_h) bh = cap_h;
+    for (y = 0; y < cap_h; y++)
+        for (x = 0; x < cap_w; x++) px[y * pitch + x] = (x < bw && y < bh) ? 0xC0000000u : 0;
+    for (i = 0; i < 3; i++) {
+        if (!lines[i]) continue;
+        x = bw - 2 - (int)strlen(lines[i]) * MDRT_MENU_CELL_W;
+        mdrt_menu_text(px, bw, bh, pitch, x > 1 ? x : 1, 1 + 9 * i, lines[i], 0xFFFFFF);
+    }
+    *box_w = bw;
+    *box_h = bh;
+}
+
+/* where it goes: a whole scale of the window, 2x up to 540 lines then one more each 270 (95's
+ * rule), not the game picture's scale, so it stays small */
+void ob_stats_place(int win_w, int win_h, int box_w, int box_h, int *x, int *y, int *w, int *h)
+{
+    int s = win_h / 270 < 2 ? 2 : win_h / 270;
+    *w = box_w * s;
+    *h = box_h * s;
+    *x = win_w - *w;
+    *y = 0;
 }

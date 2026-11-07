@@ -113,7 +113,7 @@ static void fill_mister(HMENU menu, const char *rel, int kind, int cls, int at_r
             int pos;
             fill_mister(sm, items[i].detail, kind, cls, 0);
             pos = GetMenuItemCount(menu);
-            AppendMenuA(menu, MF_POPUP, (UINT_PTR)sm, items[i].label ? items[i].label : "");
+            AppendMenuA(menu, MF_POPUP, (UINT_PTR)sm, ob_mark_strip(items[i].label));
             if (sel && sel[0] && items[i].detail[0]
                 && !strncmp(sel, items[i].detail, strlen(items[i].detail))
                 && (sel[strlen(items[i].detail)] == '/' || sel[strlen(items[i].detail)] == 0))
@@ -121,7 +121,9 @@ static void fill_mister(HMENU menu, const char *rel, int kind, int cls, int at_r
         } else if (items[i].id == OB_ID_MISTER_FILE) {
             UINT cmd = add_mfile(kind, cls, items[i].detail);
             int on = sel && !strcmp(sel, items[i].detail);
-            AppendMenuA(menu, MF_STRING | (on ? MF_CHECKED : 0), cmd, items[i].label ? items[i].label : "");
+            if (kind == 4) on = sel && sel[0] && !strcmp(sel, items[i].detail);
+            else if (!items[i].detail[0]) on = !sel || !sel[0];       /* None */
+            AppendMenuA(menu, MF_STRING | (on ? MF_CHECKED : 0), cmd, ob_mark_strip(items[i].label));
         } else if (items[i].kind == MDRT_ITEM_TEXT) {
             AppendMenuA(menu, MF_STRING | MF_GRAYED, 0, items[i].label ? items[i].label : "");
         }
@@ -236,10 +238,7 @@ static void apply_marks(void)
             continue;
         }
         if (look_id(cmds[c].id)) {
-            if (cmds[c].id == OB_ID_PICTURE_HEIGHT || cmds[c].id == OB_ID_MONITOR_KHZ)
-                want = cmds[c].cls ? OB_PAGE_SCALE_HI : OB_PAGE_SCALE_LO;
-            else
-                want = cmds[c].cls ? OB_PAGE_OPTS_HI : OB_PAGE_OPTS_LO;
+            want = cmds[c].cls ? OB_PAGE_SCALE_HI : OB_PAGE_SCALE_LO;
         }
         for (p = 0; p < (int)(sizeof pages / sizeof *pages); p++) {
             if (want >= 0 && pages[p] != want) continue;
@@ -283,7 +282,7 @@ static void build_bar(void)
             ob_item sub[OB_ITEMS_MAX];
             int ns = ob_page_items(g_host, page, sub, OB_ITEMS_MAX);
             HMENU sm = CreatePopupMenu();
-            append_items(sm, sub, ns, OB_CLASS_LORES);
+            append_items(sm, sub, ns, page == OB_PAGE_SCALE_HI ? OB_CLASS_HIRES : OB_CLASS_LORES);
             AppendMenuA(g_bar, MF_POPUP, (UINT_PTR)sm, it->label ? it->label : "");
         } else {
             AppendMenuA(g_bar, MF_STRING, add_cmd(it->id, 0, OB_CLASS_LORES), it->label ? it->label : "");
@@ -347,13 +346,13 @@ int ob_filemenu_wanted(int windowed, int fullscreen, int handheld)
 
 int ob_filemenu_items(const ob_host *h, ob_item *out, int cap)
 {
-    /* Same ids as the overlay Video page. Resume and Quit stay on the overlay. */
+    /* The bar's own menus: the overlay's main page without Resume and Quit (build_bar). */
     ob_item tmp[OB_ITEMS_MAX];
     int n = 0, i, v;
     if (cap < 1) return 0;
-    v = ob_video_items(h, h->has_hires ? h->video_class : OB_CLASS_LORES, tmp, OB_ITEMS_MAX);
+    v = ob_main_items(h, tmp, OB_ITEMS_MAX);
     for (i = 0; i < v && n < cap; i++) {
-        if (tmp[i].id == OB_ID_BACK) continue;   /* a bar has no Back */
+        if (tmp[i].id == OB_ID_RESUME || tmp[i].id == OB_ID_QUIT || tmp[i].id == OB_ID_BACK) continue;
         out[n++] = tmp[i];
     }
     return n;

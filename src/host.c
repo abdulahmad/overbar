@@ -40,6 +40,18 @@ static void caps_from_port(ob_host *h)
     h->online_ready = (h->port == OB_PORT_GENESIS);
 }
 
+/* The 95 PC SDL port's MiSTer defaults. Paths are under mister/; an empty one is none. */
+void ob_mister_defaults(ob_look *l)
+{
+    memset(l->mister_path, 0, sizeof l->mister_path);
+    snprintf(l->mister_path[0], sizeof l->mister_path[0], "%s",
+             "Filters/Upscaling - Recommended/GS_Sharpness_060.txt");
+    snprintf(l->mister_path[1], sizeof l->mister_path[1], "%s",
+             "Filters/Scanlines - Adaptive/SLA_Dk_030_Br_070.txt");
+    snprintf(l->mister_path[2], sizeof l->mister_path[2], "%s", "Gamma/Pure_Gamma/gamma_113.txt");
+    l->mask_scale = 1;
+}
+
 static void look_init(ob_look *l, int console, int lores)
 {
     memset(l, 0, sizeof *l);
@@ -50,6 +62,7 @@ static void look_init(ob_look *l, int console, int lores)
     l->mask_scale = 1;
     l->bright = 100;
     l->sharp = OB_SHARP_3X;
+    ob_mister_defaults(l);
     (void)console;
     (void)lores;
 }
@@ -344,6 +357,21 @@ int ob_host_load_ini(ob_host *h, const char *path)
         else if (!strncmp(k, "hires_", 6)) apply_look_key(&h->hires, k + 6, v);
     }
     fclose(f);
+    /* An older settings file kept empty paths for "the defaults"; empty is none now. A look
+     * with no horizontal or vertical filter at all is one of those: give it the defaults. */
+    {
+        ob_look *looks[2] = { &h->lores, &h->hires };
+        int i;
+        for (i = 0; i < 2; i++)
+            if (!looks[i]->mister_path[0][0] && !looks[i]->mister_path[1][0]) {
+                char mask[192];
+                int ms = looks[i]->mask_scale;
+                memcpy(mask, looks[i]->mister_path[3], sizeof mask);
+                ob_mister_defaults(looks[i]);
+                memcpy(looks[i]->mister_path[3], mask, sizeof mask);
+                looks[i]->mask_scale = ms;
+            }
+    }
     h->wrote_defaults = 0;
     return 1;
 }
@@ -353,6 +381,8 @@ const char *ob_mister_selected(const ob_host *h, ob_class cls, int kind)
     const ob_look *look;
     if (!h || kind < 0 || kind > 4) return "";
     look = cls == OB_CLASS_HIRES ? &h->hires : &h->lores;
+    /* a preset is checked while the filters are still the ones it set */
+    if (kind == 4) return ob_mister_preset_matches(look, look->mister_path[4]) ? look->mister_path[4] : "";
     return look->mister_path[kind];
 }
 
@@ -362,6 +392,7 @@ void ob_mister_pick(ob_host *h, ob_class cls, int kind, const char *rel)
     if (!h || kind < 0 || kind > 4) return;
     look = cls == OB_CLASS_HIRES ? &h->hires : &h->lores;
     snprintf(look->mister_path[kind], sizeof look->mister_path[kind], "%s", rel ? rel : "");
+    if (kind == 4) ob_mister_read_preset(rel, look);   /* its filters, gamma, mask and scale */
     look->mode = OB_MODE_MISTER;
     h->fallback_note = ob_look_fallback_note(look->mode, h->present);
     h->live_preview = 1;
@@ -396,9 +427,8 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
     case OB_ID_MISTER_MASK_SCALE: look->mask_scale = value + 1; break;
     case OB_ID_MISTER_BRIGHT: look->bright = 70 + 10 * value; break;
     case OB_ID_MISTER_RESET:
-        look->mask_scale = 1;
         look->bright = 100;
-        memset(look->mister_path, 0, sizeof look->mister_path);
+        ob_mister_defaults(look);
         break;
     case OB_ID_VOLUME: h->volume = value; break;
     case OB_ID_MUTE: h->mute = value; break;
