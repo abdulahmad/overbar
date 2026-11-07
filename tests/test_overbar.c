@@ -5,12 +5,28 @@
  * Scale Mode sub-options + live preview (T12), no Native (T4/L12),
  * file-menu show policy (T10 T11).
  */
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200112L
 #include "overbar/overbar.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+/* ucrt does not declare POSIX setenv. _putenv_s updates the copy getenv reads.
+ * Ubuntu CI uses the real ones. */
+static int setenv(const char *k, const char *v, int overwrite)
+{
+    const char *cur;
+    if (!overwrite && (cur = getenv(k)) && cur[0]) return 0;
+    return _putenv_s(k, v) == 0 ? 0 : -1;
+}
+static int unsetenv(const char *k)
+{
+    return _putenv_s(k, "") == 0 ? 0 : -1;
+}
+#endif
 
 static int fails;
 
@@ -117,8 +133,8 @@ static void test_defaults(void)
     CHECK(d.refresh == OB_REFRESH_VRR);
     CHECK(d.vsync == 0);
     CHECK(d.stats == 0);
-    CHECK(d.hires.mode == OB_MODE_SHARP && d.hires.sharp == OB_SHARP_1X);
-    CHECK(d.lores.mode == OB_MODE_SHARP && d.lores.sharp == OB_SHARP_LO_3X);
+    CHECK(d.hires.mode == OB_MODE_SHARP && d.hires.sharp == OB_SHARP_3X);
+    CHECK(d.lores.mode == OB_MODE_SHARP && d.lores.sharp == OB_SHARP_3X);
     CHECK(d.lores.height == OB_HEIGHT_FIT && d.hires.height == OB_HEIGHT_FIT);
     CHECK(d.has_hires);
     CHECK(d.present == OB_PRESENT_GL);
@@ -128,7 +144,7 @@ static void test_defaults(void)
     CHECK(hh.refresh == OB_REFRESH_60);
     CHECK(hh.vsync == 1);
     CHECK(hh.stats == 0);
-    CHECK(hh.lores.mode == OB_MODE_SHARP && hh.lores.sharp == OB_SHARP_1X);
+    CHECK(hh.lores.mode == OB_MODE_SHARP && hh.lores.sharp == OB_SHARP_3X);
     CHECK(hh.console_dar);
     CHECK(hh.lores.height == OB_HEIGHT_FIT);
     CHECK(!hh.has_hires);
@@ -153,11 +169,21 @@ static void test_handheld_detect_and_present(void)
     CHECK(ob_handheld_env() == 0);
     CHECK(ob_profile_from_env() == OB_PROFILE_DESKTOP);
     setenv("CFW_NAME", "muOS", 1);
+#ifndef _WIN32
     CHECK(ob_handheld_env() == 1);
     CHECK(ob_profile_from_env() == OB_PROFILE_HANDHELD);
+#else
+    /* A leftover CFW_NAME from a packed zip must not flip the Windows exe. */
+    CHECK(ob_handheld_env() == 0);
+    CHECK(ob_profile_from_env() == OB_PROFILE_DESKTOP);
+#endif
     unsetenv("CFW_NAME");
     setenv("DEVICE_NAME", "RG35XX-PLUS", 1);
+#ifndef _WIN32
     CHECK(ob_profile_from_env() == OB_PROFILE_HANDHELD);
+#else
+    CHECK(ob_profile_from_env() == OB_PROFILE_DESKTOP);
+#endif
     unsetenv("DEVICE_NAME");
     setenv("OVERBAR_HANDHELD", "1", 1);
     CHECK(ob_profile_from_env() == OB_PROFILE_HANDHELD);
@@ -168,9 +194,11 @@ static void test_handheld_detect_and_present(void)
     CHECK(ob_present_pick(OB_PROFILE_DESKTOP, 0, 1) == OB_PRESENT_GL);
     CHECK(ob_present_pick(OB_PROFILE_DESKTOP, 0, 0) == OB_PRESENT_SDL);
     CHECK(ob_look_supported(OB_MODE_SHARP, OB_PRESENT_SDL));
+    CHECK(ob_look_supported(OB_MODE_CRT, OB_PRESENT_SDL));
     CHECK(!ob_look_supported(OB_MODE_MISTER, OB_PRESENT_SDL));
     CHECK(ob_look_supported(OB_MODE_MISTER, OB_PRESENT_GLES2));
-    CHECK(ob_look_fallback_note(OB_MODE_CRT, OB_PRESENT_SDL) != NULL);
+    CHECK(ob_look_fallback_note(OB_MODE_CRT, OB_PRESENT_SDL) == NULL);
+    CHECK(ob_look_fallback_note(OB_MODE_MISTER, OB_PRESENT_SDL) != NULL);
     CHECK(ob_look_fallback_note(OB_MODE_SHARP, OB_PRESENT_SDL) == NULL);
 
     ob_host_init(&h, OB_PORT_SNES, OB_PROFILE_HANDHELD);
@@ -180,16 +208,21 @@ static void test_handheld_detect_and_present(void)
     CHECK(ob_filemenu_wanted(1, 0, 1) == 0);
     ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_MISTER);
     CHECK(h.fallback_note != NULL);
-    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
     CHECK(ob_items_contain(items, n, OB_ID_PRESENT_NOTE));
-    CHECK(ob_items_contain(items, n, OB_ID_SCALE_MODE));
+    CHECK(ob_items_contain(items, n, OB_ID_MISTER_H));
     ob_host_set_present(&h, 1, 0);
     CHECK(h.present == OB_PRESENT_GLES2);
     CHECK(h.fallback_note == NULL);
 
     ob_present_apply_hints(OB_PROFILE_HANDHELD);
+#ifndef _WIN32
+    /* Windows must not ask SDL for a GLES2 DLL. Handheld hints are the Linux path. */
     CHECK(getenv("SDL_RENDER_DRIVER") && !strcmp(getenv("SDL_RENDER_DRIVER"), "opengles2"));
     CHECK(getenv("OVERBAR_HANDHELD") && !strcmp(getenv("OVERBAR_HANDHELD"), "1"));
+#else
+    CHECK(!getenv("SDL_RENDER_DRIVER") || !getenv("SDL_RENDER_DRIVER")[0]);
+#endif
 
     memset(&in, 0, sizeof in);
     in.src_w = 320;
@@ -219,7 +252,7 @@ static void test_ini_first_launch(void)
     CHECK(h.wrote_defaults);
     CHECK(h.refresh == OB_REFRESH_VRR);
     CHECK(h.lores.mode == OB_MODE_SHARP);
-    CHECK(h.lores.sharp == OB_SHARP_1X);
+    CHECK(h.lores.sharp == OB_SHARP_3X);
     ob_host_free(&h);
 
     ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
@@ -257,36 +290,64 @@ static void test_scale_mode_options(void)
     ob_host_init(&h, OB_PORT_SNES, OB_PROFILE_DESKTOP);
     CHECK(!ob_snes_has_native());
 
+    CHECK(!h.has_hires);
     n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
-    CHECK(ob_items_contain(items, n, OB_ID_SCALE_MODE));
-    CHECK(ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
-    CHECK(ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
-    CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
-    CHECK(!ob_items_contain(items, n, OB_ID_MISTER_H));
+    CHECK(ob_items_contain(items, n, OB_ID_SCALE_LO));
+    CHECK(!ob_items_contain(items, n, OB_ID_SCALE_HI));
+    CHECK(!ob_items_contain(items, n, OB_ID_SCALE_MODE));
     CHECK(!ob_items_contain_label(items, n, "Native"));
     CHECK(!ob_items_contain_label(items, n, "Picture Native"));
 
+    n = ob_page_items(&h, OB_PAGE_SCALE_LO, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_MODE_MENU_LO));
+    CHECK(ob_items_contain(items, n, OB_ID_OPTS_MENU_LO));
+    CHECK(ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
+    CHECK(ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
+    CHECK(!ob_items_contain(items, n, OB_ID_SCALE_MODE));
+    CHECK(!ob_items_contain(items, n, OB_ID_RETROARCH_SHADER));
+    CHECK(!ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
+    CHECK(!ob_items_contain_label(items, n, "Native"));
+    CHECK(!ob_items_contain_label(items, n, "Picture Native"));
+    CHECK(!ob_items_contain_label(items, n, "RetroArch"));
+
+    n = ob_page_items(&h, OB_PAGE_MODE_LO, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_SCALE_MODE));
+    CHECK(ob_items_contain_label(items, n, "Sharp"));
+    CHECK(ob_items_contain_label(items, n, "CRT Monitor"));
+    CHECK(!ob_items_contain_label(items, n, "RetroArch"));
+    CHECK(!ob_items_contain_label(items, n, "RetroArch filters"));
+
+    n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
+    CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
+    CHECK(!ob_items_contain(items, n, OB_ID_MISTER_H));
+    CHECK(!ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
+
     ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_CRT);
     CHECK(h.live_preview);
-    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
     CHECK(ob_items_contain(items, n, OB_ID_CRT_LOOK));
-    CHECK(ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
     CHECK(!ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
     CHECK(!ob_items_contain(items, n, OB_ID_MISTER_RESET));
+    n = ob_page_items(&h, OB_PAGE_SCALE_LO, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
+    CHECK(ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
 
     ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_MISTER);
-    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
+    n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
     CHECK(ob_items_contain(items, n, OB_ID_MISTER_H));
     CHECK(ob_items_contain(items, n, OB_ID_MISTER_RESET));
-    CHECK(ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
     CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
+    CHECK(!ob_items_contain(items, n, OB_ID_MONITOR_KHZ));
 
     ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_SCALE2X);
-    n = ob_video_items(&h, OB_CLASS_LORES, items, OB_ITEMS_MAX);
-    CHECK(ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
+    n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_PRESENT_NOTE));
     CHECK(!ob_items_contain(items, n, OB_ID_SHARP_AMOUNT));
     CHECK(!ob_items_contain(items, n, OB_ID_CRT_LOOK));
     CHECK(!ob_items_contain(items, n, OB_ID_MISTER_H));
+    n = ob_page_items(&h, OB_PAGE_SCALE_LO, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_PICTURE_HEIGHT));
 
     n = ob_main_items(&h, items, OB_ITEMS_MAX);
     CHECK(ob_items_contain(items, n, OB_ID_ONLINE));
@@ -309,17 +370,21 @@ static void test_overlay_live_preview(void)
     CHECK(h.overlay_page == OB_PAGE_VIDEO);
     CHECK(h.lores.mode == OB_MODE_SHARP);
 
-    /* Scale Mode is a choice; step until CRT (live-preview). */
+    /* Video → Scaling. Scale Mode flips in place (Sharp, then CRT). */
+    for (i = 0; i < h.overlay.count; i++)
+        if (h.overlay.items[i].id == OB_ID_SCALE_LO) { h.overlay.sel = i; break; }
+    ob_overlay_input(&h, MDRT_MENU_OK);
+    CHECK(h.overlay_page == OB_PAGE_SCALE_LO);
     for (i = 0; i < h.overlay.count; i++)
         if (h.overlay.items[i].id == OB_ID_SCALE_MODE) { h.overlay.sel = i; break; }
-    while (h.lores.mode != OB_MODE_CRT) {
-        ob_scale_mode before = h.lores.mode;
-        ob_overlay_input(&h, MDRT_MENU_RIGHT);
-        CHECK(h.live_preview);
-        CHECK(h.lores.mode != before || h.lores.mode == OB_MODE_XBR4X);
-        if (h.lores.mode == before) break;
-    }
+    ob_overlay_input(&h, MDRT_MENU_OK);
+    CHECK(h.overlay_page == OB_PAGE_SCALE_LO);
+    CHECK(h.live_preview);
     CHECK(h.lores.mode == OB_MODE_CRT);
+    for (i = 0; i < h.overlay.count; i++)
+        if (h.overlay.items[i].id == OB_ID_OPTS_MENU_LO) { h.overlay.sel = i; break; }
+    ob_overlay_input(&h, MDRT_MENU_OK);
+    CHECK(h.overlay_page == OB_PAGE_OPTS_LO);
     for (i = 0; i < h.overlay.count; i++)
         if (h.overlay.items[i].id == OB_ID_CRT_LOOK) found_crt = 1;
     CHECK(found_crt);
@@ -354,9 +419,11 @@ static void test_filemenu_policy(void)
     nov = ob_video_items(&h, OB_CLASS_LORES, ov, OB_ITEMS_MAX);
     for (i = 0; i < nbar; i++)
         for (j = 0; j < nov; j++)
-            if (bar[i].id == ov[j].id && bar[i].id == OB_ID_SCALE_MODE) shared = 1;
+            if (bar[i].id == ov[j].id && bar[i].id == OB_ID_SCALE_LO) shared = 1;
     CHECK(shared);
-    CHECK(ob_items_contain(bar, nbar, OB_ID_SCALE_MODE));
+    CHECK(ob_items_contain(bar, nbar, OB_ID_SCALE_LO));
+    CHECK(!ob_items_contain(bar, nbar, OB_ID_SCALE_MODE));
+    CHECK(!ob_items_contain(bar, nbar, OB_ID_RESUME));
     CHECK(!ob_items_contain_label(bar, nbar, "Native"));
     ob_host_free(&h);
 }
