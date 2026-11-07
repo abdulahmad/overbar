@@ -19,6 +19,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#define make_dir(p) mkdir(p, 0755)
+#endif
+
 static int test_net_started;
 static int test_net_start(const ob_online *o, char *msg, int n)
 {
@@ -26,8 +29,6 @@ static int test_net_start(const ob_online *o, char *msg, int n)
     test_net_started++;
     return 0;
 }
-#define make_dir(p) mkdir(p, 0755)
-#endif
 
 #ifdef _WIN32
 /* ucrt does not declare POSIX setenv. _putenv_s updates the copy getenv reads.

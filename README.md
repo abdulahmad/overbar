@@ -140,6 +140,8 @@ cc ... $OVERBAR -Ithird_party/overbar/include -DOB_SDL_BASE ... -lm
 
 `-DOB_SDL_BASE` lets Overbar find the `mister` folder next to the program and draw the looks on several threads. Leave it out if you don't link SDL.
 
+On Windows, link `-lws2_32` too (Winsock, for online play in `src/net.c`).
+
 ### 3. 🚀 Start it up
 
 ```c
@@ -227,6 +229,47 @@ make shots             # redraws the pictures in this README from docs/samples (
 
 A plain build prints warnings without stopping, so a newer compiler still builds Overbar. CI is stricter and treats warnings as errors.
 
+### 🌐 Online play (lockstep)
+
+`overbar/net.h` is a game-agnostic netplay core for games that cannot save and load their state at a clean point, but that run the same on every machine given the same buttons. Nothing is saved or rolled back. Each machine sends its own pads' buttons for step `k + delay` while it runs step `k`, and a step runs only once every machine's buttons for it have come. Steps `0` to `delay - 1` have no buttons, so everyone starts the same.
+
+Up to 4 machines can play: the host and three guests. Pads go to the host first, then to the guests in join order, `here` pads each. The host passes every guest's buttons on to the others. Packets carry every step the other machine hasn't acknowledged yet, so a lost packet only costs a moment. The core has no threads and never blocks. It uses plain sockets (Winsock on Windows) and doesn't need SDL.
+
+```c
+static ob_net *net;
+
+/* the Online page's Host / Connect (ob_online_ops.start) */
+static int net_start(const ob_online *o, char *msg, int size)
+{
+    ob_net_game g = { "mygame 1.2 rom:1a2b3c4d rules:std", 2, &rules, sizeof rules };
+    net = ob_net_new(o, &g, msg, size);       /* the identity must match on every machine */
+    return net ? 0 : -1;
+}
+
+/* the frame loop */
+ob_net_poll(net);                             /* every frame, also while connecting */
+if (ob_net_state(net) == OB_NET_GO) {
+    uint16_t local[8], all[8];
+    read_my_pads(local, ob_net_my_pads(net)); /* this machine's pads, in pad order */
+    int r = ob_net_step(net, local, all);
+    if (r == 1) {                              /* run one game step with all[] as every pad's buttons */
+        game_step(all);
+        if (ob_net_step_count(net) % 60 == 0) ob_net_check(net, ob_net_step_count(net) - 1, game_hash());
+    } else if (r == 0) {
+        /* someone's buttons are late: draw the same picture, don't run the game, try again next frame */
+    }
+}
+```
+
+Hook it in where the game reads its pads once per step:
+
+- for a console port, once per video frame;
+- for NHL 95 PC, once per input record, which is every 3 frames.
+
+When `ob_net_step` returns 0, the game doesn't advance. Keep presenting the frame, pumping events and calling the function. It keeps the first `local` it was given for that step.
+
+On the guests, `ob_net_settings` gives the host's settings blob before step 0. `ob_net_status` gives the Online page a line such as `34 ms, delay 2, waiting 0.3%`. `ob_net_quit` says goodbye, and the others' sessions end at once with "NAME left". A machine that goes silent for 10 seconds ends the session. So does a desync found by `ob_net_check`, which ends it as "desync at step N" on every machine. `ob_net_lan_address` fits `ob_online_ops.lan_address`. `ob_net_simulate` adds loss, delay and jitter for testing.
+
 ### 🔄 Updating Overbar in a port
 
 Make the change here and push it. Then, in each port:
@@ -242,6 +285,7 @@ git add third_party/overbar && git commit -m "Overbar <commit>"
 
 ```
 include/overbar/overbar.h   the whole API
+include/overbar/net.h       online play: the lockstep core
 include/mdrt/menu.h         PulseMan's menu renderer
 src/scaler.c                where the picture goes in the window
 src/look.c                  the CRT looks and MiSTer filters in software
@@ -250,7 +294,8 @@ src/overlay.c               the overlay, the stats box
 src/filemenu.c              the Windows menu bar
 src/host.c                  settings, defaults, the ini file
 src/present.c               SDL_Renderer, GLES or OpenGL, and the handheld hints
-third_party/pulseman/       PulseMan's menu renderer and font
+src/net.c                   online play: handshake, settings, steps, desync check
+third_party/pulseman/       PulseMan's menu renderer and font, and its UDP sockets (udp.c)
 tools/shots.c               the README's pictures
 docs/samples/               the sample screens they are drawn from
 tests/                      the tests

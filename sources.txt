@@ -5,4 +5,5 @@ src/menu.c
 src/look.c
 src/overlay.c
 src/filemenu.c
+src/net.c
 third_party/pulseman/menu.c

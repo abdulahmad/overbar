@@ -17,6 +17,7 @@ LIB_OBJS = \
 	src/look.o \
 	src/overlay.o \
 	src/filemenu.o \
+	src/net.o \
 	third_party/pulseman/menu.o
 ifdef SDL
 CFLAGS += -DOVERBAR_SDL $(shell pkg-config --cflags sdl2)
@@ -25,7 +26,12 @@ endif
 
 .PHONY: all test check clean shots
 
-all: liboverbar.a tests/test_overbar
+# Winsock, for online play (src/net.c)
+ifeq ($(OS),Windows_NT)
+NETLIBS ?= -lws2_32
+endif
+
+all: liboverbar.a tests/test_overbar tests/test_net
 
 liboverbar.a: $(LIB_OBJS)
 	$(AR) rcs $@ $(LIB_OBJS)
@@ -33,8 +39,12 @@ liboverbar.a: $(LIB_OBJS)
 tests/test_overbar: tests/test_overbar.c liboverbar.a
 	$(CC) $(CFLAGS) -o $@ tests/test_overbar.c liboverbar.a -lm
 
-test: tests/test_overbar
+tests/test_net: tests/test_net.c liboverbar.a
+	$(CC) $(CFLAGS) -o $@ tests/test_net.c liboverbar.a -lm $(NETLIBS)
+
+test: tests/test_overbar tests/test_net
 	./tests/test_overbar
+	./tests/test_net
 
 # every source with the strictest port's flags (NHL94Genesis-C-Port's) in the SDL client build,
 # warnings as errors. CC=i686-w64-mingw32-gcc (and so on) checks a cross compiler; tests/check.sh
@@ -49,10 +59,12 @@ check:
 	done; rm -f check.o
 
 clean:
-	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe check.o tools/shots
+	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe tests/test_net tests/test_net.exe check.o tools/shots
 
-src/%.o: src/%.c include/overbar/overbar.h src/look_tables.h
+src/%.o: src/%.c include/overbar/overbar.h include/overbar/net.h src/look_tables.h
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+src/net.o: third_party/pulseman/udp.c
 
 third_party/pulseman/menu.o: third_party/pulseman/menu.c include/mdrt/menu.h
 	$(CC) $(CFLAGS) -c -o $@ $<

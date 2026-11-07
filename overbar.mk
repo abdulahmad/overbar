@@ -9,12 +9,14 @@
 #
 # third_party/pulseman/menu.c has the same file name as src/menu.c, so give its object another
 # name (pulseman_menu.o). Shell build scripts read sources.txt, which lists the same files.
+# src/net.c (online play) includes third_party/pulseman/udp.c itself, and on Windows needs
+# -lws2_32 at the link.
 
 OVERBAR_DIR          ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
-OVERBAR_LIB_NAMES    := scaler host present menu look overlay filemenu
+OVERBAR_LIB_NAMES    := scaler host present menu look overlay filemenu net
 OVERBAR_SRCS         := $(OVERBAR_LIB_NAMES:%=$(OVERBAR_DIR)/src/%.c)
 OVERBAR_PULSEMAN_SRC := $(OVERBAR_DIR)/third_party/pulseman/menu.c
-OVERBAR_HDRS         := $(OVERBAR_DIR)/include/overbar/overbar.h $(OVERBAR_DIR)/src/look_tables.h $(OVERBAR_DIR)/include/mdrt/menu.h
+OVERBAR_HDRS         := $(OVERBAR_DIR)/include/overbar/overbar.h $(OVERBAR_DIR)/include/overbar/net.h $(OVERBAR_DIR)/src/look_tables.h $(OVERBAR_DIR)/third_party/pulseman/udp.c $(OVERBAR_DIR)/include/mdrt/menu.h
 OVERBAR_INC          := -I$(OVERBAR_DIR)/include
 # the SDL client build (menu.c's SDL file listing and the MiSTer prescale's SDL types)
 OVERBAR_DEFS         := -DOB_SDL_BASE

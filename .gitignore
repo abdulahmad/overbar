@@ -2,6 +2,7 @@
 *.a
 *.exe
 /tests/test_overbar
+/tests/test_net
 /build/
 .DS_Store
 tools/shots

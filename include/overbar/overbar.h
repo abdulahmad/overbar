@@ -483,4 +483,6 @@ int ob_filemenu_client_size(int *w, int *h);              /* 0 if unknown (non-W
 }
 #endif
 
+#include "overbar/net.h"   /* online play's lockstep core */
+
 #endif
