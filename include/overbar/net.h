@@ -1,6 +1,12 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 abdulahmad and contributors
  *
+ * Netplay in two modes. A game that can save and load its state at a resumable point gives
+ * ob_net_game.states and plays with rollback (ob_net_frame): the other machines' buttons are
+ * guessed (each pad's last known, held) so a step never waits for the network, and when a guess
+ * turns out wrong the state from before that step is loaded and the steps since are played again,
+ * quietly (ob_net_replaying), with the right buttons. A game without states plays in lockstep:
+ *
  * Lockstep netplay: two to four machines play the same deterministic game, each step run with
  * every pad's buttons known. Nothing is saved or loaded: each machine sends its own pads' buttons
  * for step k + delay while it runs step k, and a step runs only once every machine's buttons for
@@ -26,10 +32,12 @@
 extern "C" {
 #endif
 
-#define OB_NET_PROTOCOL 1               /* the messages' version: every machine must have the same */
+#define OB_NET_PROTOCOL 2               /* the messages' version: every machine must have the same (2: each INPUT
+                                           carries the sender's step and lead, for rollback's time sync) */
 #define OB_NET_MAX_MACHINES 4           /* the host and three guests */
 #define OB_NET_MAX_PADS 8
 #define OB_NET_MAX_DELAY 30             /* steps */
+#define OB_NET_MAX_ROLLBACK 30          /* steps a rollback may play again, at most */
 #define OB_NET_MAX_SETTINGS (16u << 20) /* bytes of the host's settings */
 #define OB_NET_TIMEOUT_MS 10000         /* a machine not heard from for this long ends the session */
 
@@ -37,12 +45,28 @@ enum { OB_NET_CONNECTING, OB_NET_GO, OB_NET_ENDED };
 
 typedef struct ob_net ob_net;
 
+/* A game's states, for rollback. save: the simulation as it is now, at a resumable point before
+ * the next step, into out (cap bytes); returns its size, writing nothing when that is more than
+ * cap (the core makes room and asks again), or 0 when it cannot (then that step is not one a
+ * rollback can go back to). load: back to bytes save gave; 0, or -1 (the session ends). A state
+ * must hold everything the steps after it depend on (all the game's memory, the sound chip's,
+ * timers), and nothing outside the game: loading one must leave the next steps exactly as they
+ * were the first time. Neither is called outside ob_net_frame. */
+typedef struct ob_net_states {
+    void *user;
+    size_t (*save)(void *user, void *out, size_t cap);
+    int (*load)(void *user, const void *in, size_t size);
+} ob_net_states;
+
 typedef struct ob_net_game {
     const char *identity;       /* must match on every machine (build, game data, sim settings); up to 255 bytes */
     int pads;                   /* pads the game has (2..OB_NET_MAX_PADS); each machine plays o->here of them,
                                    the host's first, then the guests' in join order */
     const void *settings;       /* the host's, sent to the guests before step 0 (a guest's are not used) */
     size_t settings_size;       /* (0: none) */
+    const ob_net_states *states;   /* NULL: lockstep; else rollback through ob_net_frame (copied) */
+    int rollback;               /* most steps one rollback plays again (0: 12; at most OB_NET_MAX_ROLLBACK).
+                                   Each machine's own: it changes how far it guesses, never what it plays */
 } ob_net_game;
 
 /* Opens the socket and starts connecting (host: o->port; join: o->addr[:port], o->port when no
@@ -70,10 +94,35 @@ const char *ob_net_name_of(ob_net *n, int machine);   /* the host 0, then the gu
  * ob_net_step_count() - 1, which the client now runs. 0: not yet (call again soon; the local given
  * first for this step is the one used). -1: the session ended. */
 int ob_net_step(ob_net *n, const uint16_t *local, uint16_t *all);
-uint32_t ob_net_step_count(ob_net *n);  /* steps run so far */
+uint32_t ob_net_step_count(ob_net *n);  /* steps run so far (after a rollback: back to the state's step) */
+
+/* Rollback's step, called where ob_net_step would be: before each step, with this machine's
+ * buttons for it as ob_net_step takes them. resumable: whether the game could go on from here
+ * after a state is loaded (its game loop's wait; 0 in menus and loading screens, where it only
+ * guesses as far back as its last state, then waits as lockstep does). The core saves a state
+ * here when it may need one.
+ *   OB_NET_RUN (1): all[] holds the buttons of step ob_net_step_count() - 1 (guessed for pads
+ *     whose buttons have not come): run it. ob_net_replaying says whether it is a replay.
+ *   OB_NET_WAIT (0): not yet (the guesses would go further than a rollback can reach, or this
+ *     machine is ahead of the others and gives a step back): don't run the game, present the same
+ *     picture, call again soon.
+ *   OB_NET_RESTART (2): a guess was wrong and a state has been loaded (load was called): the step
+ *     count is back at the state's step. Go on from the resumable point the state was taken at
+ *     (longjmp there, or just carry on when the game's loop is the caller's) and call again.
+ *   -1: the session ended.
+ * Without states, it is ob_net_step (resumable unused, never RESTART). */
+enum { OB_NET_WAIT = 0, OB_NET_RUN = 1, OB_NET_RESTART = 2 };
+int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all);
+/* the step ob_net_frame last gave is played again after a rollback (it was played before with a
+ * guess): run it as fast as possible with no sound out, no picture presented and nothing done
+ * outside the game (no rumble, files, stats); the game's own sound state still runs */
+int ob_net_replaying(ob_net *n);
+uint32_t ob_net_confirmed(ob_net *n);   /* steps whose every button is known (a prefix) */
 
 /* every so often (every 60 steps, say): the simulation's hash after running step `step`. The host
- * compares the guests' with its own; a difference ends the session as "desync at step N". */
+ * compares the guests' with its own; a difference ends the session as "desync at step N". With
+ * rollback, give it each time the step is run (a replay's replaces the guess's): it is compared
+ * once every button up to that step is known. */
 void ob_net_check(ob_net *n, uint32_t step, uint64_t sim_hash);
 
 void ob_net_quit(ob_net *n);            /* goodbye to all (they end at once, told who left); state ENDED */

@@ -8,7 +8,8 @@
 
 - Initial integration for the NHL '94 Genesis and SNES native ports, as well as the NHL 94, 95 and 96 native PC ports.
 - Requires shakedown testing and bug fixing.
-- Netplay and PortMaster support are WIP.
+- PortMaster support is WIP.
+- Online play: Overbar's netplay core does rollback for a game that can save and load its state, and lockstep (input delay) for one that can't yet. Today NHL '94 Genesis plays with rollback (its own, from PulseMan), and NHL '94 SNES and NHL 95 PC play in lockstep. Rollback for SNES is in progress, and the PC ports need deterministic timing and save states first.
 
 ![The Overbar overlay open over NHL '94 on the Genesis](docs/images/overlay-main.png)
 
@@ -233,9 +234,17 @@ make shots             # redraws the pictures in this README from docs/samples (
 
 A plain build prints warnings without stopping, so a newer compiler still builds Overbar. CI is stricter and treats warnings as errors.
 
-### 🌐 Online play (lockstep)
+### 🌐 Online play (rollback or lockstep)
 
-`overbar/net.h` is a game-agnostic netplay core for games that cannot save and load their state at a clean point, but that run the same on every machine given the same buttons. Nothing is saved or rolled back. Each machine sends its own pads' buttons for step `k + delay` while it runs step `k`, and a step runs only once every machine's buttons for it have come. Steps `0` to `delay - 1` have no buttons, so everyone starts the same.
+`overbar/net.h` is a game-agnostic netplay core for games that run the same on every machine given the same buttons. It plays in one of two modes:
+
+- **Rollback**, for a game that can save and load its state at a clean point (`ob_net_game.states`). A step never waits for the network. The other machines' buttons are guessed (each pad's last known buttons, held), and when a guess turns out wrong, the core loads the state from before that step and the game plays the steps since again, quietly, with the right buttons.
+- **Lockstep**, for a game that can't save its state yet. Nothing is saved or rolled back, and a step waits until every machine's buttons for it have come.
+
+#### Lockstep
+
+
+Each machine sends its own pads' buttons for step `k + delay` while it runs step `k`, and a step runs only once every machine's buttons for it have come. Steps `0` to `delay - 1` have no buttons, so everyone starts the same.
 
 Up to 4 machines can play: the host and three guests. Pads go to the host first, then to the guests in join order, `here` pads each. The host passes every guest's buttons on to the others. Packets carry every step the other machine hasn't acknowledged yet, so a lost packet only costs a moment. The core has no threads and never blocks. It uses plain sockets (Winsock on Windows) and doesn't need SDL.
 
@@ -274,6 +283,41 @@ When `ob_net_step` returns 0, the game doesn't advance. Keep presenting the fram
 
 On the guests, `ob_net_settings` gives the host's settings blob before step 0. `ob_net_status` gives the Online page a line such as `34 ms, delay 2, waiting 0.3%`. `ob_net_quit` says goodbye, and the others' sessions end at once with "NAME left". A machine that goes silent for 10 seconds ends the session. So does a desync found by `ob_net_check`, which ends it as "desync at step N" on every machine. `ob_net_lan_address` fits `ob_online_ops.lan_address`. `ob_net_simulate` adds loss, delay and jitter for testing.
 
+#### Rollback
+
+Give the core the game's states and call `ob_net_frame` where you would call `ob_net_step`:
+
+```c
+static size_t save(void *user, void *out, size_t cap)    /* the whole simulation, at a resumable point */
+{
+    if (cap >= sizeof sim) memcpy(out, &sim, sizeof sim);
+    return sizeof sim;                                    /* (more than cap: the core makes room and asks again) */
+}
+static int load(void *user, const void *in, size_t size) { memcpy(&sim, in, size); return 0; }
+
+static const ob_net_states states = { NULL, save, load };
+ob_net_game g = { "mygame 1.2 rom:1a2b3c4d", 2, &rules, sizeof rules, &states, 8 /* most steps one rollback replays */ };
+
+/* the frame loop */
+int r = ob_net_frame(net, at_game_loop_wait, local, all);
+if (r == OB_NET_RUN) {
+    quiet = ob_net_replaying(net);          /* a replay: no sound out, no picture, nothing outside the game */
+    game_step(all);
+    if ((ob_net_step_count(net) - 1) % 60 == 59) ob_net_check(net, ob_net_step_count(net) - 1, game_hash());
+} else if (r == OB_NET_RESTART) {
+    /* a state was loaded: go on from the point it was taken at (longjmp there in a game that runs
+       its own loop), then call ob_net_frame again */
+}
+/* OB_NET_WAIT: as lockstep's 0 */
+```
+
+- **Resumable points.** `resumable` says whether the game could go on from here after a state is loaded, such as its game loop's wait. In menus and loading screens pass 0: the core guesses only as far as its last state can reach, then waits for each step's buttons, as lockstep does.
+- **Replays.** While `ob_net_replaying` is set, run the step as fast as you can. Send no sound to the speakers and present no picture. The game's own sound chip still runs, because its state is part of the game's.
+- **What a state must hold.** Everything the next steps depend on (the game's memory, the sound chip, timers), and nothing outside the game. Loading a state must leave the next steps exactly as they were the first time.
+- **Time sync.** A machine that runs ahead of the others gives a step back now and then (it returns `OB_NET_WAIT`), so neither side keeps rolling back.
+- **Desync check.** Call `ob_net_check` each time a step is run, replays included. It is compared once every button up to that step is known.
+- `ob_net_status` adds the average rollback, like `52 ms, delay 1, rollback 3.3 steps, waiting 0.0%`.
+
 ### 🔄 Updating Overbar in a port
 
 Make the change here and push it. Then, in each port:
@@ -289,7 +333,7 @@ git add third_party/overbar && git commit -m "Overbar <commit>"
 
 ```
 include/overbar/overbar.h   the whole API
-include/overbar/net.h       online play: the lockstep core
+include/overbar/net.h       online play: rollback and lockstep
 include/mdrt/menu.h         PulseMan's menu renderer
 src/scaler.c                where the picture goes in the window
 src/look.c                  the CRT looks and MiSTer filters in software
@@ -298,7 +342,7 @@ src/overlay.c               the overlay, the stats box
 src/filemenu.c              the Windows menu bar
 src/host.c                  settings, defaults, the ini file
 src/present.c               SDL_Renderer, GLES or OpenGL, and the handheld hints
-src/net.c                   online play: handshake, settings, steps, desync check
+src/net.c                   online play: handshake, settings, steps, rollback, desync check
 third_party/pulseman/       PulseMan's menu renderer and font, and its UDP sockets (udp.c)
 tools/shots.c               the README's pictures
 docs/samples/               the sample screens they are drawn from
