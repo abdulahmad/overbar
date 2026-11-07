@@ -19,6 +19,7 @@ static const char *mode_label[OB_MODE_COUNT] = {
 };
 static const char *refresh_name[3] = { "60", "70", "vrr" };
 static const char *pointer_name[3] = { "auto", "show", "hide" };
+static const char *net_role_name[3] = { "host", "join", "both" };
 static const char *height_name[4] = { "fit", "integer", "overscan", "auto-crop" };
 static const char *height_label[4] = {
     "Fit", "Integer", "Integer+Overscan", "Auto Crop"
@@ -37,7 +38,6 @@ static void caps_from_port(ob_host *h)
     h->has_sound = 1;
     h->console_dar = (h->port == OB_PORT_GENESIS || h->port == OB_PORT_SNES
                       || h->port == OB_PORT_GENERIC);
-    h->online_ready = (h->port == OB_PORT_GENESIS);
 }
 
 /* The 95 PC SDL port's MiSTer defaults. Paths are under mister/; an empty one is none. */
@@ -81,6 +81,11 @@ void ob_defaults_apply(ob_host *h, ob_profile profile)
     h->volume = 80;
     h->mute = 0;
     h->replay_secs_index = 2;   /* 20 s, PulseMan README default */
+    memset(&h->online, 0, sizeof h->online);
+    h->online.port = OB_NET_PORT_DEFAULT;
+    h->online.delay = 2;
+    h->online.here = 1;
+    h->online.all = 2;
     h->gif_scale = 0;
     h->recording = 0;
     h->live_preview = 1;
@@ -362,6 +367,9 @@ int ob_host_save_ini(const ob_host *h)
     if (h->has_hires) write_look(f, "hires", &h->hires, 0, 0);
     fprintf(f, "volume=%d\n", h->volume);
     fprintf(f, "mute=%s\n", h->mute ? "on" : "off");
+    fprintf(f, "online_name=%s\nonline_role=%s\nonline_address=%s\nonline_port=%d\nonline_delay=%d\nonline_here=%d\nonline_players=%d\n",
+            h->online.name, net_role_name[h->online.role % 3], h->online.addr, h->online.port, h->online.delay,
+            h->online.here, h->online.all);
     fclose(f);
     return 1;
 }
@@ -393,6 +401,13 @@ int ob_host_load_ini(ob_host *h, const char *path)
                 : !strcmp(v, "hide") || !strcmp(v, "always hide") ? 2 : 0;
         else if (!strcmp(k, "volume")) h->volume = atoi(v);
         else if (!strcmp(k, "mute")) h->mute = !strcmp(v, "on");
+        else if (!strcmp(k, "online_name")) snprintf(h->online.name, sizeof h->online.name, "%.*s", OB_NET_NAME, v);
+        else if (!strcmp(k, "online_role")) h->online.role = name_index(v, net_role_name, 3, 0);
+        else if (!strcmp(k, "online_address")) snprintf(h->online.addr, sizeof h->online.addr, "%.*s", 95, v);
+        else if (!strcmp(k, "online_port")) h->online.port = atoi(v) > 0 && atoi(v) < 65536 ? atoi(v) : OB_NET_PORT_DEFAULT;
+        else if (!strcmp(k, "online_delay")) h->online.delay = atoi(v) < 0 ? 0 : atoi(v) > 10 ? 10 : atoi(v);
+        else if (!strcmp(k, "online_here")) h->online.here = atoi(v) < 1 ? 1 : atoi(v);
+        else if (!strcmp(k, "online_players")) h->online.all = atoi(v) < 2 ? 2 : atoi(v);
         else if (!strncmp(k, "lores_", 6)) apply_look_key(&h->lores, k + 6, v);
         else if (!strncmp(k, "hires_", 6)) apply_look_key(&h->hires, k + 6, v);
     }
@@ -486,9 +501,30 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
     case OB_ID_CAP_SECONDS: h->replay_secs_index = value; break;
     case OB_ID_CAP_GIFSCALE: h->gif_scale = value; break;
     case OB_ID_CAP_RECORD: h->recording = !h->recording; break;
+    case OB_ID_NET_ROLE: h->online.role = value; h->online_msg[0] = 0; break;
+    case OB_ID_NET_DELAY: h->online.delay = value; break;
+    case OB_ID_NET_HERE: h->online.here = value; if (h->online.all <= value) h->online.all = value + 1; break;
+    case OB_ID_NET_ALL: h->online.all = value; break;
     default: return 0;
     }
     h->live_preview = 1;
     if (h->ini_path[0]) ob_host_save_ini(h);
     return 1;
+}
+
+void ob_online_set_ops(ob_host *h, const ob_online_ops *ops)
+{
+    if (!h) return;
+    if (ops) h->online_ops = *ops;
+    else memset(&h->online_ops, 0, sizeof h->online_ops);
+    h->online_ready = h->online_ops.start != NULL;
+}
+
+void ob_online_open(ob_host *h)
+{
+    if (!h) return;
+    if (!h->overlay_open) ob_overlay_open(h);
+    h->overlay_page = OB_PAGE_ONLINE;
+    h->overlay.sel = 0;
+    ob_overlay_build(h);
 }

@@ -93,6 +93,84 @@ static void add_text(ob_item *out, int *n, int cap, int id, const char *label, c
     if (detail) snprintf(it->detail, sizeof it->detail, "%s", detail);
 }
 
+/* The Online page, as the Genesis port's own: who, the role, where, the delay, then Host / Connect.
+ * While a session goes on: its line and Leave. Fields carry their text in detail. */
+static const char *const net_role_choices[3] = { "host", "join", "both connect" };
+
+static ob_item *add_field(ob_item *out, int *n, int cap, int id, const char *label, const char *text)
+{
+    ob_item *it = add(out, n, cap, id, MDRT_ITEM_FIELD, label);
+    if (it) snprintf(it->detail, sizeof it->detail, "%s", text ? text : "");
+    return it;
+}
+
+static ob_item *add_number(ob_item *out, int *n, int cap, int id, const char *label, int value, int lo, int hi)
+{
+    ob_item *it = add(out, n, cap, id, MDRT_ITEM_NUMBER, label);
+    if (!it) return NULL;
+    it->value = value < lo ? lo : value > hi ? hi : value;
+    it->nchoices = hi;          /* the overlay's range: lo from ob_online_number_range */
+    return it;
+}
+
+static int online_items(const ob_host *h, ob_item *out, int n, int cap)
+{
+    const ob_online *o = &h->online;
+    const ob_online_ops *ops = &h->online_ops;
+    char line[160] = "", port[8];
+    int on = ops->status ? ops->status(line, sizeof line) : 0;
+    int roles = ops->roles == 2 ? 2 : 3, role = o->role % roles;
+    int most = ops->max_pads > 2 ? ops->max_pads : 2;
+    if (on) {
+        add_text(out, &n, cap, OB_ID_ONLINE_NOTE, "Session", line[0] ? line : "connecting");
+        add_action(out, &n, cap, OB_ID_NET_LEAVE, "Leave session", NULL);
+        return n;
+    }
+    add_field(out, &n, cap, OB_ID_NET_NAME, "Name", o->name);
+    add_choice(out, &n, cap, OB_ID_NET_ROLE, "Role", net_role_choices, roles, role);
+    if (role != 0) add_field(out, &n, cap, OB_ID_NET_ADDR, role == 1 ? "Host address" : "Their address", o->addr);
+    snprintf(port, sizeof port, "%d", o->port);
+    add_field(out, &n, cap, OB_ID_NET_PORT, role == 1 ? "Host port" : "Port", port);
+    add_number(out, &n, cap, OB_ID_NET_DELAY, "Input delay", o->delay, 0, ops->max_delay > 0 ? ops->max_delay : 10);
+    if (most > 2) {
+        add_number(out, &n, cap, OB_ID_NET_HERE, "Players here", o->here, 1, most - 1);
+        if (role != 1) add_number(out, &n, cap, OB_ID_NET_ALL, "Total players", o->all, 2, most);
+    }
+    add_action(out, &n, cap, OB_ID_NET_START, role == 0 ? "Host game" : "Connect", NULL);
+    if (h->online_msg[0]) add_text(out, &n, cap, OB_ID_ONLINE_NOTE, h->online_msg, NULL);
+    else if (line[0]) add_text(out, &n, cap, OB_ID_ONLINE_NOTE, line, NULL);
+    begin_group(out, &n, cap);
+    if (ops->lan_address) {
+        char lan[64] = "", where[96];
+        ops->lan_address(lan, sizeof lan);
+        snprintf(where, sizeof where, "%s, port %d", lan[0] ? lan : "none found", o->port);
+        add_text(out, &n, cap, OB_ID_ONLINE_NOTE, "LAN address", where);
+    }
+    {
+        static const char *const help[3][3] = {
+            { "Share your public address. Forward this", "UDP port, or play on a LAN or a VPN", "(such as Tailscale)." },
+            { "The host's public, LAN or VPN address", "(add :port for another port).", "Pads: the host's first, then by join order." },
+            { "Two machines: each enters the other's", "address. Most routers need no setup.", "The two games decide who is player 1." },
+        };
+        int i;
+        for (i = 0; i < 3; i++) add_text(out, &n, cap, OB_ID_ONLINE_NOTE, help[role][i], NULL);
+        add_text(out, &n, cap, OB_ID_ONLINE_NOTE, "Everyone needs this build and game.", NULL);
+    }
+    return n;
+}
+
+int ob_online_number_range(int id, int *lo, int *step, const char **unit)
+{
+    *step = 1;
+    *unit = NULL;
+    switch (id) {
+    case OB_ID_NET_DELAY: *lo = 0; *unit = " frames"; return 1;
+    case OB_ID_NET_HERE: *lo = 1; return 1;
+    case OB_ID_NET_ALL: *lo = 2; return 1;
+    default: return 0;
+    }
+}
+
 int ob_items_contain(const ob_item *items, int n, int id)
 {
     int i;
@@ -415,8 +493,12 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
     case OB_PAGE_ONLINE:
-        if (h->online_ready) add_text(out, &n, cap, OB_ID_ONLINE_NOTE, "PulseMan netplay", "host / join");
-        else add_text(out, &n, cap, OB_ID_ONLINE_NOTE, "Online Play", "not in this build");
+        if (!h->online_ready) {
+            add_text(out, &n, cap, OB_ID_ONLINE_NOTE, "Online Play", "not in this build");
+            add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
+            return n;
+        }
+        n = online_items(h, out, n, cap);
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
     case OB_PAGE_KEYS:

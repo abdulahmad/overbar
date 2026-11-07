@@ -18,6 +18,14 @@
 #else
 #include <sys/stat.h>
 #include <unistd.h>
+
+static int test_net_started;
+static int test_net_start(const ob_online *o, char *msg, int n)
+{
+    (void)o; (void)msg; (void)n;
+    test_net_started++;
+    return 0;
+}
 #define make_dir(p) mkdir(p, 0755)
 #endif
 
@@ -390,6 +398,36 @@ static void test_scale_mode_options(void)
     n = ob_main_items(&h, items, OB_ITEMS_MAX);
     CHECK(ob_items_contain(items, n, OB_ID_ONLINE));
     CHECK(!h.online_ready);
+    {
+        static int started;
+        ob_online_ops ops;
+        ob_item it2[OB_ITEMS_MAX];
+        int k;
+        memset(&ops, 0, sizeof ops);
+        ops.max_pads = 4;
+        ops.start = test_net_start;
+        ob_online_set_ops(&h, &ops);
+        CHECK(h.online_ready);
+        h.online.role = 1;
+        k = ob_page_items(&h, OB_PAGE_ONLINE, it2, OB_ITEMS_MAX);
+        CHECK(ob_items_contain(it2, k, OB_ID_NET_NAME));
+        CHECK(ob_items_contain(it2, k, OB_ID_NET_ADDR));
+        CHECK(ob_items_contain(it2, k, OB_ID_NET_HERE));
+        CHECK(!ob_items_contain(it2, k, OB_ID_NET_ALL));      /* a joiner does not set the total */
+        CHECK(ob_items_contain(it2, k, OB_ID_NET_START));
+        h.online.role = 0;
+        k = ob_page_items(&h, OB_PAGE_ONLINE, it2, OB_ITEMS_MAX);
+        CHECK(!ob_items_contain(it2, k, OB_ID_NET_ADDR));
+        ob_online_open(&h);
+        CHECK(h.overlay_open && h.overlay_page == OB_PAGE_ONLINE);
+        mdrt_menu_select(&h.overlay, OB_ID_NET_START);
+        started = test_net_started;
+        ob_overlay_input(&h, MDRT_MENU_OK);
+        CHECK(test_net_started == started + 1);
+        CHECK(!h.overlay_open);                               /* on its way: the overlay closes */
+        ob_online_set_ops(&h, NULL);
+        CHECK(!h.online_ready);
+    }
     ob_host_free(&h);
 }
 

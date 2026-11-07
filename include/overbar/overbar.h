@@ -163,6 +163,15 @@ enum {
     OB_ID_MISTER_DIR,           /* a folder inside the MiSTer tree */
     OB_ID_MISTER_FILE,          /* a .txt or a preset .ini; value is the kind */
     OB_ID_PIXEL_SIZE,           /* Scale2x, MMPX, xBR: the size (index into ob_pixel_sizes) */
+    OB_ID_NET_NAME,             /* Online page: the player's name (a field) */
+    OB_ID_NET_ROLE,             /* host, join, both connect */
+    OB_ID_NET_ADDR,             /* the host's (or the other's) address (a field) */
+    OB_ID_NET_PORT,             /* the UDP port (a field) */
+    OB_ID_NET_DELAY,            /* input delay in frames */
+    OB_ID_NET_HERE,             /* players at this machine (games for more than two) */
+    OB_ID_NET_ALL,              /* players in all (the host's) */
+    OB_ID_NET_START,            /* Host game / Connect */
+    OB_ID_NET_LEAVE,            /* Leave session */
     OB_ID_ADDON = 1000
 };
 
@@ -207,6 +216,35 @@ typedef struct ob_look {
     char mister_path[5][192];
 } ob_look;
 
+/* ---- online play ------------------------------------------------------
+ * The Online page is Overbar's; the session is the client's (its netplay, the game it restarts).
+ * Roles: 0 host, 1 join, 2 both connect (each types the other's address). */
+#define OB_NET_NAME 24
+#define OB_NET_PORT_DEFAULT 7000
+typedef struct ob_online {
+    char name[OB_NET_NAME + 1];
+    int role;
+    char addr[96];
+    int port;
+    int delay;                  /* input delay, frames */
+    int here, all;              /* players at this machine, and in all (the host's); games for more than two */
+} ob_online;
+
+typedef struct ob_online_ops {
+    int max_pads;               /* players the game takes (2: no Players rows) */
+    int max_delay;              /* the input delay's top (0: 10) */
+    int roles;                  /* 2: host and join; 3: also both connect (0: 3) */
+    /* start a session from these settings: 0 on the way (the overlay closes), else -1 with msg
+     * saying why (it stays on the page) */
+    int (*start)(const ob_online *o, char *msg, int msg_size);
+    void (*leave)(void);
+    /* 1 while a session goes on, else 0; line: what it is doing (ping, delay, rollback) or why the
+     * last one ended ("" none) */
+    int (*status)(char *line, int line_size);
+    /* this machine's LAN address, for the host to share (NULL: not shown) */
+    const char *(*lan_address)(char *buf, int size);
+} ob_online_ops;
+
 typedef struct ob_host {
     ob_port port;
     ob_profile profile;
@@ -221,7 +259,7 @@ typedef struct ob_host {
     int replay_secs_index;      /* 0 off, 1 10s, 2 20s, 3 30s, 4 60s */
     int gif_scale;              /* 0 1x, 1 2x, 2 3x */
     int recording;
-    int online_ready;           /* Genesis PulseMan net; else "not in this build" */
+    int online_ready;           /* the client gave Online hooks (ob_online_set_ops); else "not in this build" */
     int has_sound;
     int has_hires;
     int console_dar;            /* 1: source 224, dest unit 240 */
@@ -241,6 +279,9 @@ typedef struct ob_host {
     int naddons;
     void *addon_ctx;
     mdrt_menu overlay;
+    ob_online online;           /* the Online page's settings (kept in the ini) */
+    ob_online_ops online_ops;
+    char online_msg[128];       /* why the last Host / Connect did not start */
 } ob_host;
 
 typedef struct ob_item {
@@ -350,6 +391,7 @@ typedef struct ob_shell {
     int (*vsync)(int v);          /* -1 reads the running window */
     int (*stats)(int v);
     void (*quit)(void);
+    void (*controllers)(void);   /* the bar's Input > Controllers: the client's own pad setup (NULL: the overlay's Input page) */
 } ob_shell;
 
 void ob_shell_set(const ob_shell *hooks);                 /* NULL clears */
@@ -406,6 +448,17 @@ int ob_overlay_input(ob_host *h, int mdrt_input);         /* applies + live-prev
 int ob_overlay_pointer(ob_host *h, int x, int y, int w, int hgt, int what);
 void ob_overlay_draw(ob_host *h, uint32_t *px, int w, int hgt, int pitch);
 int ob_overlay_toggle_key(ob_host *h, int sdl_scancode);  /* ` / F11; 1 if handled */
+/* A field (Name, Address, Port) takes typed text while it is being edited: the client turns on
+ * SDL_StartTextInput while ob_overlay_editing says so and passes SDL_TEXTINPUT's text here, and
+ * Backspace as MDRT_MENU_LEFT. 1 when the text was used. */
+int ob_overlay_editing(const ob_host *h);
+int ob_overlay_text(ob_host *h, const char *utf8);
+/* Online hooks (NULL clears: the page says "not in this build"). Opens the overlay on the Online
+ * page when page is set (the bar's Online Play item). */
+void ob_online_set_ops(ob_host *h, const ob_online_ops *ops);
+void ob_online_open(ob_host *h);
+/* the Online page's numbers: their bottom, step and unit (1 for those ids) */
+int ob_online_number_range(int id, int *lo, int *step, const char **unit);
 int ob_stats_toggle_key(ob_host *h, int sdl_scancode);    /* F12; 1 if handled */
 
 /* ---- file-menu shell (Win32 CreateMenu; other OS bars later) */

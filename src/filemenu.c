@@ -224,7 +224,7 @@ static void apply_marks(void)
     static const int pages[] = {
         OB_PAGE_VIDEO, OB_PAGE_SCALE_HI, OB_PAGE_SCALE_LO, OB_PAGE_MODE_HI, OB_PAGE_MODE_LO,
         OB_PAGE_OPTS_HI, OB_PAGE_OPTS_LO, OB_PAGE_SOUND, OB_PAGE_INPUT,
-        OB_PAGE_CAPTURE, OB_PAGE_ONLINE, OB_PAGE_KEYS
+        OB_PAGE_CAPTURE, OB_PAGE_KEYS
     };
     ob_item items[OB_ITEMS_MAX];
     int p, n, i, c;
@@ -279,7 +279,11 @@ static void build_bar(void)
         /* Resume and Quit are the overlay's. A bar has no game to resume. */
         if (it->id == OB_ID_RESUME || it->id == OB_ID_QUIT) continue;
         page = page_of(it->id);
-        if (page >= 0) {
+        if (page == OB_PAGE_ONLINE) {
+            /* the Online page types into fields: the bar opens it in the overlay */
+            AppendMenuA(g_bar, MF_STRING | (g_host->online_ready ? 0 : MF_GRAYED),
+                        add_cmd(OB_ID_ONLINE, 0, OB_CLASS_LORES), "Online Play...");
+        } else if (page >= 0) {
             ob_item sub[OB_ITEMS_MAX];
             int ns = ob_page_items(g_host, page, sub, OB_ITEMS_MAX);
             HMENU sm = CreatePopupMenu();
@@ -321,7 +325,13 @@ static void apply_cmd(int id, int value)
         if (g_shell.quit) g_shell.quit();
         return;
     }
+    if (id == OB_ID_ONLINE) {
+        ob_online_open(g_host);
+        if (g_shell.redraw) g_shell.redraw();
+        return;
+    }
     if (id == OB_ID_CONTROLLERS) {
+        if (g_shell.controllers) { g_shell.controllers(); return; }
         if (!g_host->overlay_open) ob_overlay_open(g_host);
         g_host->overlay_page = OB_PAGE_INPUT;
         ob_overlay_build(g_host);

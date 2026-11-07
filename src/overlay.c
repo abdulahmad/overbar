@@ -8,6 +8,7 @@
 #include "overbar/overbar.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char *page_title(const ob_host *h, int page)
@@ -71,8 +72,22 @@ void ob_overlay_build(ob_host *h)
             else
                 add = mdrt_menu_add_choice(m, it->id, it->label, it->choices, it->nchoices, it->value);
         }
-        else if (it->kind == MDRT_ITEM_NUMBER)
-            add = mdrt_menu_add_number(m, it->id, it->label, it->value, 0, it->nchoices ? it->nchoices : 100, 5, "%");
+        else if (it->kind == MDRT_ITEM_NUMBER) {
+            int lo, step;
+            const char *unit;
+            if (ob_online_number_range(it->id, &lo, &step, &unit))
+                add = mdrt_menu_add_number(m, it->id, it->label, it->value, lo, it->nchoices, step, unit);
+            else
+                add = mdrt_menu_add_number(m, it->id, it->label, it->value, 0, it->nchoices ? it->nchoices : 100, 5, "%");
+        }
+        else if (it->kind == MDRT_ITEM_FIELD) {
+            static const char name_chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_.'!?";
+            static const char addr_chars[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.:-[]";
+            add = it->id == OB_ID_NET_PORT ? mdrt_menu_add_field(m, it->id, it->label, it->detail, 5, "0123456789")
+                : it->id == OB_ID_NET_ADDR ? mdrt_menu_add_field(m, it->id, it->label, it->detail, 60, addr_chars)
+                : mdrt_menu_add_field(m, it->id, it->label, it->detail, OB_NET_NAME, name_chars);
+            continue;
+        }
         else
             add = mdrt_menu_add(m, it->id, it->kind, it->label);
         if (add && it->kind == MDRT_ITEM_ACTION) add->value = it->value;
@@ -175,6 +190,36 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
     case OB_ID_CAPTURE: go_page(h, OB_PAGE_CAPTURE); return 1;
     case OB_ID_ONLINE: go_page(h, OB_PAGE_ONLINE); return 1;
     case OB_ID_KEYS: go_page(h, OB_PAGE_KEYS); return 1;
+    case OB_ID_NET_NAME:
+    case OB_ID_NET_ADDR:
+    case OB_ID_NET_PORT: {
+        mdrt_menu_item *it = mdrt_menu_find(&h->overlay, id);
+        const char *t = it ? it->detail : "";
+        if (id == OB_ID_NET_NAME) snprintf(h->online.name, sizeof h->online.name, "%.*s", OB_NET_NAME, t);
+        else if (id == OB_ID_NET_ADDR) snprintf(h->online.addr, sizeof h->online.addr, "%s", t);
+        else h->online.port = atoi(t) > 0 && atoi(t) < 65536 ? atoi(t) : OB_NET_PORT_DEFAULT;
+        h->online_msg[0] = 0;
+        if (h->ini_path[0]) ob_host_save_ini(h);
+        ob_overlay_build(h);
+        mdrt_menu_select(&h->overlay, id);
+        return 1;
+    }
+    case OB_ID_NET_START:
+        h->online_msg[0] = 0;
+        if (h->online.role != 0 && !h->online.addr[0])
+            snprintf(h->online_msg, sizeof h->online_msg, "Type their address first");
+        else if (h->online_ops.start
+                 && h->online_ops.start(&h->online, h->online_msg, (int)sizeof h->online_msg) == 0) {
+            ob_overlay_close(h);
+            return 0;
+        }
+        ob_overlay_build(h);
+        mdrt_menu_select(&h->overlay, OB_ID_NET_START);
+        return 1;
+    case OB_ID_NET_LEAVE:
+        if (h->online_ops.leave) h->online_ops.leave();
+        ob_overlay_build(h);
+        return 1;
     case OB_ID_BACK:
         if (mister_up(h)) { ob_overlay_build(h); return 1; }
         go_page(h, parent_page(h, h->overlay_page));
@@ -275,6 +320,18 @@ void ob_overlay_draw(ob_host *h, uint32_t *px, int w, int hgt, int pitch)
             if ((p & 0xFFFFFFu) == 0x010101u) px[y * pitch + x] = 0;
             else px[y * pitch + x] = 0xFF000000u | (p & 0xFFFFFFu);
         }
+}
+
+int ob_overlay_editing(const ob_host *h)
+{
+    return h && h->overlay_open && h->overlay.editing >= 0;
+}
+
+int ob_overlay_text(ob_host *h, const char *utf8)
+{
+    if (!ob_overlay_editing(h) || !utf8) return 0;
+    mdrt_menu_type(&h->overlay, utf8);
+    return 1;
 }
 
 int ob_overlay_toggle_key(ob_host *h, int sdl_scancode)
