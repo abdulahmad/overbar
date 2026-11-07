@@ -510,6 +510,70 @@ static void test_mister_presets(void)
     ob_host_free(&h);
 }
 
+static int lum_of(uint32_t p) { return (int)((p >> 16) & 255) + (int)((p >> 8) & 255) + (int)(p & 255); }
+
+static void test_look_render(void)
+{
+    ob_host h;
+    uint32_t src[8 * 4], *px = NULL;
+    int i, w = 0, ht = 0, edge[3];
+    FILE *f;
+    for (i = 0; i < 8 * 4; i++) src[i] = 0xFF808080u;
+    ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+    h.lores.mode = OB_MODE_SHARP;
+    CHECK(!ob_look_renders(&h.lores));
+    CHECK(!ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+    h.lores.mode = OB_MODE_CRT;
+    for (i = 0; i < 3; i++) {                       /* light, medium, strong: 8 rows a line */
+        h.lores.crt = (ob_crt_look)i;
+        CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+        CHECK(w == 32 && ht == 32);
+        CHECK(lum_of(px[3 * 32 + 16]) > lum_of(px[0 * 32 + 16]));   /* the line's centre over its edge */
+        edge[i] = lum_of(px[0 * 32 + 16]);
+    }
+    CHECK(edge[0] > edge[2]);                       /* strong has the darker gaps */
+    h.lores.crt = OB_CRT_SOFT;
+    CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+    CHECK(lum_of(px[3 * 32 + 16]) > lum_of(px[0 * 32 + 16]));
+    CHECK(px[3 * 32 + 15] == px[3 * 32 + 16]);      /* no grille */
+    h.lores.crt = OB_CRT_SOFT_APERTURE;
+    CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+    CHECK(px[3 * 32 + 15] != px[3 * 32 + 16]);      /* the grille's columns */
+    h.lores.crt = OB_CRT_CUSTOM;
+    h.lores.c_mask = 0;
+    h.lores.c_dark = 1;
+    h.lores.c_gamma = 1;
+    CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+    CHECK(px[3 * 32 + 15] == px[3 * 32 + 16]);      /* no mask */
+    CHECK(lum_of(px[3 * 32 + 16]) > lum_of(px[0 * 32 + 16]));
+    CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 4000, 3000, &px, &w, &ht));
+    CHECK(w == 4000 / 3 && ht == 1000);             /* above the cap: a whole fraction */
+
+    make_dir("mister");
+    make_dir("mister/Shadow_Masks");
+    f = fopen("mister/Shadow_Masks/test_mask.txt", "w");
+    CHECK(f != NULL);
+    if (f) {
+        fputs("# two columns: the first lit, the second dark\nv2\n2,1\n7f0,000\n", f);
+        fclose(f);
+    }
+    h.lores.mode = OB_MODE_MISTER;
+    snprintf(h.lores.mister_path[3], sizeof h.lores.mister_path[3], "%s", "Shadow_Masks/test_mask.txt");
+    h.lores.mask_scale = 1;
+    CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+    CHECK(lum_of(px[3 * 32 + 16]) > 0);
+    CHECK(lum_of(px[3 * 32 + 17]) == 0);            /* the mask's dark column */
+    h.lores.mask_scale = 2;
+    CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+    CHECK(lum_of(px[3 * 32 + 17]) > 0 && lum_of(px[3 * 32 + 18]) == 0);
+    h.lores.mister_path[3][0] = 0;
+    CHECK(ob_look_render(&h.lores, src, 8, 4, 8, 32, 32, &px, &w, &ht));
+    CHECK(lum_of(px[3 * 32 + 17]) > 0);             /* no mask */
+    remove("mister/Shadow_Masks/test_mask.txt");
+    rmdir("mister/Shadow_Masks");
+    ob_host_free(&h);
+}
+
 int main(void)
 {
     test_scaler_console();
@@ -523,6 +587,7 @@ int main(void)
     test_filemenu_policy();
     test_view_from_host();
     test_mister_presets();
+    test_look_render();
     if (fails) {
         fprintf(stderr, "%d check(s) failed\n", fails);
         return 1;

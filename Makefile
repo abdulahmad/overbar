@@ -14,6 +14,7 @@ LIB_OBJS = \
 	src/host.o \
 	src/present.o \
 	src/menu.o \
+	src/look.o \
 	src/overlay.o \
 	src/filemenu.o \
 	third_party/pulseman/menu.o
@@ -30,7 +31,7 @@ liboverbar.a: $(LIB_OBJS)
 	$(AR) rcs $@ $(LIB_OBJS)
 
 tests/test_overbar: tests/test_overbar.c liboverbar.a
-	$(CC) $(CFLAGS) -o $@ tests/test_overbar.c liboverbar.a
+	$(CC) $(CFLAGS) -o $@ tests/test_overbar.c liboverbar.a -lm
 
 test: tests/test_overbar
 	./tests/test_overbar
@@ -50,7 +51,7 @@ check:
 clean:
 	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe check.o
 
-src/%.o: src/%.c include/overbar/overbar.h
+src/%.o: src/%.c include/overbar/overbar.h src/look_tables.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 third_party/pulseman/menu.o: third_party/pulseman/menu.c include/mdrt/menu.h

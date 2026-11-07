@@ -197,6 +197,9 @@ typedef struct ob_look {
     int khz31;                  /* lo-res CRT/MiSTer: 0 = 15 kHz, 1 = 31 kHz */
     int mask_scale;             /* 1..4 */
     int bright;                 /* 70..150 step 10 */
+    /* CRT custom (95 PC's custom look): scanline gap darkness 0-1, gamma, RGB mask strength
+     * 0-0.3, horizontal sharpness (0 bilinear, 1 bicubic). In the ini only. */
+    float c_dark, c_gamma, c_mask, c_sharp;
     /* Paths under mister/, kind 0 H, 1 V, 2 gamma, 3 mask, 4 the preset last picked (its
      * filters are copied into 0-3). Empty is none. */
     char mister_path[5][192];
@@ -295,6 +298,14 @@ int ob_mode_choice_index(ob_scale_mode m);
  * 1 when a frame was written. The caller then scales that image to the aspect rect. */
 int ob_mister_prescale(const ob_look *look, const uint32_t *src, int sw, int sh, int spitch,
                        uint32_t **dst, int *dw, int *dh);
+/* The CRT looks and the MiSTer filters drawn in software, for hosts with no shaders: the 95 PC
+ * shader's maths at the picture's size in window pixels (out_w x out_h, as ob_view places it),
+ * so the masks land on whole window pixels. A picture above about 2.1 million pixels is drawn
+ * at a whole fraction of it, for the host to scale up. *dst is owned here and stays until the
+ * next call. 0 when the look is not one of these (Sharp, the pixel filters). */
+int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int spitch,
+                   int out_w, int out_h, uint32_t **dst, int *dw, int *dh);
+int ob_look_renders(const ob_look *look);             /* 1 for the looks ob_look_render draws */
 const char *ob_refresh_label(ob_refresh r);
 const char *ob_height_label(ob_picture_height h);
 

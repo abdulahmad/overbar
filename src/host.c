@@ -61,6 +61,10 @@ static void look_init(ob_look *l, int console, int lores)
     l->khz31 = 0;
     l->mask_scale = 1;
     l->bright = 100;
+    l->c_dark = 0.30f;
+    l->c_gamma = 1.13f;
+    l->c_mask = 0.12f;
+    l->c_sharp = 0.60f;
     l->sharp = OB_SHARP_3X;
     ob_mister_defaults(l);
     (void)console;
@@ -280,6 +284,10 @@ static void apply_look_key(ob_look *l, const char *key, const char *v)
     else if (!strcmp(key, "khz")) l->khz31 = atoi(v) == 31;
     else if (!strcmp(key, "mask_scale")) l->mask_scale = atoi(v) < 1 ? 1 : atoi(v) > 4 ? 4 : atoi(v);
     else if (!strcmp(key, "bright")) l->bright = atoi(v);
+    else if (!strcmp(key, "custom_scanline_darkness")) l->c_dark = (float)atof(v);
+    else if (!strcmp(key, "custom_gamma")) l->c_gamma = (float)atof(v);
+    else if (!strcmp(key, "custom_mask_strength")) l->c_mask = (float)atof(v);
+    else if (!strcmp(key, "custom_sharpness")) l->c_sharp = (float)atof(v);
     else if (!strcmp(key, "mister_h")) snprintf(l->mister_path[0], sizeof l->mister_path[0], "%s", v);
     else if (!strcmp(key, "mister_v")) snprintf(l->mister_path[1], sizeof l->mister_path[1], "%s", v);
     else if (!strcmp(key, "mister_gamma")) snprintf(l->mister_path[2], sizeof l->mister_path[2], "%s", v);
@@ -300,6 +308,8 @@ static void write_look(FILE *f, const char *prefix, const ob_look *l, int consol
     fprintf(f, "%s_khz=%d\n", prefix, l->khz31 ? 31 : 15);
     fprintf(f, "%s_mask_scale=%d\n", prefix, l->mask_scale);
     fprintf(f, "%s_bright=%d\n", prefix, l->bright);
+    fprintf(f, "%s_custom_scanline_darkness=%.2f\n%s_custom_gamma=%.2f\n%s_custom_mask_strength=%.2f\n%s_custom_sharpness=%.2f\n",
+            prefix, l->c_dark, prefix, l->c_gamma, prefix, l->c_mask, prefix, l->c_sharp);
     fprintf(f, "%s_mister_h=%s\n", prefix, l->mister_path[0]);
     fprintf(f, "%s_mister_v=%s\n", prefix, l->mister_path[1]);
     fprintf(f, "%s_mister_gamma=%s\n", prefix, l->mister_path[2]);

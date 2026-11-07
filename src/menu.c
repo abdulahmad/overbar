@@ -5,6 +5,7 @@
  * only that mode's sub-options are listed. There is no SNES Native 1:1 item.
  */
 #include "overbar/overbar.h"
+#include "look_tables.h"
 
 #ifdef OB_SDL_BASE
 #include <SDL.h>
@@ -450,6 +451,8 @@ static float m_vtap[2][256][4];
 static float m_gamma[256];
 static char m_sig[8][192];
 static int m_ready;
+static ob_mask_tile m_masks[8];
+static int m_nmasks;
 static uint32_t m_out[320 * 3 * 240 * 3];
 
 static float m_exp_neg(float x)
@@ -575,6 +578,57 @@ static void m_fallback(void)
     for (i = 0; i < 256; i++) m_gamma[i] = i / 255.f;
 }
 
+/* A Shadow_Masks file (95 PC's reader): "Resolution=" lines, then "v2", the pattern's w,h and h
+ * rows of cells, each three hex digits: colour (bit 4 red, 2 green, 1 blue), intensity on, off. */
+static void m_load_mask(const char *path)
+{
+    char line[512];
+    int res = 0, w = 0, h = 0, y = 0, want = 0;
+    FILE *f = path[0] ? fopen(path, "r") : NULL;
+    m_nmasks = 0;
+    if (f) {
+        while (fgets(line, sizeof line, f) && m_nmasks < 8) {
+            char *q = line;
+            while (*q == ' ' || *q == '\t') q++;
+            if (*q == '#' || *q == '\n' || *q == '\r' || !*q) continue;
+            if (!strncmp(q, "Resolution=", 11)) { res = atoi(q + 11); want = 0; continue; }
+            if (!strncmp(q, "v2", 2)) { want = 1; continue; }
+            if (want == 1) {
+                if (sscanf(q, "%d,%d", &w, &h) != 2 || w < 1 || h < 1 || w > 16 || h > 16) { want = 0; continue; }
+                m_masks[m_nmasks].res = res;
+                m_masks[m_nmasks].w = w;
+                m_masks[m_nmasks].h = h;
+                y = 0;
+                want = 2;
+                continue;
+            }
+            if (want == 2) {
+                int x;
+                for (x = 0; x < w; x++) {
+                    unsigned c = 0, on = 0, off = 0;
+                    int ch;
+                    if (sscanf(q, "%1x%1x%1x", &c, &on, &off) != 3) break;
+                    for (ch = 0; ch < 3; ch++) {
+                        int bit = ch == 0 ? 4 : ch == 1 ? 2 : 1;
+                        m_masks[m_nmasks].rgb[(y * w + x) * 3 + ch] = (c & (unsigned)bit) ? 1.f + on / 16.f : off / 16.f;
+                    }
+                    q = strchr(q, ',');
+                    if (!q) break;
+                    q++;
+                }
+                if (++y == h) { m_nmasks++; want = 0; }
+            }
+        }
+        fclose(f);
+    }
+    if (!m_nmasks) {
+        m_masks[0].res = 0;
+        m_masks[0].w = m_masks[0].h = 1;
+        m_masks[0].rgb[0] = m_masks[0].rgb[1] = m_masks[0].rgb[2] = 1.f;
+        m_nmasks = 1;
+    }
+}
+
 static void m_load(const ob_look *look)
 {
     char root[1024], path[1200], sig[4][192];
@@ -617,6 +671,7 @@ static void m_load(const ob_look *look)
     }
     n = !sig[2][0] ? 0 : m_read_numbers(sig[2], v, 256, &ad, &tb);
     if (n == 256) for (i = 0; i < 256; i++) m_gamma[i] = v[i] / 255.f;
+    m_load_mask(sig[3]);
     for (k = 0; k < 4; k++) {
         size_t ln = strlen(sig[k]);
         if (ln >= sizeof m_sig[k]) ln = sizeof m_sig[k] - 1;
@@ -725,4 +780,14 @@ int ob_mister_prescale(const ob_look *look, const uint32_t *src, int sw, int sh,
     *dw = ow;
     *dh = oh;
     return 1;
+}
+
+void ob_mister_tables_get(const ob_look *look, ob_mister_tables *t)
+{
+    m_load(look);
+    t->htap = (const float (*)[4])m_htap;
+    t->vtap = (const float (*)[256][4])m_vtap;
+    t->gamma = m_gamma;
+    t->masks = m_masks;
+    t->nmasks = m_nmasks;
 }
