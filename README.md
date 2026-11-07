@@ -1,10 +1,14 @@
 # Overbar
 
-> **Making a mod, hack, port or other derivative work from this repo? You must credit me (abdulahmad) and everyone credited in this repo, clearly, in your own repo and in every release. See [Credits and derivative works](#credits-and-derivative-works).**
+> **🤝 Making a mod, hack, port or other derivative work from this repo? You must credit me (abdulahmad) and everyone credited in this repo, clearly, in your own repo and in every release. See [Credits and derivative works](#credits-and-derivative-works).**
 
-**A ready-made settings menu, scaler and CRT look pack for native ports of retro games.**
+**A harness to run retro games from any platform natively on any modern computer (Windows, Mac, Linux) or handheld device (Anbernic RG35XX, Retroid Pocket, Miyoo Mini, Steam Deck, etc), with high-quality scaling options that are easy to use and flexible to the player's taste.** It has PortMaster support, Rollback Netcode (WIP), and a built-in on-screen keyboard for games that require it (WIP).
 
-Overbar is a derivative of [1nputs' PulseMan](https://github.com/1nputs/pulseman). It's what the NHL '94 Genesis and SNES C ports and the NHL 94, 95 and 96 PC ports use for their in-game menu, their picture and their CRT looks.
+## 🚧 Current Status
+
+- Initial integration for the NHL '94 Genesis and SNES native ports, as well as the NHL 94, 95 and 96 native PC ports.
+- Requires shakedown testing and bug fixing.
+- Netplay and PortMaster support are WIP.
 
 ![The Overbar overlay open over NHL '94 on the Genesis](docs/images/overlay-main.png)
 
