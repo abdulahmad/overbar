@@ -1,14 +1,25 @@
 NOTICE
 
-This host (Overbar) includes files from PulseMan
-(https://github.com/1nputs/pulseman), MIT License, Copyright (c) 2026
-The pulseman authors. Those files keep their original copyright headers.
+Overbar is Copyright (c) 2026 abdulahmad and licensed under the PolyForm
+Noncommercial License 1.0.0 (see LICENSE). The licensor keeps commercial rights.
 
-Additional host work: Copyright (c) 2026 abdulahmad and contributors.
+Required Notice: Copyright (c) 2026 abdulahmad (https://github.com/abdulahmad/overbar)
 
-Overbar is a derivative of PulseMan by 1nputs
-(https://github.com/1nputs/pulseman). Carry this notice in release notes and
-in any text file shipped inside a release archive.
+Third-party parts, which keep their own licenses and are not covered by the
+PolyForm Noncommercial terms:
 
-Third-party notices: see licenses/ (Nuked-OPN2 LGPL-2.1, ymfm BSD-3, MiSTer
-filter data credits, shipped shaders).
+1. PulseMan (https://github.com/1nputs/pulseman), MIT License,
+   Copyright (c) 2026 The pulseman authors. Full text: licenses/MIT-PulseMan.txt.
+   Covers these files, which keep their original headers:
+     third_party/pulseman/menu.c
+     third_party/pulseman/udp.c
+     include/mdrt/menu.h
+   Overbar is a derivative of PulseMan. Carry this notice in release notes and
+   in any text file shipped inside a release archive.
+
+2. MiSTer filter, gamma, shadow mask and preset data files in mister/,
+   from MiSTer-devel, GPL-3.0, unchanged. They are separate data files that
+   the programs only read at run time; see mister/README.md.
+
+Other notices: see licenses/ (Nuked-OPN2 LGPL-2.1, ymfm BSD-3, shipped shaders).
+The soft CRT look is after Timothy Lottes' CRT shader (idea only, no code copied).

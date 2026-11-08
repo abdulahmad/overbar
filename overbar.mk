@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright (c) 2026 abdulahmad and contributors
 #
 # Overbar's sources, for a port that has Overbar as a git submodule and compiles it itself:
