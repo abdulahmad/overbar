@@ -257,6 +257,11 @@ void ob_plat_pump(void)
     cursor_update();
     while (SDL_PollEvent(&e)) {
         if (P.hk.event && P.hk.event(&e)) continue;
+        if (e.type == SDL_KEYDOWN && !e.key.repeat && e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT)) {
+            int full = !!(SDL_GetWindowFlags(P.win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP));   /* Alt+Enter */
+            SDL_SetWindowFullscreen(P.win, full ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+            continue;
+        }
         captured = P.hk.captures && P.hk.captures();
         if (e.type == SDL_QUIT) do_quit();
         else if (e.type == SDL_TEXTINPUT) {
