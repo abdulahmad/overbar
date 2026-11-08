@@ -19,6 +19,8 @@ LIB_OBJS = \
 	src/filemenu.o \
 	src/net.o \
 	src/snap.o \
+	src/rollback.o \
+	src/netgame.o \
 	third_party/pulseman/menu.o
 ifdef SDL
 CFLAGS += -DOVERBAR_SDL $(shell pkg-config --cflags sdl2)
