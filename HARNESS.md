@@ -21,7 +21,7 @@ It describes how the work is set up and checked, not where any one piece of work
 | Merge it yourself | Work happens on the thread's own branch, then goes straight into Overbar `main` and each port's overbar branch, with no PRs. Use a merge commit when a port's branch has commits of its own |
 | Bump every port | An Overbar change ends with a submodule bump commit in each port that builds against it, made only after the library's checks pass |
 | PulseMan stays as it is | Never change `ext/pulseman` in the Genesis port, and never push to 1nputs/pulseman |
-| Nothing generated in git | No ROMs, save states, captures, screenshots, GIFs, golden files or `mister/` filter data. The README's sample pictures are the exception Abdul asked for |
+| Nothing generated in git | No ROMs, save states, captures, screenshots, GIFs or golden files. The README's sample pictures are the exception Abdul asked for. The MiSTer filter files live once, in Overbar's `mister/`; ports copy them at build time and keep no copy of their own |
 | No line-ending rewrites | Don't commit a file whose only change is its line endings |
 | Game code doesn't move | Overbar work changes host shells only. Game code (`src/`, `game/`) and frame hashes stay the same |
 | Keys stay | `` ` `` and F11 open the overlay, F12 shows the stats, Alt+Enter toggles fullscreen |
