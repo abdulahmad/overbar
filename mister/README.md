@@ -13,9 +13,9 @@ The MiSTer project ([MiSTer-devel](https://github.com/MiSTer-devel)) is GPL-3.0 
 Please see them for the full lists of contributors and for newer versions. Only the `.txt` and `.ini` data files are included here
 (not the scripts of those repositories).
 
-This folder is not under Overbar's MIT licence. The programs only read these files at run time as data; nothing here is compiled or
-linked into Overbar or a port, so a port that ships the folder beside its program stays MIT. Keep this README in the folder when
-you ship it.
+This folder is not under Overbar's licence (PolyForm Noncommercial). The programs only read these files at run time as data; nothing here is compiled or
+linked into Overbar or a port, so shipping the folder beside a program does not make the program GPL. Keep this README in the folder when
+you ship it. The GPL-3.0 text is in GPL-3.0.txt.
 
 ## How a port gets them
 

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  * Copyright (c) 2026 abdulahmad and contributors
  *
  * The lockstep core (overbar/net.h): machines in this process over 127.0.0.1, each stepping with

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  * Copyright (c) 2026 abdulahmad and contributors
  *
  * The CRT looks and the MiSTer filters in software, for the hosts that draw with SDL_Renderer

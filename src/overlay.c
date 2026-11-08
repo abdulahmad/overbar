@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  * Copyright (c) 2026 abdulahmad and contributors
  *
  * Overlay shell: PulseMan mdrt_menu pages filled from the shared model.

@@ -353,9 +353,11 @@ tests/                      the tests
 
 ## 📜 Credits and derivative works
 
-Overbar is a derivative of **[PulseMan](https://github.com/1nputs/pulseman) by 1nputs** (MIT License, Copyright (c) 2026 The pulseman authors). The files taken from PulseMan keep their original headers.
+Overbar is a derivative of **[PulseMan](https://github.com/1nputs/pulseman) by 1nputs** (MIT License, Copyright (c) 2026 The pulseman authors). The files taken from PulseMan keep their original headers and their MIT license.
 
-The rest is Copyright (c) 2026 abdulahmad and contributors, under the MIT License. See [LICENSE](LICENSE), [NOTICE](NOTICE) and [licenses/](licenses/).
+## License
+
+Overbar is Copyright (c) 2026 abdulahmad and licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**. You may use, change and share it for noncommercial purposes; commercial use needs a separate license from the copyright holder. The PulseMan files (listed in [NOTICE](NOTICE)) stay MIT, and the MiSTer data files in `mister/` stay GPL-3.0 as separate data. See [LICENSE](LICENSE), [NOTICE](NOTICE) and [licenses/](licenses/).
 
 The soft CRT look is after Timothy Lottes' CRT shader, and the MiSTer filter, gamma and shadow mask files are the MiSTer project's.
 

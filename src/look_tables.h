@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  * Copyright (c) 2026 abdulahmad and contributors
  *
  * Inside Overbar only: the MiSTer tables menu.c reads from the filter files, for look.c.
