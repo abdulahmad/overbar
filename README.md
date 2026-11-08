@@ -9,7 +9,7 @@
 - Initial integration for the NHL '94 Genesis and SNES native ports, as well as the NHL 94, 95 and 96 native PC ports.
 - Requires shakedown testing and bug fixing.
 - PortMaster support is WIP.
-- Online play: Overbar's netplay core does rollback for a game that can save and load its state, and lockstep (input delay) for one that can't yet. Today NHL '94 Genesis plays with rollback (its own, from PulseMan), and NHL '94 SNES and NHL 95 PC play in lockstep. Rollback for SNES is in progress, and the PC ports need deterministic timing and save states first.
+- Online play: Overbar's netplay core does rollback for a game that can save and load its state, and lockstep (input delay) for one that can't yet. Today NHL '94 SNES plays with Overbar's rollback, NHL '94 Genesis with its own (from PulseMan), and NHL 95 PC in lockstep. The PC ports need deterministic timing and save states before they can roll back.
 
 ![The Overbar overlay open over NHL '94 on the Genesis](docs/images/overlay-main.png)
 
