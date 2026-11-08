@@ -16,7 +16,7 @@ key/mouse routing, cursor hiding, text input, FPS, controller open/close and pad
 | Window and present | `src/plat_window.c` | SDL_Init, window flags (fullscreen on handheld), SDL_Renderer on handhelds, OpenGL only where the port asks, vsync, fullscreen toggle, picture rect from `ob_view`, FPS/stats, the overlay and banner drawn over the frame |
 | Input | `src/plat_input.c` | the event pump, keyboard and controller open/close, hotkeys (`` ` ``, F11, F12, Alt+Enter, controller Back), overlay and file-menu routing, cursor hiding, text input, per-slot pad binding and the pad-setup screen, settings file |
 | Audio | `src/plat_audio.c` | one SDL audio device, a sample ring the game pushes into (or a pull callback), resampling to the device rate, mute online |
-| Desktop menu bar | `src/bar.c` (model) + `bar_win.c`, `bar_mac.m`, `bar_draw.c` | the standard bar built once from `ob_host` as a neutral item tree (check marks, radio groups, actions). Windows: native HMENU. macOS: native NSMenu in the screen's menu bar. Linux: no common native menu bar across desktops, so Overbar draws it as a strip above the picture (also the fallback anywhere). Desktops only, never on a handheld. A port may replace items or the whole tree |
+| Desktop menu bar | `src/bar.c` (model) + `bar_win.c`, `bar_mac.m` | the standard bar built once from `ob_host` as a neutral item tree (check marks, radio groups, actions). Windows: native HMENU. macOS: native NSMenu in the screen's menu bar. Linux has no standard native menu bar, so it gets none (the Overbar overlay menu is the way in there, as on handhelds). A port may replace items or the whole tree |
 | Loop | `src/plat_run.c` | optional: `ob_plat_run()` owns the main loop and calls the hooks; ports with their own loop (PC ports) call `ob_plat_pump()` and `ob_plat_present()` instead |
 
 ## API (one header, `include/overbar/plat.h`)
@@ -60,7 +60,7 @@ the layer installs it, so ports no longer do.
 
 ## Order of work
 
-1. Layer + tests + the bar model, Windows and drawn bars in Overbar (the macOS bar needs a Mac to check; written and compiled-checked first) (this repo, `main`).
+1. Layer + tests + the bar model and the Windows bar in Overbar (the macOS bar needs a Mac to check; written and compiled-checked first) (this repo, `main`).
 2. SNES port: delete its window/input/audio glue, implement hooks.
 3. Genesis port: the `native/pulseman/sdl2.c` copy becomes a thin adapter onto the layer.
 4. 95 PC and 96 PC (shared code), then 94 PC.
