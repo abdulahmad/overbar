@@ -11,6 +11,9 @@
 # name (pulseman_menu.o). Shell build scripts read sources.txt, which lists the same files.
 # src/net.c (online play) includes third_party/pulseman/udp.c itself, and on Windows needs
 # -lws2_32 at the link.
+#
+# The MiSTer filter files (mister/, GPL-3.0 data, see mister/README.md) are read at run time from a
+# mister folder next to the program. $(call overbar_copy_mister,DIR) copies them to DIR/mister.
 
 OVERBAR_DIR          ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 OVERBAR_LIB_NAMES    := scaler host present menu look overlay filemenu net
@@ -20,3 +23,6 @@ OVERBAR_HDRS         := $(OVERBAR_DIR)/include/overbar/overbar.h $(OVERBAR_DIR)/
 OVERBAR_INC          := -I$(OVERBAR_DIR)/include
 # the SDL client build (menu.c's SDL file listing and the MiSTer prescale's SDL types)
 OVERBAR_DEFS         := -DOB_SDL_BASE
+# the MiSTer filter files, copied next to the program
+OVERBAR_MISTER       := $(OVERBAR_DIR)/mister
+overbar_copy_mister   = mkdir -p "$(1)" && rm -rf "$(1)/mister" && cp -r "$(OVERBAR_MISTER)" "$(1)/mister"

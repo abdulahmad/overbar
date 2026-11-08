@@ -80,7 +80,7 @@ The **custom** CRT look is set in the settings file: `*_custom_scanline_darkness
 
 ### 🕹️ MiSTer filters
 
-Put the MiSTer `Filters`, `Gamma`, `Shadow_Masks` and `Presets` folders in a `mister` folder next to the game. The MiSTer pages list them the way the MiSTer does, and a check mark shows what's in use. A **Preset** sets all of them at once, and **Reset the MiSTer filters** goes back to the defaults (GS Sharpness 060, the adaptive SLA 030/070 scanlines and gamma 1.13).
+The MiSTer `Filters`, `Gamma`, `Shadow_Masks` and `Presets` files come with Overbar in [mister](mister) (GPL-3.0 data from the MiSTer project, credits there), and a port's build copies them to a `mister` folder next to the game. Files from a MiSTer SD card can be added there with the same layout. The MiSTer pages list them the way the MiSTer does, and a check mark shows what's in use. A **Preset** sets all of them at once, and **Reset the MiSTer filters** goes back to the defaults (GS Sharpness 060, the adaptive SLA 030/070 scanlines and gamma 1.13).
 
 ![The MiSTer options](docs/images/overlay-mister.png)
 
