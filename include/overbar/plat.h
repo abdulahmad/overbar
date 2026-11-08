@@ -33,6 +33,8 @@ typedef struct ob_plat_hooks {
     void (*raw_key)(int scancode);            /* a key press while captures() */
     void (*raw_button)(int slot, int button); /* a controller button (SDL_CONTROLLER_BUTTON_*, or -1 / -2 for a left / right trigger) while captures() */
     int  (*event)(const SDL_Event *e);        /* every event first; 1: the port used it */
+    void (*unused)(const SDL_Event *e);       /* an event the layer did not use itself (the game's keys, mouse and joystick while the overlay is closed) */
+    void (*modal)(int on);                    /* (Windows) the window's menu or sizing loop started / ended: the game is not running, so mute the sound */
     void (*draw_over)(const SDL_Rect *dst);   /* the port's own layer over the picture (banner, setup screen), under the overlay */
     void (*quit)(void);                       /* the player closed the game: save and leave (should not return) */
     void (*controller)(int slot, int added);  /* a controller came or went */

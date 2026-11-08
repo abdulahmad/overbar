@@ -100,6 +100,24 @@ static void bar_for_window(void)
     ob_filemenu_show(ob_filemenu_wanted(!full && !handheld, full, handheld));
 }
 
+#ifdef _WIN32
+/* While Windows runs its own loop for the window's menu or for sizing it, this thread does not return to the main loop: the game stops
+ * (the port mutes its sound for as long, modal) and, sizing, each size change is drawn here so the picture follows the window. */
+static WNDPROC old_proc;
+static int sizing, drawing;
+static LRESULT CALLBACK plat_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    LRESULT r;
+    if (msg == WM_ENTERMENULOOP || msg == WM_ENTERSIZEMOVE) { if (P.hk.modal) P.hk.modal(1); }
+    else if (msg == WM_EXITMENULOOP || msg == WM_EXITSIZEMOVE) { if (P.hk.modal) P.hk.modal(0); }
+    if (msg == WM_ENTERSIZEMOVE) sizing = 1;
+    else if (msg == WM_EXITSIZEMOVE) sizing = 0;
+    r = CallWindowProcW(old_proc, h, msg, wp, lp);
+    if (sizing && !drawing && (msg == WM_SIZE || msg == WM_PAINT)) { drawing = 1; ob_plat_present(); drawing = 0; }
+    return r;
+}
+#endif
+
 int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
 {
     Uint32 wflags = SDL_WINDOW_RESIZABLE, rflags = SDL_RENDERER_ACCELERATED;
@@ -142,6 +160,7 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
         SDL_VERSION(&info.version);
         if (SDL_GetWindowWMInfo(P.win, &info) && info.subsystem == SDL_SYSWM_WINDOWS) hwnd = info.info.win.window;
         ob_filemenu_init(hwnd);
+        if (hwnd) old_proc = (WNDPROC)SetWindowLongPtrW((HWND)hwnd, GWLP_WNDPROC, (LONG_PTR)plat_proc);
         SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE);
     }
 #else
@@ -250,10 +269,26 @@ static void overlay_mouse(int wx, int wy, int what)
     after_change();
 }
 
+/* does the layer use the event itself (the overlay, its keys, the bar, text input), so the game does not get it? */
+static int event_used(const SDL_Event *e, int captured)
+{
+    int open = P.host->overlay_open || captured;
+    switch (e->type) {
+    case SDL_QUIT: case SDL_TEXTINPUT: case SDL_SYSWMEVENT: return 1;
+    case SDL_KEYDOWN: case SDL_KEYUP: {
+        int k = e->key.keysym.scancode;
+        return open || k == SDL_SCANCODE_GRAVE || k == SDL_SCANCODE_F11 || k == SDL_SCANCODE_F12;
+    }
+    case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL: return P.host->overlay_open;
+    case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: return open;
+    default: return 0;                                    /* controllers coming and going, window events, joystick: the game's too */
+    }
+}
+
 void ob_plat_pump(void)
 {
     SDL_Event e;
-    int captured;
+    int captured, pass;
     cursor_update();
     while (SDL_PollEvent(&e)) {
         if (P.hk.event && P.hk.event(&e)) continue;
@@ -266,6 +301,8 @@ void ob_plat_pump(void)
             continue;
         }
         captured = P.hk.captures && P.hk.captures();
+        if (P.hk.unused && !event_used(&e, captured)) pass = 1;
+        else pass = 0;
         if (e.type == SDL_QUIT) do_quit();
         else if (e.type == SDL_TEXTINPUT) {
             if (P.host->overlay_open && ob_overlay_editing(P.host)) ob_overlay_text(P.host, e.text.text);
@@ -342,6 +379,7 @@ void ob_plat_pump(void)
             overlay_mouse(mx, my, e.wheel.y > 0 ? 3 : e.wheel.y < 0 ? 4 : -1);
         } else if (e.type == SDL_WINDOWEVENT && (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || e.window.event == SDL_WINDOWEVENT_SHOWN))
             bar_for_window();
+        if (pass) P.hk.unused(&e);
     }
 }
 
