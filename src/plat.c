@@ -26,7 +26,7 @@ static struct {
     SDL_Window *win;
     SDL_Renderer *ren;
     SDL_Texture *tex, *over_tex, *fps_tex, *look_tex;
-    int look_w, look_h;
+    int look_w, look_h, cur_w, cur_h;
     SDL_GameController *ctrl[OB_PLAT_SLOTS];
     int stick_dir[OB_PLAT_SLOTS];
     uint8_t trigger_down[OB_PLAT_SLOTS][2];
@@ -104,7 +104,7 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
 {
     Uint32 wflags = SDL_WINDOW_RESIZABLE, rflags = SDL_RENDERER_ACCELERATED;
     SDL_RendererInfo rinfo;
-    if (!hooks || !h || !hooks->picture) return 0;
+    if (!hooks || !h || (!hooks->picture && !hooks->frame)) return 0;
     P.hk = *hooks;
     P.host = h;
     if (h->profile == OB_PROFILE_HANDHELD) {
@@ -128,6 +128,8 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
     }
     if (P.ren) {
         P.tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, hooks->src_w, hooks->src_h);
+        P.cur_w = hooks->src_w;
+        P.cur_h = hooks->src_h;
         P.fps_tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FPS_W, FPS_H);
     }
     if (!P.tex || !P.fps_tex) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); ob_plat_close(); return 0; }
@@ -373,7 +375,7 @@ static void fps_draw(void)
 
 static void overlay_draw(const SDL_Rect *dst)
 {
-    int mw, mh, t = (int)(dst->h * 0.8 / P.hk.src_h + 0.5);
+    int mw, mh, t = (int)(dst->h * 0.8 / (P.cur_h > 0 ? P.cur_h : P.hk.src_h) + 0.5);
     if (t < 1) t = 1;
     mw = dst->w / t;
     mh = dst->h / t;
@@ -399,16 +401,28 @@ static void overlay_draw(const SDL_Rect *dst)
 
 void ob_plat_present(void)
 {
-    int ww, wh;
+    int ww, wh, sw = P.hk.src_w, sh = P.hk.src_h;
     ob_view_in in;
     ob_view_out out;
-    const uint32_t *picture = P.hk.picture();
+    const uint32_t *picture;
     SDL_Rect dst;
-    SDL_Texture *show = P.tex;
-    const void *pix = picture;
-    int pitch = P.hk.src_w * 4;
+    SDL_Texture *show;
+    const void *pix;
+    int pitch;
+    picture = P.hk.frame ? P.hk.frame(&sw, &sh) : P.hk.picture();
+    if (!picture || sw < 1 || sh < 1) return;
+    if (sw != P.cur_w || sh != P.cur_h) {                 /* the game changed the picture's size */
+        if (P.tex) SDL_DestroyTexture(P.tex);
+        P.tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, sw, sh);
+        P.cur_w = sw;
+        P.cur_h = sh;
+        if (!P.tex) return;
+    }
+    show = P.tex;
+    pix = picture;
+    pitch = sw * 4;
     ob_plat_window_size(&ww, &wh);
-    ob_view_from_host(P.host, P.hk.cls, P.hk.src_w, P.hk.src_h, ww, wh, &in);
+    ob_view_from_host(P.host, P.hk.cls, sw, sh, ww, wh, &in);
     ob_view(&in, &out);
     dst = (SDL_Rect){ out.blit_x, out.blit_y, out.blit_w, out.blit_h };
     SDL_SetRenderDrawColor(P.ren, 0, 0, 0, 255);
@@ -417,7 +431,7 @@ void ob_plat_present(void)
         /* the CRT looks and the MiSTer filters at the picture's size in window pixels */
         uint32_t *px = NULL;
         int dw = 0, dh = 0;
-        if (ob_look_render(&P.host->lores, picture, P.hk.src_w, P.hk.src_h, P.hk.src_w, dst.w, dst.h, &px, &dw, &dh) && px && dw > 0 && dh > 0) {
+        if (ob_look_render(&P.host->lores, picture, sw, sh, sw, dst.w, dst.h, &px, &dw, &dh) && px && dw > 0 && dh > 0) {
             if (!P.look_tex || P.look_w != dw || P.look_h != dh) {
                 if (P.look_tex) SDL_DestroyTexture(P.look_tex);
                 P.look_tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, dw, dh);

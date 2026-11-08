@@ -24,6 +24,7 @@ typedef struct ob_plat_hooks {
     ob_class cls;                             /* the picture's shape for ob_view */
     int src_w, src_h;                         /* the picture's size */
     const uint32_t *(*picture)(void);         /* ARGB8888, src_w pixels a row; the current frame */
+    const uint32_t *(*frame)(int *w, int *h); /* instead of picture: a frame whose size changes (src_w, src_h are its first size) */
 
     /* all optional (NULL: no-op) */
     void (*changed)(void);                    /* after an overlay change (the port saves its settings) */
