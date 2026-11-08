@@ -24,6 +24,8 @@ typedef struct ob_plat_hooks {
     ob_class cls;                             /* the picture's shape for ob_view */
     int src_w, src_h;                         /* the picture's size */
     int window_only;                          /* the layer makes the window, the bar, the events and the controllers; the port makes its renderer or GL context and presents (picture / frame unused) */
+    int no_pads;                              /* the port reads controllers itself (the DOS game port): the layer neither opens them nor reads them for the overlay */
+    void (*present)(void);                    /* window_only: draws the frame (called by ob_plat_present, also while Windows sizes the window) */
     int gl;                                   /* the window is made for OpenGL (SDL_WINDOW_OPENGL) */
     volatile int *quit_flag;                  /* set when the player closes the window, instead of quit() and leaving at once */
     const uint32_t *(*picture)(void);         /* ARGB8888, src_w pixels a row; the current frame */

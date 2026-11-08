@@ -178,7 +178,7 @@ window_ready:
     ob_filemenu_sync(h);
     bar_for_window();
     P.fps_since = SDL_GetTicks();
-    for (int i = 0; i < SDL_NumJoysticks(); i++) ctrl_added(i);
+    for (int i = 0; !hooks->no_pads && i < SDL_NumJoysticks(); i++) ctrl_added(i);
     SDL_StopTextInput();                                  /* (SDL starts with it on on the desktop) */
     P.text_on = 0;
     return 1;
@@ -291,7 +291,7 @@ static int event_used(const SDL_Event *e, int captured)
         return open || k == SDL_SCANCODE_GRAVE || k == SDL_SCANCODE_F11 || k == SDL_SCANCODE_F12;
     }
     case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL: return P.host->overlay_open && !P.hk.window_only;
-    case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: return open;
+    case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: return open && !P.hk.no_pads;
     default: return 0;                                    /* controllers coming and going, window events, joystick: the game's too */
     }
 }
@@ -338,7 +338,7 @@ void ob_plat_pump(void)
                 if (in >= 0) overlay_handle(in);
             }
             sync_text_input();
-        } else if (e.type == SDL_CONTROLLERBUTTONDOWN && (captured || P.host->overlay_open)) {
+        } else if (!P.hk.no_pads && e.type == SDL_CONTROLLERBUTTONDOWN && (captured || P.host->overlay_open)) {
             int slot = ob_plat_controller_slot(e.cbutton.which), b = e.cbutton.button;
             if (slot >= 0 && captured) { if (P.hk.raw_button) P.hk.raw_button(slot, b); }
             else if (slot >= 0) {
@@ -349,10 +349,10 @@ void ob_plat_pump(void)
                 else if (b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) overlay_handle(MDRT_MENU_RIGHT);
                 else if (b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START) overlay_handle(MDRT_MENU_OK);
             }
-        } else if (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+        } else if (!P.hk.no_pads && e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
             pad_back();
             sync_text_input();
-        } else if (e.type == SDL_CONTROLLERAXISMOTION && e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
+        } else if (!P.hk.no_pads && e.type == SDL_CONTROLLERAXISMOTION && e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
             int slot = ob_plat_controller_slot(e.caxis.which);
             if (slot >= 0) {
                 int v = e.caxis.value;
@@ -360,15 +360,15 @@ void ob_plat_pump(void)
                 if (d && d != P.stick_dir[slot] && P.host->overlay_open && !captured) overlay_handle(d < 0 ? MDRT_MENU_UP : MDRT_MENU_DOWN);
                 P.stick_dir[slot] = d;
             }
-        } else if (e.type == SDL_CONTROLLERAXISMOTION &&
+        } else if (!P.hk.no_pads && e.type == SDL_CONTROLLERAXISMOTION &&
                    (e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)) {
             int slot = ob_plat_controller_slot(e.caxis.which), k = e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
             if (slot >= 0 && e.caxis.value > 16384 && !P.trigger_down[slot][k]) {
                 P.trigger_down[slot][k] = 1;
                 if (captured && P.hk.raw_button) P.hk.raw_button(slot, k ? -2 : -1);
             } else if (slot >= 0 && e.caxis.value < 8192) P.trigger_down[slot][k] = 0;
-        } else if (e.type == SDL_CONTROLLERDEVICEADDED) ctrl_added(e.cdevice.which);
-        else if (e.type == SDL_CONTROLLERDEVICEREMOVED) ctrl_removed(e.cdevice.which);
+        } else if (!P.hk.no_pads && e.type == SDL_CONTROLLERDEVICEADDED) ctrl_added(e.cdevice.which);
+        else if (!P.hk.no_pads && e.type == SDL_CONTROLLERDEVICEREMOVED) ctrl_removed(e.cdevice.which);
         else if (e.type == SDL_SYSWMEVENT && e.syswm.msg) {
 #ifdef _WIN32
             SDL_SysWMmsg *m = (SDL_SysWMmsg *)e.syswm.msg;
@@ -466,7 +466,8 @@ void ob_plat_present(void)
     SDL_Texture *show;
     const void *pix;
     int pitch;
-    if (!P.ren) return;                                   /* window only: the port presents */
+    if (P.hk.window_only) { if (P.hk.present) P.hk.present(); return; }   /* the port presents */
+    if (!P.ren) return;
     picture = P.hk.frame ? P.hk.frame(&sw, &sh) : P.hk.picture();
     if (!picture || sw < 1 || sh < 1) return;
     if (sw != P.cur_w || sh != P.cur_h) {                 /* the game changed the picture's size */
