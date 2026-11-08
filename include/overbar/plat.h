@@ -23,6 +23,9 @@ typedef struct ob_plat_hooks {
     int win_w, win_h;                         /* the window's first size on a desktop */
     ob_class cls;                             /* the picture's shape for ob_view */
     int src_w, src_h;                         /* the picture's size */
+    int window_only;                          /* the layer makes the window, the bar, the events and the controllers; the port makes its renderer or GL context and presents (picture / frame unused) */
+    int gl;                                   /* the window is made for OpenGL (SDL_WINDOW_OPENGL) */
+    volatile int *quit_flag;                  /* set when the player closes the window, instead of quit() and leaving at once */
     const uint32_t *(*picture)(void);         /* ARGB8888, src_w pixels a row; the current frame */
     const uint32_t *(*frame)(int *w, int *h); /* instead of picture: a frame whose size changes (src_w, src_h are its first size) */
 

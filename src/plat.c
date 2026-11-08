@@ -51,8 +51,11 @@ int ob_plat_controller_slot(SDL_JoystickID id)
 
 int ob_plat_window_size(int *w, int *h)
 {
-    if (!P.ren) return 0;
-    if (!ob_filemenu_client_size(w, h)) SDL_GetRendererOutputSize(P.ren, w, h);
+    if (!P.win) return 0;
+    if (!ob_filemenu_client_size(w, h)) {
+        if (P.ren) SDL_GetRendererOutputSize(P.ren, w, h);
+        else SDL_GetWindowSize(P.win, w, h);
+    }
     return 1;
 }
 
@@ -122,15 +125,20 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
 {
     Uint32 wflags = SDL_WINDOW_RESIZABLE, rflags = SDL_RENDERER_ACCELERATED;
     SDL_RendererInfo rinfo;
-    if (!hooks || !h || (!hooks->picture && !hooks->frame)) return 0;
+    if (!hooks || !h || (!hooks->picture && !hooks->frame && !hooks->window_only)) return 0;
     P.hk = *hooks;
     P.host = h;
     if (h->profile == OB_PROFILE_HANDHELD) {
         wflags = SDL_WINDOW_FULLSCREEN_DESKTOP;
         if (h->vsync) rflags |= SDL_RENDERER_PRESENTVSYNC;
     }
+    if (hooks->gl) wflags |= SDL_WINDOW_OPENGL;
     P.win = SDL_CreateWindow(hooks->title ? hooks->title : "Overbar", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                              hooks->win_w > 0 ? hooks->win_w : 960, hooks->win_h > 0 ? hooks->win_h : 720, wflags);
+    if (hooks->window_only) {                              /* the port makes its own renderer or GL context on the window and draws it */
+        if (!P.win) return 0;
+        goto window_ready;
+    }
     P.ren = P.win ? SDL_CreateRenderer(P.win, -1, rflags) : NULL;
     if (!P.ren && P.win) {
         SDL_SetHint(SDL_HINT_RENDER_DRIVER, "direct3d");
@@ -153,6 +161,7 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
     if (!P.tex || !P.fps_tex) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); ob_plat_close(); return 0; }
     SDL_SetTextureBlendMode(P.fps_tex, SDL_BLENDMODE_BLEND);
     SDL_SetTextureScaleMode(P.fps_tex, SDL_ScaleModeNearest);
+window_ready:
 #ifdef _WIN32
     {
         SDL_SysWMinfo info;
@@ -203,6 +212,7 @@ static void sync_text_input(void)
 
 static void cursor_update(void)
 {
+    if (P.hk.window_only) return;                         /* the port's: it knows when the game draws a pointer of its own */
     int hide = !(P.host->overlay_open || (P.hk.captures && P.hk.captures()) || P.host->pointer == 1);
     if (hide != P.cursor_hidden) { SDL_ShowCursor(hide ? SDL_DISABLE : SDL_ENABLE); P.cursor_hidden = hide; }
 }
@@ -228,6 +238,7 @@ static int editing_key_to_input(SDL_Scancode k)
 
 static void do_quit(void)
 {
+    if (P.hk.quit_flag) { *P.hk.quit_flag = 1; return; }  /* the port leaves by itself, from its own loop */
     if (P.hk.quit) P.hk.quit();
     ob_plat_close();
     SDL_Quit();
@@ -279,7 +290,7 @@ static int event_used(const SDL_Event *e, int captured)
         int k = e->key.keysym.scancode;
         return open || k == SDL_SCANCODE_GRAVE || k == SDL_SCANCODE_F11 || k == SDL_SCANCODE_F12;
     }
-    case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL: return P.host->overlay_open;
+    case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL: return P.host->overlay_open && !P.hk.window_only;
     case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: return open;
     default: return 0;                                    /* controllers coming and going, window events, joystick: the game's too */
     }
@@ -370,10 +381,10 @@ void ob_plat_pump(void)
 #endif
             sync_text_input();
             if (P.host->request_quit) do_quit();
-        } else if (P.host->overlay_open && e.type == SDL_MOUSEMOTION) overlay_mouse(e.motion.x, e.motion.y, 0);
-        else if (P.host->overlay_open && e.type == SDL_MOUSEBUTTONDOWN)
+        } else if (!P.hk.window_only && P.host->overlay_open && e.type == SDL_MOUSEMOTION) overlay_mouse(e.motion.x, e.motion.y, 0);
+        else if (!P.hk.window_only && P.host->overlay_open && e.type == SDL_MOUSEBUTTONDOWN)
             overlay_mouse(e.button.x, e.button.y, e.button.button == SDL_BUTTON_LEFT ? 1 : e.button.button == SDL_BUTTON_RIGHT ? 2 : -1);
-        else if (P.host->overlay_open && e.type == SDL_MOUSEWHEEL) {
+        else if (!P.hk.window_only && P.host->overlay_open && e.type == SDL_MOUSEWHEEL) {
             int mx, my;
             SDL_GetMouseState(&mx, &my);
             overlay_mouse(mx, my, e.wheel.y > 0 ? 3 : e.wheel.y < 0 ? 4 : -1);
@@ -455,6 +466,7 @@ void ob_plat_present(void)
     SDL_Texture *show;
     const void *pix;
     int pitch;
+    if (!P.ren) return;                                   /* window only: the port presents */
     picture = P.hk.frame ? P.hk.frame(&sw, &sh) : P.hk.picture();
     if (!picture || sw < 1 || sh < 1) return;
     if (sw != P.cur_w || sh != P.cur_h) {                 /* the game changed the picture's size */
