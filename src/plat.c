@@ -304,11 +304,11 @@ void ob_plat_pump(void)
     while (SDL_PollEvent(&e)) {
         if (P.hk.event && P.hk.event(&e)) continue;
         if (e.type == SDL_KEYDOWN && !e.key.repeat && e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT)) {
-            static int win_w, win_h;                          /* Alt+Enter; the windowed size, which the bar's coming back would shrink */
+            static int win_w, win_h, win_x, win_y;            /* Alt+Enter; the windowed size and place, which the bar's coming back would move */
             int full = !!(SDL_GetWindowFlags(P.win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP));
-            if (!full) SDL_GetWindowSize(P.win, &win_w, &win_h);
+            if (!full) { SDL_GetWindowSize(P.win, &win_w, &win_h); SDL_GetWindowPosition(P.win, &win_x, &win_y); }
             SDL_SetWindowFullscreen(P.win, full ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
-            if (full && win_w > 0) { bar_for_window(); SDL_SetWindowSize(P.win, win_w, win_h); }
+            if (full && win_w > 0) { bar_for_window(); SDL_SetWindowSize(P.win, win_w, win_h); SDL_SetWindowPosition(P.win, win_x, win_y); }
             continue;
         }
         captured = P.hk.captures && P.hk.captures();
