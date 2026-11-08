@@ -7,4 +7,6 @@ src/overlay.c
 src/filemenu.c
 src/net.c
 src/snap.c
+src/rollback.c
+src/netgame.c
 third_party/pulseman/menu.c
