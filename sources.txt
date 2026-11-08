@@ -10,3 +10,4 @@ src/snap.c
 src/rollback.c
 src/netgame.c
 third_party/pulseman/menu.c
+src/plat.c

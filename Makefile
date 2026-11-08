@@ -21,13 +21,14 @@ LIB_OBJS = \
 	src/snap.o \
 	src/rollback.o \
 	src/netgame.o \
+	src/plat.o \
 	third_party/pulseman/menu.o
 ifdef SDL
 CFLAGS += -DOVERBAR_SDL $(shell pkg-config --cflags sdl2)
 LIB_OBJS += src/present_sdl.o
 endif
 
-.PHONY: all test check clean shots
+.PHONY: all test check clean shots test-plat
 
 # Winsock, for online play (src/net.c)
 ifeq ($(OS),Windows_NT)
@@ -52,6 +53,13 @@ test: tests/test_overbar tests/test_net tests/test_snap
 	./tests/test_overbar
 	./tests/test_net
 	./tests/test_snap
+
+# the platform layer on SDL's dummy drivers (needs SDL2): make test-plat SDL=1
+test-plat: tests/test_plat
+	./tests/test_plat
+
+tests/test_plat: tests/test_plat.c liboverbar.a
+	$(CC) $(CFLAGS) -DOB_SDL_BASE -o $@ tests/test_plat.c liboverbar.a -lm $(NETLIBS) $(shell pkg-config --libs sdl2)
 
 # every source with the strictest port's flags (NHL94Genesis-C-Port's) in the SDL client build,
 # warnings as errors. CC=i686-w64-mingw32-gcc (and so on) checks a cross compiler; tests/check.sh
