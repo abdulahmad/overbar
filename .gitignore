@@ -3,6 +3,7 @@
 *.exe
 /tests/test_overbar
 /tests/test_net
+/tests/test_sides
 /build/
 .DS_Store
 tools/shots

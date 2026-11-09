@@ -25,6 +25,8 @@
 #include <unistd.h>
 #endif
 #include "overbar/overbar.h"
+#include "overbar/room.h"
+#include "mdrt/menu.h"
 
 static int fails;
 #define CHECK(c, what) do { if (!(c)) { fails++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, what); } } while (0)
@@ -760,6 +762,89 @@ static void rooms(int loss)
     free_all(3);
 }
 
+
+/* the room's glue (overbar/room.h) over real sockets: a guest's device said before it is in, picks,
+ * the host starting, the seat table as a match's owners, chat, and who left */
+static ob_sides GS[3];
+static ob_chat GC[3];
+static ob_room GR[3];
+static int glue_game_msgs;
+static void glue_game(void *ud, int from, int type, const void *d, size_t n) { (void)ud; (void)from; (void)d; (void)n; if (type == 7) glue_game_msgs++; }
+
+static void glue_poll(int k) { int i; for (i = 0; i < k; i++) if (M[i].n) { ob_net_poll(M[i].n); ob_room_poll(&GR[i], glue_game, NULL); } }
+
+static int glue_until(int k, int (*ok)(void), double secs)
+{
+    double until = seconds() + secs;
+    while (seconds() < until) { glue_poll(k); if (ok()) return 1; nap(); }
+    return 0;
+}
+
+static int g_three(void) { return GS[0].n == 3 && GS[1].n == 3 && GS[2].n == 3; }
+static int g_picked(void) { int b = ob_sides_find(&GS[2], 1, 0); return GS[2].n == 3 && b >= 0 && GS[2].d[b].ready && GS[2].d[0].ready; }
+static int g_done(void) { return GS[0].done && GS[1].done && GS[2].done; }
+static int g_chat(void) { return GC[0].count >= 1 && GC[2].count >= 1 && glue_game_msgs == 1; }
+static int g_left(void) { return GS[0].n == 2 && GS[1].n == 2 && GC[1].count >= 2; }
+
+static void room_glue(void)
+{
+    char addr[32], err[120], line[OB_ROOM_LINES][OB_ROOM_LINE + 1];
+    int port = BASE_PORT + 140, i, nl;
+    ob_sides_game g;
+    ob_net_match m;
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    room_reset();
+    glue_game_msgs = 0;
+    M[0].n = make_room(0, port, NULL, 1, "Ann", &R[0]);
+    M[1].n = make_room(1, 0, addr, 1, "Ben", &R[1]);
+    M[2].n = NULL;
+    CHECK(M[0].n && M[1].n, "glue: machines open");
+    if (!M[0].n || !M[1].n || !lobby_all(2, 10)) { CHECK(0, "glue: Ben in the room"); free_all(3); return; }
+    M[2].n = make_room(1, 0, addr, 1, "Cal", &R[2]);       /* after Ben, so the numbers are known: Ben 1, Cal 2 */
+    if (!M[2].n) { CHECK(0, "glue: Cal's machine opens"); free_all(3); return; }
+    memset(&g, 0, sizeof g);
+    g.teams = 2; g.seats = 2;
+    for (i = 0; i < 3; i++) {
+        ob_chat_init(&GC[i], i == 0 ? "Ann" : i == 1 ? "Ben" : "Cal", ob_room_chat_send, M[i].n);
+    }
+    if (!lobby_all(3, 10)) { CHECK(0, "glue: all in the room"); free_all(3); return; }
+    for (i = 0; i < 3; i++) {
+        /* (a guest's number is known once it is in: the port makes the screen then) */
+        ob_sides_init(&GS[i], &g, ob_net_me(M[i].n), ob_room_sides_send, M[i].n);
+        ob_room_init(&GR[i], M[i].n, &GS[i], &GC[i]);
+        ob_sides_add(&GS[i], 0, i == 0 ? "Ann's keys" : i == 1 ? "Ben's pad" : "Cal's pad");
+    }
+    ob_sides_open(&GS[0]);
+    CHECK(glue_until(3, g_three, 10), "glue: every machine sees the three devices");
+    ob_sides_input(&GS[0], 0, MDRT_MENU_LEFT);
+    CHECK(ob_net_me(M[1].n) == 1 && ob_net_me(M[2].n) == 2, "glue: Ben 1, Cal 2");
+    ob_sides_input(&GS[1], 0, MDRT_MENU_RIGHT);
+    glue_poll(3);
+    ob_sides_input(&GS[0], 0, MDRT_MENU_OK);
+    ob_sides_input(&GS[1], 0, MDRT_MENU_OK);
+    CHECK(glue_until(3, g_picked, 10), "glue: picks reach the host and back");
+    ob_sides_input(&GS[0], 0, MDRT_MENU_OK);
+    CHECK(glue_until(3, g_done, 10), "glue: the host starts it on every machine");
+    memset(&m, 0, sizeof m);
+    ob_sides_owners(&GS[0], m.owner, OB_NET_MAX_PADS, 1);
+    m.delay = -1;
+    CHECK(m.owner[0] == 0 && m.owner[1] == 1 && m.owner[2] == -1, "glue: the table's owners");
+    CHECK(ob_net_match_begin(M[0].n, &m, err, sizeof err) == 0, "glue: the match begins with them");
+    ob_chat_key(&GC[1], 23, 1); ob_chat_key(&GC[1], 11, 1); ob_chat_key(&GC[1], 12, 1); ob_chat_key(&GC[1], 40, 1);  /* "hi" */
+    ob_net_send(M[1].n, 0, 7, "game", 4);
+    CHECK(glue_until(3, g_chat, 10), "glue: chat on every machine, the game's own message to the game");
+    CHECK(!strcmp(ob_chat_get(&GC[2], 0)->who, "Ben") && !strcmp(ob_chat_get(&GC[2], 0)->text, "hi"), "glue: Ben said hi");
+    nl = ob_room_lines(&GR[0], line, OB_ROOM_LINES);
+    CHECK(nl >= 7 && strstr(line[1], "Ann") && strstr(line[3], "Cal") && strstr(line[5], "Ann's keys") && strstr(line[6], "Ben's pad"),
+          "glue: the room page's lines");
+    if (nl < 7 || !strstr(line[6], "Ben")) for (i = 0; i < nl; i++) printf("  %s\n", line[i]);
+    ob_net_free(M[2].n);
+    M[2].n = NULL;
+    CHECK(glue_until(2, g_left, 10), "glue: Cal left: his device goes, chat says so");
+    CHECK(!strcmp(ob_chat_get(&GC[1], 0)->text, "Cal left"), "glue: news line");
+    free_all(3);
+}
+
 int main(void)
 {
     char lan[64];
@@ -771,6 +856,7 @@ int main(void)
     if (getenv("OB_NET_TEST_ROOMS")) {    /* (only the rooms) */
         rooms(0);
         rooms(5);
+        room_glue();
         if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
         printf("room tests ok\n");
         return 0;
@@ -789,6 +875,7 @@ int main(void)
     rollback(30, 1);
     rooms(0);
     rooms(5);
+    room_glue();
     printf("LAN address: \"%s\"\n", ob_net_lan_address(lan, sizeof lan));
     if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
     printf("net tests ok\n");

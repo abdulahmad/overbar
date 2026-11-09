@@ -61,6 +61,23 @@ the game is waiting for text (`ob_plat_osk_open()` / `ob_plat_osk_close()`: for 
 located in each game's code); a player can also open it by hand from the overlay. The layer's overlay fields (the Online page)
 use the same keyboard on a handheld.
 
+## Select sides, chat and the room (online play phase 2, 2026-11-09)
+
+One select-sides screen for every port (`include/overbar/sides.h`, `src/sides.c`; model and drawing, no SDL), shown when a
+game is about to start: each device (the keyboard is device 0, a controller 1 + its slot) starts in the middle, Left / Right
+move it to a team, OK says ready, Back takes it back. When every seated device is ready, OK from the deciding machine starts
+the game, and `ob_sides_game.apply` writes the seat table into the game's own controller setup. Online the host's model is
+the only one that changes: guests send their devices and presses as messages (`OB_NET_TYPE_SIDES`) and get the whole state
+back after each change, so every machine applies the same table. `ob_sides_owners` gives ob_net's pad owners for
+`ob_net_match_begin`; `ob_sides_hotkeys_filter` clears the keys that act for a team the machine has no seat on (line
+changes, goalie), run in the step on every machine.
+
+Chat (`include/overbar/chat.h`): T opens a line, Enter sends, Esc closes; lines show as toasts. Keys are HID codes, so the
+on-screen keyboard types into it. The room (`include/overbar/room.h`) ties ob_net to both: `ob_room_poll` routes the
+messages and says who joined or left; `ob_room_lines` / `ob_room_draw` is the room page (status, members and pings, seats).
+In the layer, `ob_plat_room(sides, chat)` routes the keys and controllers and draws both; `ob_plat_sides_devices` adds the
+keyboard and the controllers plugged in (and the layer adds and removes them as they come and go).
+
 ## Rules
 
 - No port includes `<SDL.h>` except through its own non-Overbar needs (PulseMan core stays untouched).

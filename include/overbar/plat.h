@@ -60,6 +60,17 @@ void ob_plat_osk_open(void);
 void ob_plat_osk_close(void);
 int ob_plat_osk_is_open(void);
 void ob_plat_osk_draw(uint32_t *px, int w, int h, int pitch);
+/* The select-sides screen (sides.h) and chat (chat.h), when the port has them (NULL: none). While the screen is
+ * open the layer gives it this machine's devices' presses: the keyboard is device 0 (arrows, Enter, Esc), a
+ * controller device 1 + its slot (d-pad, A or Start, B). Chat takes every key while its line is open (T opens it,
+ * not over the overlay); the on-screen keyboard types into it then. Both send (ob_room_*_send) from the thread
+ * that pumps; ob_plat_frame_done ticks chat. Ports that draw themselves call ob_plat_room_draw over their picture. */
+struct ob_sides;
+struct ob_chat;
+void ob_plat_room(struct ob_sides *sides, struct ob_chat *chat);
+/* the keyboard and each controller plugged in, as devices of the screen (names: "Keyboard", the controller's) */
+void ob_plat_sides_devices(struct ob_sides *sides);
+void ob_plat_room_draw(uint32_t *px, int w, int h, int pitch);
 void ob_plat_present(void);                   /* draws the picture, the port's layer, the stats and the overlay, and flips */
 void ob_plat_frame_done(int is_new);          /* count a frame shown (is_new: the game produced a new picture) */
 

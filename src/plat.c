@@ -6,6 +6,8 @@
  */
 #include "overbar/plat.h"
 #include "overbar/osk.h"
+#include "overbar/sides.h"
+#include "overbar/chat.h"
 
 #ifdef OVERBAR_SDL
 #include <stdio.h>
@@ -38,6 +40,8 @@ static struct {
     int fps_frames, fps_shown, fps_all, fps_new;
     uint32_t fps_since;
 } P = { .text_on = -1, .cursor_hidden = -1 };
+static ob_sides *R_sides;                    /* the select-sides screen and chat (ob_plat_room) */
+static ob_chat *R_chat;
 
 SDL_Window *ob_plat_window(void) { return P.win; }
 SDL_Renderer *ob_plat_renderer(void) { return P.ren; }
@@ -81,6 +85,7 @@ static void ctrl_added(int index)
     for (int i = 0; i < OB_PLAT_SLOTS; i++)
         if (!P.ctrl[i]) {
             P.ctrl[i] = SDL_GameControllerOpen(index);
+            if (R_sides && P.ctrl[i]) ob_sides_add(R_sides, 1 + i, SDL_GameControllerName(P.ctrl[i]));
             if (P.hk.controller) P.hk.controller(i, 1);
             break;
         }
@@ -93,6 +98,7 @@ static void ctrl_removed(SDL_JoystickID id)
     SDL_GameControllerClose(P.ctrl[s]);
     P.ctrl[s] = NULL;
     P.stick_dir[s] = 0;
+    if (R_sides) ob_sides_remove(R_sides, 1 + s);
     if (P.hk.controller) P.hk.controller(s, 0);
 }
 
@@ -204,7 +210,12 @@ void ob_plat_close(void)
 
 static ob_osk osk;
 static int osk_ready;
-static void osk_key(int sc, int down, void *ud) { (void)ud; if (P.hk.key) P.hk.key(sc, down); }
+static void osk_key(int sc, int down, void *ud)
+{
+    (void)ud;
+    if (R_chat && ob_chat_key(R_chat, sc, down)) return;  /* typing a chat line (or T opening one) */
+    if (P.hk.key) P.hk.key(sc, down);
+}
 static void osk_init_once(void) { if (!osk_ready) { ob_osk_init(&osk, osk_key, NULL); osk_ready = 1; } }
 void ob_plat_osk_open(void) { osk_init_once(); ob_osk_open(&osk); }
 void ob_plat_osk_close(void) { osk_init_once(); ob_osk_close(&osk); }
@@ -237,6 +248,61 @@ static int osk_event(const SDL_Event *e)
         if (e->type == SDL_KEYDOWN && !e->key.repeat) ob_osk_input(&osk, in);
         return 1;
     }
+    return 0;
+}
+
+
+/* ---- the select-sides screen and chat ---- */
+
+void ob_plat_room(ob_sides *sides, ob_chat *chat) { R_sides = sides; R_chat = chat; }
+
+void ob_plat_sides_devices(ob_sides *sides)
+{
+    int i;
+    if (!sides) return;
+    ob_sides_add(sides, 0, "Keyboard");
+    if (!P.hk.no_pads)
+        for (i = 0; i < OB_PLAT_SLOTS; i++)
+            if (P.ctrl[i]) ob_sides_add(sides, 1 + i, SDL_GameControllerName(P.ctrl[i]));
+}
+
+void ob_plat_room_draw(uint32_t *px, int w, int h, int pitch)
+{
+    if (R_sides) ob_sides_draw(R_sides, px, w, h, pitch);
+    if (R_chat) ob_chat_draw(R_chat, px, w, h, pitch);
+}
+
+/* 1 when the screen or chat used the event */
+static int room_event(const SDL_Event *e)
+{
+    int down = e->type == SDL_KEYDOWN;
+    if (P.host->overlay_open) return 0;
+    if (R_chat && R_chat->typing && (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP))
+        return ob_chat_key(R_chat, e->key.keysym.scancode, down);
+    if (R_sides && R_sides->open) {
+        int in = -1;
+        if (e->type == SDL_CONTROLLERBUTTONDOWN && !P.hk.no_pads) {
+            int b = e->cbutton.button, slot = ob_plat_controller_slot(e->cbutton.which);
+            in = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? MDRT_MENU_LEFT : b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? MDRT_MENU_RIGHT
+               : b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START ? MDRT_MENU_OK
+               : b == SDL_CONTROLLER_BUTTON_B ? MDRT_MENU_BACK : -1;
+            if (in < 0 || slot < 0) return 1;
+            return ob_sides_input(R_sides, 1 + slot, in);
+        }
+        if ((e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_CONTROLLERAXISMOTION) && !P.hk.no_pads) return 1;
+        if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) {
+            int k = e->key.keysym.scancode;
+            in = k == SDL_SCANCODE_LEFT ? MDRT_MENU_LEFT : k == SDL_SCANCODE_RIGHT ? MDRT_MENU_RIGHT
+               : k == SDL_SCANCODE_RETURN || k == SDL_SCANCODE_KP_ENTER ? MDRT_MENU_OK : k == SDL_SCANCODE_ESCAPE ? MDRT_MENU_BACK : -1;
+            if (in >= 0) {
+                if (!down) return 1;
+                if (e->key.repeat) return 1;
+                return ob_sides_input(R_sides, 0, in);   /* 0: Esc with the keyboard in the middle, the port's */
+            }
+        }
+    }
+    if (R_chat && (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) && !(e->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI)))
+        return ob_chat_key(R_chat, e->key.keysym.scancode, down);
     return 0;
 }
 
@@ -450,6 +516,7 @@ void ob_plat_pump(void)
     while (SDL_PollEvent(&e)) {
         if (P.hk.event && P.hk.event(&e)) continue;
         if (osk_event(&e)) continue;
+        if (room_event(&e)) continue;
         if (e.type == SDL_KEYDOWN && !e.key.repeat && e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT)) {
             static int win_w, win_h, win_x, win_y;            /* Alt+Enter; the windowed size and place, which the bar's coming back would move */
             int full = !!(SDL_GetWindowFlags(P.win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP));
@@ -546,6 +613,7 @@ void ob_plat_pump(void)
 void ob_plat_frame_done(int is_new)
 {
     uint32_t now = SDL_GetTicks(), ms = now - P.fps_since;
+    if (R_chat) ob_chat_tick(R_chat);
     P.fps_all++;
     if (is_new) P.fps_frames++;
     if (ms < 1000) return;
@@ -603,6 +671,7 @@ static void overlay_draw(const SDL_Rect *dst)
     P.over_x = to.x; P.over_y = to.y; P.over_w = to.w; P.over_h = to.h;
 }
 
+/* the on-screen keyboard, or the select-sides screen and chat, over the picture at about the picture's own pixel size */
 static void osk_draw_screen(const SDL_Rect *dst)
 {
     int t = (int)(dst->h * 0.8 / (P.cur_h > 0 ? P.cur_h : P.hk.src_h) + 0.5), mw, mh;
@@ -622,7 +691,10 @@ static void osk_draw_screen(const SDL_Rect *dst)
     th = mh;
     if (!tex) return;
     memset(px, 0, (size_t)mw * mh * 4);
-    ob_osk_draw(&osk, px, mw, mh, mw);
+    if (ob_plat_osk_is_open()) {
+        if (R_chat) ob_chat_draw(R_chat, px, mw, mh - 5 * 14 - 16, mw);   /* chat's line above the keyboard */
+        ob_osk_draw(&osk, px, mw, mh, mw);
+    } else ob_plat_room_draw(px, mw, mh, mw);
     SDL_Rect to = { dst->x + (dst->w - mw * t) / 2, dst->y + (dst->h - mh * t) / 2, mw * t, mh * t };
     SDL_UpdateTexture(tex, NULL, px, mw * 4);
     SDL_RenderCopy(P.ren, tex, NULL, &to);
@@ -679,7 +751,7 @@ void ob_plat_present(void)
     if (P.hk.draw_over) P.hk.draw_over(&dst);
     if (P.hk.captures && P.hk.captures()) { /* the port's setup screen is drawn over the picture by draw_over */ }
     else if (P.host->overlay_open) overlay_draw(&dst);
-    if (ob_plat_osk_is_open()) osk_draw_screen(&dst);
+    if (ob_plat_osk_is_open() || (!P.host->overlay_open && ((R_sides && R_sides->open) || (R_chat && ob_chat_shows(R_chat))))) osk_draw_screen(&dst);
     test_dump();
     SDL_RenderPresent(P.ren);
 }
