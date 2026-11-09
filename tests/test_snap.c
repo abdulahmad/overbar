@@ -72,6 +72,9 @@ static int steps, loaded_once, held, last_tag, landed;
 static uint8_t blob2[64];
 static size_t blob2_n;
 static ob_rollback *rbt;
+static int shared_mode;                 /* 1: step 6 takes a shared copy of step 2's state instead of loading it */
+static uint8_t *shared;
+static size_t shared_n;
 
 static int game_regions(void *user, ob_snap_region *r, int max)
 {
@@ -88,10 +91,24 @@ static int fake_step(void *user)
     const ob_net_states *st = ob_rollback_states(rbt);
     (void)user;
     steps++;
-    if (steps == 2) blob2_n = st->save(st->user, blob2, sizeof blob2);
-    else if (steps == 6 && !loaded_once) {
+    if (steps == 2) {
+        blob2_n = st->save(st->user, blob2, sizeof blob2);
+        if (shared_mode) {
+            shared_n = st->share(st->user, blob2, blob2_n, NULL, 0);
+            shared = malloc(shared_n);
+            if (!shared || st->share(st->user, blob2, blob2_n, shared, shared_n) != shared_n) return -1;
+        }
+    } else if (steps == 6 && !loaded_once) {
         loaded_once = 1;
-        if (st->load(st->user, blob2, blob2_n)) return -1;
+        if (shared_mode) {
+            uint8_t keep = shared[16];
+            shared[16] ^= 1;                                   /* (a region at another address: refused) */
+            if (st->take(st->user, shared, shared_n) == 0 || !ob_rollback_why(rbt)[0]) return -1;
+            shared[16] = keep;
+            if (st->take(st->user, shared, shared_n - 1) == 0) return -1;
+            game_mem[PG + 5] = 200;                            /* (the shared state puts it back) */
+            if (st->take(st->user, shared, shared_n)) { printf("take: %s\n", ob_rollback_why(rbt)); return -1; }
+        } else if (st->load(st->user, blob2, blob2_n)) return -1;
         return OB_NET_RESTART;
     } else (void)st->save(st->user, blob2 + 32, 32);           /* (more states, as the core takes them) */
     return OB_NET_RUN;
@@ -136,5 +153,11 @@ int main(void)
     printf("snap with a watch: ok\n");
     if (rollback_test()) return 1;
     printf("rollback: ok\n");
+    steps = loaded_once = held = last_tag = landed = 0;
+    memset(game_mem, 0, sizeof game_mem);
+    shared_mode = 1;
+    if (rollback_test()) return 1;
+    free(shared);
+    printf("rollback, a shared state taken: ok\n");
     return 0;
 }

@@ -6,6 +6,7 @@
 #include "overbar/sides.h"
 #include "overbar/chat.h"
 #include "overbar/lane.h"
+#include "overbar/save.h"
 #include "mdrt/menu.h"
 
 #include <stdio.h>
@@ -350,13 +351,96 @@ static void lane(void)
     CHECK(ob_lane_holder_may(&s, 2, 1) && !ob_lane_holder_may(&s, 2, 0), "the holder edits only its team's lines");
 }
 
+/* ---- match saves ---- */
+
+static uint32_t fake_at;
+static size_t fake_share(void *ud, uint32_t *step, void *out, size_t cap)
+{
+    static const char st[] = "a shared state";
+    (void)ud;
+    *step = fake_at;
+    if (out && cap >= sizeof st) memcpy(out, st, sizeof st);
+    return sizeof st;
+}
+
+static int count_files(const char *dir)
+{
+    ob_save_entry e[32];
+    return ob_saves_list(dir, "game X", e, 32);
+}
+
+static void saves(void)
+{
+    const char *dir = "build_test_saves";
+    ob_saves s;
+    ob_save_summary m;
+    ob_net_match match;
+    ob_save_entry e[32];
+    ob_save_file f;
+    ob_net_match back;
+    char line[200];
+    int i, n;
+    memset(&match, 0, sizeof match);
+    memset(match.owner, -1, sizeof match.owner);
+    match.owner[0] = 0; match.owner[1] = 1; match.delay = 2;
+    match.settings = "set-up"; match.settings_size = 7;
+    memset(&m, 0, sizeof m);
+    snprintf(m.league, sizeof m.league, "Abdul's league");
+    snprintf(m.game, sizeof m.game, "Season game 23");
+    snprintf(m.team[0], sizeof m.team[0], "Montreal"); snprintf(m.team[1], sizeof m.team[1], "Boston");
+    snprintf(m.players[0], sizeof m.players[0], "Ann"); snprintf(m.players[1], sizeof m.players[1], "Ben");
+    m.period = 1; m.clock = 20 * 60;
+    CHECK(!ob_saves_begin(&s, dir, "game X", &match, 0x1234), "saves begin");
+    ob_saves_done(&s);                              /* (a clean folder from an earlier run) */
+    ob_saves_event(&s, OB_SAVE_PERIOD, 0, &m);
+    ob_saves_event(&s, OB_SAVE_FACEOFF, 5, &m);
+    ob_saves_event(&s, OB_SAVE_FACEOFF, 5, &m);     /* a replay of the same step */
+    CHECK(s.npend == 2, "a point is queued once");
+    fake_at = 3;
+    CHECK(ob_saves_poll_with(&s, 4, fake_share, NULL) == 1 && s.npend == 1, "only points whose buttons are known; the faceoff waits for a state");
+    fake_at = 7;
+    CHECK(ob_saves_poll_with(&s, 8, fake_share, NULL) == 1 && s.npend == 0, "then the faceoff");
+    ob_saves_clock(&s, 50, 119, &m);
+    CHECK(s.npend == 0, "no clock save before 2 minutes");
+    m.clock = 18 * 60; m.score[1] = 1;
+    ob_saves_clock(&s, 60, 120, &m);
+    ob_saves_clock(&s, 61, 121, &m);
+    CHECK(s.npend == 1, "a clock save at 2 minutes, once");
+    for (i = 0; i < 5; i++) ob_saves_event(&s, OB_SAVE_FACEOFF, 100 + (uint32_t)i * 50, &m);
+    fake_at = 400;
+    ob_saves_poll_with(&s, 400, fake_share, NULL);
+    n = count_files(dir);
+    CHECK(n == 1 + 3 + 1, "the period's, the last 3 faceoffs, the clock's");
+    m.period = 2; m.clock = 20 * 60;
+    ob_saves_event(&s, OB_SAVE_PERIOD, 500, &m);
+    fake_at = 501;
+    ob_saves_poll_with(&s, 501, fake_share, NULL);
+    n = ob_saves_list(dir, "game X", e, 32);
+    CHECK(n == 6 && e[0].kind == OB_SAVE_PERIOD && e[0].step == 501 && e[0].sum.period == 2, "newest first");
+    CHECK(ob_saves_list(dir, "game Y", e + 10, 10) == 0, "another game's saves are not listed");
+    ob_save_line(&e[0], line, sizeof line);
+    CHECK(strstr(line, "2nd period 20:00") && strstr(line, "Montreal 0 - 1 Boston") && strstr(line, "(Ann vs Ben)") && strstr(line, "Abdul's league, Season game 23"),
+          "the Recover list's line");
+    CHECK(!ob_save_load(e[0].path, "game X", &f) && f.state_size == 15 && !strcmp((char *)f.state, "a shared state") && f.delay == 2
+          && f.owner[1] == 1 && f.owner[2] == -1 && f.settings_size == 7, "a save reads back");
+    ob_save_match(&f, &back);
+    CHECK(back.state_step == 501 && back.state == f.state && back.settings_size == 7 && back.owner[0] == 0, "the match to begin from it");
+    ob_save_file_free(&f);
+    CHECK(ob_save_load(e[0].path, "game Y", &f) < 0, "another game's save is refused");
+    ob_saves_done(&s);
+    CHECK(count_files(dir) == 0, "the result is in: the match's saves go");
+    ob_saves_free(&s);
+    remove(dir);
+}
+
 int main(void)
 {
     local();
     online();
     chat();
     lane();
+    saves();
     if (fails) { printf("%d sides/chat check(s) failed\n", fails); return 1; }
-    printf("sides and chat ok\n");
+    printf("sides, chat, lane and saves ok\n");
     return 0;
 }

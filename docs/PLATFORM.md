@@ -89,6 +89,21 @@ requests are dropped. `ob_lane_sim` is part of the game's state. The port's part
 the mouse (read the lane's instead while paused), when its pause menu opens and closes, and the line editor's fence
 (`ob_lane_holder_may` with the holder's teams from the seat table).
 
+## Saves, reconnect and Recover game (online play phase 4, 2026-11-09)
+
+- Shared states (`ob_rollback`'s share / take): a state as bytes another machine of the same build takes, the regions
+  whole and the stack, with their addresses. Taken only where every region and the game thread's stack sit at the same
+  addresses (`ob_rollback_why` says what differs). Needed for a watcher joining mid-match, a player coming back and Recover.
+- `ob_net_match.state`: a match every machine begins from a shared state at `state_step` (Recover game).
+  `ob_net_game.hold_seats`: a player who drops does not end the match; it waits (`ob_net_waiting_for`, the status line
+  says "waiting for Ben to come back"), and when a machine of that name joins again it gets the same seat and every
+  machine goes on from the newest state whose buttons were all known. Ending the match (`ob_net_match_end`) is the
+  reconnect screen's other choice.
+- `include/overbar/save.h`: the host's saves (each faceoff and every 2 game minutes, the last 3 of each; each period's
+  start, all), with a summary for the Recover list (`ob_saves_list`, `ob_save_line`, `ob_save_load`, `ob_save_match`),
+  removed once the result is in the league (`ob_saves_done`). The game's part: `ob_saves_event` / `ob_saves_clock` in
+  the simulation, `ob_saves_poll` on the host outside it.
+
 ## Rules
 
 - No port includes `<SDL.h>` except through its own non-Overbar needs (PulseMan core stays untouched).
