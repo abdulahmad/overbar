@@ -37,7 +37,7 @@ extern "C" {
 
 #define OB_SIDES_MAX_DEVICES 16
 #define OB_SIDES_MAX_TEAMS 2
-#define OB_SIDES_MAX_SEATS 8        /* = OB_NET_MAX_PADS */
+#define OB_SIDES_MAX_SEATS 8        /* (ob_net's pads 0 .. 7 at one a seat) */
 #define OB_SIDES_NAME 23
 #define OB_SIDES_MIDDLE (-1)
 

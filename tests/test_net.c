@@ -26,6 +26,7 @@
 #endif
 #include "overbar/overbar.h"
 #include "overbar/room.h"
+#include "overbar/lane.h"
 #include "mdrt/menu.h"
 
 static int fails;
@@ -845,6 +846,129 @@ static void room_glue(void)
     free_all(3);
 }
 
+/* the menu lane over a real match with rollback: Ben pauses, types in the menu, resumes; Ann's pause
+ * while Ben holds it is dropped; Ann pauses later and the game's own Resume ends it. Every machine sees
+ * the same pause and keys on the same steps. */
+#define LN_END 420
+typedef struct lstate {
+    ob_lane_sim sim;
+    uint64_t h;
+    uint32_t paused[4], resumed[4], keys[8];
+    int npaused, nresumed, nkeys;
+} lstate;
+typedef struct ltoy { lstate st; ob_lane_in in; uint64_t final[LN_END]; int over; uint32_t high; } ltoy;
+static ltoy LT[2];
+static size_t lt_save(void *u, void *out, size_t cap) { ltoy *t = u; if (cap >= sizeof t->st) memcpy(out, &t->st, sizeof t->st); return sizeof t->st; }
+static int lt_load(void *u, const void *in, size_t size) { ltoy *t = u; if (size != sizeof t->st) return -1; memcpy(&t->st, in, size); return 0; }
+
+static ob_net *make_lane(int role, int port, const char *addr, const char *name, ltoy *t)
+{
+    ob_online o;
+    ob_net_game g;
+    ob_net_states st;
+    char err[200];
+    ob_net *n;
+    memset(&o, 0, sizeof o);
+    memset(&g, 0, sizeof g);
+    memset(&st, 0, sizeof st);
+    snprintf(o.name, sizeof o.name, "%s", name);
+    o.role = role;
+    snprintf(o.addr, sizeof o.addr, "%s", addr ? addr : "");
+    o.port = port; o.delay = 1; o.here = 1; o.all = 2;
+    st.user = t; st.save = lt_save; st.load = lt_load;
+    g.identity = "lane toy"; g.pads = OB_NET_MAX_PADS; g.states = &st; g.room = 1;
+    g.settings = "s"; g.settings_size = 1;
+    n = ob_net_new(&o, &g, err, sizeof err);
+    if (!n) printf("ob_net_new: %s\n", err);
+    return n;
+}
+
+static int lane_tick(int i)
+{
+    ob_net *n = M[i].n;
+    ltoy *t = &LT[i];
+    uint16_t local[OB_NET_MAX_PADS], all[OB_NET_MAX_PADS], w[2];
+    uint32_t cur;
+    int r, f, p;
+    if (!n) return 0;
+    if (t->over) { ob_net_poll(n); return 0; }        /* (still pumped: the others finish from its buttons) */
+    if ((r = ob_net_poll(n)) != OB_NET_GO) { if (r == OB_NET_LOBBY && t->high) { t->over = 1; return 1; } return 0; }
+    cur = ob_net_step_count(n);
+    if (cur < LN_END && cur >= t->high) {         /* a player's presses come once, at a new step (not again on a replay) */
+        t->high = cur + 1;
+        if (i == 1 && cur == 100) ob_lane_in_pause(&t->in);
+        if (i == 1 && cur == 105) { ob_lane_in_key(&t->in, 0x48, 1); ob_lane_in_key(&t->in, 0x48, 0); }
+        if (i == 0 && cur == 120) { ob_lane_in_pause(&t->in); ob_lane_in_key(&t->in, 0x50, 1); }
+        if (i == 1 && cur == 140) ob_lane_in_pause(&t->in);
+        if (i == 0 && cur == 200) ob_lane_in_pause(&t->in);
+        if (i == 0 && cur == 230) ob_lane_in_key(&t->in, 0x01, 1);
+        ob_lane_in_mouse(&t->in, (int)cur % 640, i * 100, 0);
+    }
+    ob_lane_in_pack(&t->in, cur, w);
+    local[0] = (uint16_t)(cur * 7 + (uint32_t)i);     /* the seat's buttons, then the lane's two */
+    local[1] = w[0];
+    local[2] = w[1];
+    r = ob_net_frame(n, 1, local, all);
+    if (r < 0) { printf("lane: machine %d ended: %s\n", i, ob_net_why(n)); t->over = 1; return -1; }
+    if (r == OB_NET_OVER) { t->over = 1; return 1; }
+    if (r != OB_NET_RUN) return r == OB_NET_RESTART;
+    f = ob_lane_step(&t->st.sim, all, 3, cur);
+    if ((f & OB_LANE_PAUSED) && t->st.npaused < 4) t->st.paused[t->st.npaused++] = cur;
+    if ((f & OB_LANE_RESUMED) && t->st.nresumed < 4) t->st.resumed[t->st.nresumed++] = cur;
+    if (f & OB_LANE_KEY) {
+        if (t->st.nkeys < 8) t->st.keys[t->st.nkeys++] = cur << 16 | (uint32_t)t->st.sim.key << 1 | t->st.sim.down;
+        if (t->st.sim.key == 0x01 && t->st.sim.down) { ob_lane_resume(&t->st.sim); if (t->st.nresumed < 4) t->st.resumed[t->st.nresumed++] = cur; }
+    }
+    for (p = 0; p < OB_NET_MAX_PADS; p++) t->st.h = (t->st.h ^ all[p]) * 0x100000001B3ull + cur;
+    t->st.h = (t->st.h ^ (uint64_t)(t->st.sim.holder + 1) ^ (uint64_t)t->st.sim.x << 8) * 0x100000001B3ull;
+    if (cur < LN_END) t->final[cur] = t->st.h;
+    if (cur % 60 == 59) ob_net_check(n, cur, t->st.h);
+    /* the game ends after step LN_END - 1, once every button up to here is known (so no wrong guess is left) */
+    if (cur + 1 >= LN_END && ob_net_confirmed(n) > cur) { ob_net_match_end(n); t->over = 1; }
+    return 1;
+}
+
+static void lane_net(int loss)
+{
+    char addr[32], err[120];
+    int port = BASE_PORT + 160 + loss, i;
+    ob_net_match m;
+    double until;
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    memset(LT, 0, sizeof LT);
+    for (i = 0; i < 2; i++) { ob_lane_sim_init(&LT[i].st.sim); ob_lane_in_init(&LT[i].in); }
+    M[0].n = make_lane(0, port, NULL, "Ann", &LT[0]);
+    M[1].n = make_lane(1, 0, addr, "Ben", &LT[1]);
+    if (!M[0].n || !M[1].n || !lobby_all(2, 10)) { CHECK(0, "lane: both in the room"); free_all(2); return; }
+    if (loss) { ob_net_simulate(M[0].n, 20, 10, loss, 2); ob_net_simulate(M[1].n, 20, 10, loss, 2); }
+    memset(&m, 0, sizeof m);
+    for (i = 0; i < OB_NET_MAX_PADS; i++) m.owner[i] = -1;
+    m.owner[0] = 0; m.owner[1] = 1; m.delay = -1;
+    ob_lane_owners(m.owner, ob_net_members(M[0].n));
+    CHECK(!ob_net_match_begin(M[0].n, &m, err, sizeof err), "lane: the match begins with the lanes");
+    until = seconds() + 60;
+    while (seconds() < until && !(LT[0].over && LT[1].over)) {
+        int moved = 0;
+        for (i = 0; i < 2; i++) { int r = lane_tick(i); if (r < 0) until = 0; moved |= r > 0; }
+        if (!moved) nap();
+    }
+    CHECK(LT[0].over && LT[1].over, "lane: the match played to its end");
+    if (!(LT[0].over && LT[1].over)) printf("lane: over %d %d, steps %u %u, confirmed %u %u, states %d %d\n", LT[0].over, LT[1].over,
+        (unsigned)ob_net_step_count(M[0].n), (unsigned)ob_net_step_count(M[1].n), (unsigned)ob_net_confirmed(M[0].n), (unsigned)ob_net_confirmed(M[1].n),
+        ob_net_poll(M[0].n), ob_net_poll(M[1].n)); if (!LT[1].over) printf("lane: guest: %s / host: %s\n", ob_net_why(M[1].n), ob_net_why(M[0].n));
+    for (i = 0; i < LN_END && LT[0].final[i] == LT[1].final[i]; i++) {}
+    CHECK(i == LN_END, "lane: both machines' steps alike");
+    if (i < LN_END) printf("lane: first differs at step %d\n", i);
+    CHECK(!memcmp(LT[0].st.paused, LT[1].st.paused, sizeof LT[0].st.paused) && !memcmp(LT[0].st.resumed, LT[1].st.resumed, sizeof LT[0].st.resumed)
+          && !memcmp(LT[0].st.keys, LT[1].st.keys, sizeof LT[0].st.keys), "lane: the same pauses and keys");
+    CHECK(LT[0].st.npaused == 2 && LT[0].st.nresumed == 2 && LT[0].st.nkeys == 3, "lane: two pauses, two resumes, three keys");
+    printf("lane%s: paused at %u and %u, resumed at %u and %u; keys at %u %u %u; %s\n", loss ? " (loss)" : "",
+           (unsigned)LT[0].st.paused[0], (unsigned)LT[0].st.paused[1], (unsigned)LT[0].st.resumed[0], (unsigned)LT[0].st.resumed[1],
+           (unsigned)(LT[0].st.keys[0] >> 16), (unsigned)(LT[0].st.keys[1] >> 16), (unsigned)(LT[0].st.keys[2] >> 16),
+           ob_net_state(M[0].n) == OB_NET_ENDED ? ob_net_why(M[0].n) : "no desync");
+    free_all(2);
+}
+
 int main(void)
 {
     char lan[64];
@@ -857,6 +981,8 @@ int main(void)
         rooms(0);
         rooms(5);
         room_glue();
+        lane_net(0);
+        lane_net(5);
         if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
         printf("room tests ok\n");
         return 0;
@@ -876,6 +1002,8 @@ int main(void)
     rooms(0);
     rooms(5);
     room_glue();
+    lane_net(0);
+    lane_net(5);
     printf("LAN address: \"%s\"\n", ob_net_lan_address(lan, sizeof lan));
     if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
     printf("net tests ok\n");

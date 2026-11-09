@@ -17,7 +17,7 @@
  *   CHUNK      session u32, index u32, length u16, bytes (the settings, CHUNK bytes at a time)
  *   CHUNK_ACK  session u32, chunks had in a row u32, which of the 64 after the first missing it has u64
  *   READY      session u32 (the guest has the settings)
- *   START      session u32, the receiver's place u8, machines u8, then each one's pads u8 and name
+ *   START      session u32, the receiver's place u8, machines u8, then each one's pads (bit p: pad p) u16 and name
  *   INPUT      session u32, whose u8 (the machine whose buttons these are), first step u32, count u8,
  *              pads u8, the buttons (count x pads u16); then machines u8 and the steps of each one's
  *              buttons the sender has in a row (u32 each: its acknowledgement); then the sender's
@@ -464,7 +464,7 @@ ob_net *ob_net_new(const ob_online *o, const ob_net_game *g, char *err, int err_
     say(err, err_size, "");
     if (!o || !g) { say(err, err_size, "no settings"); return NULL; }
     pads = g->pads;
-    if (pads < 2 || pads > PADS) { say(err, err_size, "the game's pads must be 2 to 8"); return NULL; }
+    if (pads < 2 || pads > PADS) { say(err, err_size, "the game's pads must be 2 to 16"); return NULL; }
     if (g->identity && strlen(g->identity) > 255) { say(err, err_size, "the game's identity is too long"); return NULL; }
     if (g->settings_size > OB_NET_MAX_SETTINGS || (g->settings_size && !g->settings)) { say(err, err_size, "the settings are too large"); return NULL; }
     if (o->role % 3 != ROLE_HOST && !o->addr[0]) { say(err, err_size, "no address to connect to"); return NULL; }
@@ -614,7 +614,7 @@ static void send_start(ob_net *n, int k)
     int i;
     begin(&o, T_START);
     p32(&o, n->session); p8(&o, (uint32_t)k); p8(&o, (uint32_t)n->npeers);
-    for (i = 0; i < n->npeers; i++) { p8(&o, n->p[i].pads); pstr(&o, n->p[i].name); }
+    for (i = 0; i < n->npeers; i++) { p16(&o, n->p[i].pads); pstr(&o, n->p[i].name); }
     to_peer(n, k, &o);
 }
 
@@ -1340,7 +1340,7 @@ static void handle(ob_net *n, const uint8_t *b, size_t size, int from)
         for (k = 0; k < np; k++) {
             uint32_t len;
             const uint8_t *nm;
-            pads[k] = g8(&i);
+            pads[k] = g16(&i);
             len = g8(&i);
             nm = gbytes(&i, len);
             if (i.bad || !pads[k] || (pads[k] & all) || (pads[k] >> n->pads)) return;
@@ -1637,13 +1637,6 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
     }
     if (ob_net_poll(n) == OB_NET_ENDED) return -1;
     if (n->room && n->phase != P_RUNNING) return OB_NET_OVER;
-    if (n->end_pending && n->cur >= n->end_at) {         /* (the host ended the match here, once its buttons are in) */
-        char why[200];
-        if (n->end_at && confirmed_of(n) < n->end_at && since(now(), n->end_heard) < 3000 * MS) return OB_NET_WAIT;
-        snprintf(why, sizeof why, "%s", n->mwhy);
-        stop_match(n, why);
-        return OB_NET_OVER;
-    }
     if (n->rb && n->rb_to < n->cur) {                     /* a wrong guess: back to the state before it */
         struct slot *t = newest_upto(n, n->rb_to);
         if (!t || n->st.load(n->st.user, t->b, t->size)) {
@@ -1659,6 +1652,14 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
         n->rb_to = NONE;
         n->waited = 0;
         return OB_NET_RESTART;
+    }
+    if (n->end_pending && n->cur >= n->end_at) {         /* (the host ended the match here, once its buttons are in and a wrong guess
+                                                             before it has been played again) */
+        char why[200];
+        if (n->end_at && confirmed_of(n) < n->end_at && since(now(), n->end_heard) < 3000 * MS) return OB_NET_WAIT;
+        snprintf(why, sizeof why, "%s", n->mwhy);
+        stop_match(n, why);
+        return OB_NET_OVER;
     }
     confirmed = confirmed_of(n);
     if (n->rb) check_due(n, confirmed);

@@ -32,11 +32,11 @@
 extern "C" {
 #endif
 
-#define OB_NET_PROTOCOL 3               /* the messages' version: every machine must have the same (2: each INPUT
+#define OB_NET_PROTOCOL 4               /* the messages' version: every machine must have the same (2: each INPUT
                                            carries the sender's step and lead, for rollback's time sync; 3: rooms,
-                                           matches and messages) */
+                                           matches and messages; 4: 16 pads) */
 #define OB_NET_MAX_MACHINES 4           /* the host and three guests */
-#define OB_NET_MAX_PADS 8
+#define OB_NET_MAX_PADS 16              /* seats' pads first; a room's match can give each machine a menu lane past them (overbar/lane.h) */
 #define OB_NET_MAX_DELAY 30             /* steps */
 #define OB_NET_MAX_ROLLBACK 30          /* steps a rollback may play again, at most */
 #define OB_NET_MAX_SETTINGS (16u << 20) /* bytes of the host's settings */
@@ -180,7 +180,8 @@ typedef struct ob_net_match {
  * with why in err (an owner not in the room, a match already on) */
 int ob_net_match_begin(ob_net *n, const ob_net_match *m, char *err, int err_size);
 /* this machine's match is over (its game ended): back to the lobby. The host's ends it for every machine
- * that has not ended it yet, at the step the host is at */
+ * that has not ended it yet, at the step the host is at. With rollback, end it after a step only once every
+ * button up to that step is known (ob_net_confirmed() > it), or a wrong guess before it stays unplayed */
 void ob_net_match_end(ob_net *n);
 uint32_t ob_net_match_id(ob_net *n);    /* the newest match (1, 2 ...; 0 none) */
 const char *ob_net_match_why(ob_net *n);    /* why this machine's last match ended ("" its game did, or none) */
