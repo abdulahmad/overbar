@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The CRT looks and the MiSTer filters in software, for the hosts that draw with SDL_Renderer
  * (Genesis, SNES). It is the NHL95PC sdl2-port fragment shader (port/video_gl.c) worked out on

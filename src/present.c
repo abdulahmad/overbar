@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Present backend pick and a software dest-rect blit. Handheld / PortMaster /
  * KMSDRM use SDL_Renderer (GLES2 if the driver offers it). Desktop OpenGL is

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-# Copyright (c) 2026 abdulahmad and contributors
+# Copyright (c) 2026 abdulahmad
 #
 # Overbar's sources, for a port that has Overbar as a git submodule and compiles it itself:
 #
@@ -16,7 +16,12 @@
 # mister folder next to the program. $(call overbar_copy_mister,DIR) copies them to DIR/mister.
 
 OVERBAR_DIR          ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
-OVERBAR_LIB_NAMES    := scaler host present menu look overlay filemenu net
+OVERBAR_LIB_NAMES    := scaler host present menu look overlay filemenu bar_win net plat plat_pads osk gl
+# macOS: the Cocoa menu bar is Objective-C: compile $(OVERBAR_MAC_SRCS) with -fobjc-arc and link $(OVERBAR_MAC_LIBS)
+ifeq ($(shell uname -s),Darwin)
+OVERBAR_MAC_SRCS     := $(OVERBAR_DIR)/src/bar_mac.m
+OVERBAR_MAC_LIBS     := -framework Cocoa
+endif
 OVERBAR_SRCS         := $(OVERBAR_LIB_NAMES:%=$(OVERBAR_DIR)/src/%.c)
 OVERBAR_PULSEMAN_SRC := $(OVERBAR_DIR)/third_party/pulseman/menu.c
 OVERBAR_HDRS         := $(OVERBAR_DIR)/include/overbar/overbar.h $(OVERBAR_DIR)/include/overbar/net.h $(OVERBAR_DIR)/src/look_tables.h $(OVERBAR_DIR)/third_party/pulseman/udp.c $(OVERBAR_DIR)/include/mdrt/menu.h

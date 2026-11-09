@@ -5,6 +5,13 @@ src/menu.c
 src/look.c
 src/overlay.c
 src/filemenu.c
+src/bar_win.c
 src/net.c
 src/snap.c
+src/rollback.c
+src/netgame.c
 third_party/pulseman/menu.c
+src/plat.c
+src/plat_pads.c
+src/osk.c
+src/gl.c

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Overlay shell: PulseMan mdrt_menu pages filled from the shared model.
  * Always available (windowed, fullscreen, handheld). ` and F11 toggle it;

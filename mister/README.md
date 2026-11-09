@@ -17,6 +17,11 @@ This folder is not under Overbar's licence (PolyForm Noncommercial). The program
 linked into Overbar or a port, so shipping the folder beside a program does not make the program GPL. Keep this README in the folder when
 you ship it. The GPL-3.0 text is in GPL-3.0.txt.
 
+## Authors and status
+
+The authors named in the file headers are Tonurics (most of the shadow masks), TrashUncle, Soltan_G42, Mike Chi (six RetroTink masks, converted by TrashUncle) and c0d3h4x0r (`Gamma/CRT Simulation.txt`). The other filters, gamma curves and presets come from the contributors named in the MiSTer repositories' histories.
+Only MiSTer's Distribution repository states GPL-3.0; the three source repositories have no license file, and each author's agreement to GPL-3.0 is not confirmed. See [../THIRD_PARTY.md](../THIRD_PARTY.md).
+
 ## How a port gets them
 
 Overbar looks for a `mister` folder next to the program, then in the current folder. A port's build copies this folder there:

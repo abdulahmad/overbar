@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * One menu model for overlay and file menus. Scale Mode is a single choice;
  * only that mode's sub-options are listed. There is no SNES Native 1:1 item.

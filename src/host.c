@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * First-launch defaults (L15), ini, overlay keys (L13).
  */
