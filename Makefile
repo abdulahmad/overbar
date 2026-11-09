@@ -22,7 +22,7 @@ LIB_OBJS = \
 	src/rollback.o \
 	src/netgame.o \
 	src/plat.o \
-	src/plat_pads.o src/osk.o \
+	src/plat_pads.o src/osk.o src/gl.o \
 	third_party/pulseman/menu.o
 ifdef SDL
 CFLAGS += -DOVERBAR_SDL $(shell pkg-config --cflags sdl2)

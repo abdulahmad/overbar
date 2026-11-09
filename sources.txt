@@ -13,3 +13,4 @@ third_party/pulseman/menu.c
 src/plat.c
 src/plat_pads.c
 src/osk.c
+src/gl.c
