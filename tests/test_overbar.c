@@ -155,7 +155,7 @@ static void test_defaults(void)
     CHECK(d.refresh == OB_REFRESH_VRR);
     CHECK(d.vsync == 0);
     CHECK(d.stats == 0);
-    CHECK(d.hires.mode == OB_MODE_SHARP && d.hires.sharp == OB_SHARP_3X);
+    CHECK(d.hires.mode == OB_MODE_SHARP && d.hires.sharp == OB_SHARP_1X);
     CHECK(d.lores.mode == OB_MODE_SHARP && d.lores.sharp == OB_SHARP_3X);
     CHECK(d.lores.height == OB_HEIGHT_FIT && d.hires.height == OB_HEIGHT_FIT);
     CHECK(d.has_hires);
