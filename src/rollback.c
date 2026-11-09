@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors */
+ * Copyright (c) 2026 abdulahmad */
 #include "overbar/rollback.h"
 #include <stdio.h>
 #include <stdlib.h>

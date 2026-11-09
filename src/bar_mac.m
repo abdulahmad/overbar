@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The macOS menu bar: filemenu.c's bar_* calls on NSMenu. The menus are added after the application menu in [NSApp mainMenu] (the menu bar is
  * the screen's, not the window's), and a bar item that stands alone ("Online Play...") is wrapped in a menu of its own because the macOS menu

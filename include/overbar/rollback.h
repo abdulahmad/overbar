@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Rollback for a game that runs in a thread of its own and cannot be stepped from outside: the PC
  * ports, whose original code runs natively and asks for its input from deep inside its own loop.

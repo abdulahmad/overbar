@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Players' pads and the controller setup screen, generalized from the SNES port's platform/main.c
  * and platform/padsetup.c (PulseMan-derived, MIT).

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The Windows menu bar: filemenu.c's bar_* calls on an HMENU, and the window messages the client copies into ob_wm. Opening the bar runs
  * Windows' own loop in the main thread, so the client is asked to pause (ob_filemenu_tracking) until it closes. */

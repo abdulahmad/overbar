@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Netplay in two modes. A game that can save and load its state at a resumable point gives
  * ob_net_game.states and plays with rollback (ob_net_frame): the other machines' buttons are

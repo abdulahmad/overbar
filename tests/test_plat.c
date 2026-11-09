@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The platform layer on SDL's dummy video and audio drivers: no display needed. make test-plat SDL=1 */
 #include <stdio.h>

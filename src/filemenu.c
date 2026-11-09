@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Native file-menu shell. L3: menu bar only in windowed desktop. Overlay always
  * available. Handheld / KMSDRM: overlay only. Win32 CreateMenu from the same

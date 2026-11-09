@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The OpenGL shader presentation path of the desktop PC ports (src/gl.c, built with -DHAVE_GL): the frame as a texture drawn by a fragment
  * shader with sharp / cubic scaling, the CRT looks and the MiSTer filters. OpenGL 2.0 (compatibility). The window is made by the platform

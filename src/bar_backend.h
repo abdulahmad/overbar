@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The native menu bar's backend: what filemenu.c needs from the OS. bar_win.c (HMENU), bar_mac.m (NSMenu); other systems have none (stubs
  * in filemenu.c). A command number is what a picked item reports (ob_filemenu_command). */

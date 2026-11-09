@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * States of a game's memory, for rollback (net.h). A state is a set of memory regions as they were, plus a small blob of the
  * caller's (a CPU's registers, a thread's stack, a device's variables). Only the pages that differ from a base copy are kept:

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Online play's shared part for the PC ports (overbar/netgame.h). Taken from NHL 95 PC's
  * port/netplay.c, where it began. */

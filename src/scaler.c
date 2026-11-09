@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Destination rectangle. Reuses the nhl95pc sdl2-port video_view approach
  * (largest picture in the window; integer k of a line unit; columns never cut).

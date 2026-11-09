@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Taken from the NHL 95 / 96 / 94 PC ports (one copy now). Built when HAVE_GL is defined (the Windows PC ports); empty otherwise.
  *

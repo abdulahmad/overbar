@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The players' pads for every port on the platform layer: each player's keys and controller, the
  * controller setup screen, and the settings that hold them. The controller setup screen's drawing

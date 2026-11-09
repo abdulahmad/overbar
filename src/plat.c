@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The shared SDL2 platform layer (docs/PLATFORM.md). Lifted from the SNES C port's window code, which
  * the other ports duplicated, so one copy runs on a desktop and on a Linux handheld.

@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-# Copyright (c) 2026 abdulahmad and contributors
+# Copyright (c) 2026 abdulahmad
 #
 # Cross-build a port for 64-bit ARM Linux (Knulli, muOS, ROCKNIX on the Anbernic RG35XX Plus/H/SP and other handhelds).
 #   sh cross-aarch64.sh <port-dir> [make args...]      e.g. sh native/overbar/tools/cross-aarch64.sh . build/nhl94

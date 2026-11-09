@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Optional SDL_Renderer present. Built with OVERBAR_SDL. Handheld: fullscreen
  * KMSDRM, vsync, GLES2 renderer hint, never SDL_WINDOW_OPENGL.

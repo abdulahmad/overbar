@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Overbar's SDL2 platform layer (docs/PLATFORM.md): the window, the picture, the overlay,
  * the event pump and the controllers, shared by every port. A port gives hooks for what is its own.

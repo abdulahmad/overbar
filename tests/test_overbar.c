@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * v1 checks: dest-rect (T1 T2 T5 T8 T9), defaults (T14), keys (T16),
  * Scale Mode sub-options + live preview (T12), no Native (T4/L12),

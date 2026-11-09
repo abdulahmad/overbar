@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The README's pictures: Overbar's overlay, picture shapes and looks over three sample
  * screens (docs/samples: a Genesis 320x224, a SNES 256x224 and a DOS 320x200 one). `make shots`

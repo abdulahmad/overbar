@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * On-screen keyboard: a grid moved with the d-pad (or arrow keys), OK types, Back deletes. It does not know the game: each press goes out
  * through key(scancode, down), where the scancode is a USB HID usage code (the same values as SDL's scancodes), so a port can turn it into

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * Overbar: host harness around retro game ports. One menu model, one scaler,
  * two shells (overlay + native file menus). v1 is the standalone skeleton:

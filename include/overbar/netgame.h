@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
- * Copyright (c) 2026 abdulahmad and contributors
+ * Copyright (c) 2026 abdulahmad
  *
  * The part of online play every PC port has the same: the Online page's hooks and its settings
  * file, the session object and its lock, waiting at the start of a game for the other machine, and
