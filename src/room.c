@@ -22,6 +22,13 @@ void ob_room_modules(ob_room *r, ob_files *files, ob_season *season)
     r->season = season;
 }
 
+void ob_room_serial(ob_room *r, ob_serial *serial) { r->serial = serial; }
+
+void ob_room_serial_send(void *net, const void *data, size_t size)
+{
+    ob_net_send((ob_net *)net, OB_NET_ALL, OB_NET_TYPE_SERIAL, data, size);
+}
+
 void ob_room_files_send(void *net, int to, const void *data, size_t size)
 {
     ob_net_send((ob_net *)net, to, OB_NET_TYPE_FILES, data, size);
@@ -73,6 +80,7 @@ void ob_room_poll(ob_room *r, void (*game)(void *, int, int, const void *, size_
         }
     }
     r->members = now;
+    if (r->serial) ob_serial_peer(r->serial, (now & ~me) != 0);
     for (;;) {
         int got = ob_net_recv(r->net, &from, &type, small, sizeof small, &size);
         uint8_t *big = NULL;
@@ -87,6 +95,7 @@ void ob_room_poll(ob_room *r, void (*game)(void *, int, int, const void *, size_
         else if (type == OB_NET_TYPE_CHAT) { if (r->chat) ob_chat_message(r->chat, data, size); }
         else if (type == OB_NET_TYPE_FILES) { if (r->files) ob_files_message(r->files, from, data, size); }
         else if (type == OB_NET_TYPE_SEASON) { if (r->season) ob_season_message(r->season, from, data, size); }
+        else if (type == OB_NET_TYPE_SERIAL) { if (r->serial) ob_serial_message(r->serial, data, size); }
         else if (game) game(ud, from, type, data, size);
         free(big);
     }
@@ -100,6 +109,10 @@ int ob_room_lines(ob_room *r, char (*line)[OB_ROOM_LINE + 1], int max)
     if (n < max) { ob_net_status(r->net, st, sizeof st); snprintf(line[n++], OB_ROOM_LINE + 1, "%.48s", st); }
     if (r->season && n < max) {
         ob_season_status(r->season, st, sizeof st);
+        if (st[0]) snprintf(line[n++], OB_ROOM_LINE + 1, "%.48s", st);
+    }
+    if (r->serial && n < max) {
+        ob_serial_status(r->serial, st, sizeof st);
         if (st[0]) snprintf(line[n++], OB_ROOM_LINE + 1, "%.48s", st);
     }
     for (k = 0; k < OB_NET_MAX_MACHINES && n < max; k++) {

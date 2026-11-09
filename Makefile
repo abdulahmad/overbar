@@ -24,7 +24,7 @@ LIB_OBJS = \
 	src/plat.o \
 	src/plat_pads.o src/osk.o src/gl.o \
 	src/sides.o src/chat.o src/room.o src/lane.o src/save.o \
-	src/fsdir.o src/files.o src/vdrive.o src/season.o \
+	src/fsdir.o src/files.o src/vdrive.o src/season.o src/serial.o \
 	third_party/pulseman/menu.o
 ifeq ($(shell uname -s),Darwin)
 LIB_OBJS += src/bar_mac.o
@@ -43,7 +43,7 @@ ifeq ($(OS),Windows_NT)
 NETLIBS ?= -lws2_32
 endif
 
-all: liboverbar.a tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season
+all: liboverbar.a tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season tests/test_serial
 
 liboverbar.a: $(LIB_OBJS)
 	$(AR) rcs $@ $(LIB_OBJS)
@@ -60,10 +60,13 @@ tests/test_sides: tests/test_sides.c liboverbar.a
 tests/test_season: tests/test_season.c liboverbar.a
 	$(CC) $(CFLAGS) -o $@ tests/test_season.c liboverbar.a -lm
 
+tests/test_serial: tests/test_serial.c liboverbar.a
+	$(CC) $(CFLAGS) -o $@ tests/test_serial.c liboverbar.a -lm
+
 tests/test_snap: tests/test_snap.c liboverbar.a
 	$(CC) $(CFLAGS) -o $@ tests/test_snap.c liboverbar.a -lm
 
-test: tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season
+test: tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season tests/test_serial
 	./tests/test_overbar
 	./tests/test_sides
 	./tests/test_season
@@ -90,9 +93,9 @@ check:
 	done; rm -f check.o
 
 clean:
-	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe tests/test_net tests/test_net.exe tests/test_snap tests/test_snap.exe tests/test_sides tests/test_sides.exe tests/test_season tests/test_season.exe check.o tools/shots
+	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe tests/test_net tests/test_net.exe tests/test_snap tests/test_snap.exe tests/test_sides tests/test_sides.exe tests/test_season tests/test_season.exe tests/test_serial tests/test_serial.exe check.o tools/shots
 
-src/%.o: src/%.c include/overbar/overbar.h include/overbar/net.h include/overbar/sides.h include/overbar/chat.h include/overbar/room.h include/overbar/lane.h include/overbar/save.h include/overbar/files.h include/overbar/season.h include/overbar/vdrive.h src/fsdir.h src/look_tables.h
+src/%.o: src/%.c include/overbar/overbar.h include/overbar/net.h include/overbar/sides.h include/overbar/chat.h include/overbar/room.h include/overbar/lane.h include/overbar/save.h include/overbar/files.h include/overbar/season.h include/overbar/vdrive.h include/overbar/serial.h src/fsdir.h src/look_tables.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 src/net.o: third_party/pulseman/udp.c

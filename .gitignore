@@ -12,3 +12,4 @@ tools/shots.exe
 /tests/test_season
 /build_test_season/
 /build_test_net_files/
+/tests/test_serial
