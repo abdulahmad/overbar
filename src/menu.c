@@ -32,7 +32,7 @@ static const ob_scale_mode mode_values[] = {
     OB_MODE_SHARP, OB_MODE_CRT, OB_MODE_MISTER, OB_MODE_SCALE2X, OB_MODE_MMPX2X, OB_MODE_XBR2X
 };
 static const char *const sharp_steps[] = {
-    "2x (480p)", "3x (720p)", "4x (1080p)", "5x (1200p)", "6x (1440p)", "9x (4k)"
+    "1x (native)", "2x (480p)", "3x (720p)", "4x (1080p)", "5x (1200p)", "6x (1440p)", "9x (4k)"
 };
 static const char *const crt_choices[] = {
     "Light scanlines", "Medium scanlines", "Dark scanlines",
@@ -416,8 +416,12 @@ static int ob_opts_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
         if (note) add_text(out, &n, cap, OB_ID_PRESENT_NOTE, "This look", note);
     }
     if (m == OB_MODE_SHARP)
-        add_choice(out, &n, cap, OB_ID_SHARP_AMOUNT, "Sharp", sharp_steps, OB_SHARP_COUNT,
-                   look->sharp >= 0 && look->sharp < OB_SHARP_COUNT ? look->sharp : OB_SHARP_3X);
+    {
+        /* 1x (native) is a hi-res step only; lo-res starts at 2x (OB_ID_SHARP_AMOUNT adds the skipped step back) */
+        int skip = cls == OB_CLASS_HIRES ? 0 : 1;
+        int cur = look->sharp >= 0 && look->sharp < OB_SHARP_COUNT ? look->sharp : OB_SHARP_3X;
+        add_choice(out, &n, cap, OB_ID_SHARP_AMOUNT, "Sharp", sharp_steps + skip, OB_SHARP_COUNT - skip, cur - skip);
+    }
     else if (m == OB_MODE_CRT)
         add_choice(out, &n, cap, OB_ID_CRT_LOOK, "CRT Monitor", crt_choices, OB_CRT_COUNT, look->crt);
     else if (ob_mode_is_pixel(m)) {
