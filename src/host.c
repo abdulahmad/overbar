@@ -77,6 +77,7 @@ void ob_defaults_apply(ob_host *h, ob_profile profile)
     h->profile = profile;
     look_init(&h->lores, console, 1);
     look_init(&h->hires, 0, 0);
+    h->hires.sharp = OB_SHARP_1X;   /* hi-res (the menus) is native 640x480 by default */
     h->stats = 0;
     h->volume = 80;
     h->mute = 0;
@@ -201,7 +202,7 @@ const char *ob_mode_label(ob_scale_mode m)
 
 int ob_sharp_mul(int index)
 {
-    static const int mul[OB_SHARP_COUNT] = { 2, 3, 4, 5, 6, 9 };
+    static const int mul[OB_SHARP_COUNT] = { 1, 2, 3, 4, 5, 6, 9 };
     if (index < 0) index = 0;
     if (index >= OB_SHARP_COUNT) index = OB_SHARP_COUNT - 1;
     return mul[index];
@@ -307,7 +308,8 @@ static void apply_look_key(ob_look *l, const char *key, const char *v)
         if (l->mode == OB_MODE_RETROARCH) l->mode = OB_MODE_SHARP;
     }
     else if (!strcmp(key, "sharp")) {
-        if (!strcmp(v, "2x") || !strcmp(v, "2X") || !strcmp(v, "1x") || !strcmp(v, "1X")) l->sharp = OB_SHARP_2X;
+        if (!strcmp(v, "1x") || !strcmp(v, "1X")) l->sharp = OB_SHARP_1X;
+        else if (!strcmp(v, "2x") || !strcmp(v, "2X")) l->sharp = OB_SHARP_2X;
         else if (!strcmp(v, "3x") || !strcmp(v, "3X")) l->sharp = OB_SHARP_3X;
         else if (!strcmp(v, "4x") || !strcmp(v, "4X")) l->sharp = OB_SHARP_4X;
         else if (!strcmp(v, "5x") || !strcmp(v, "5X")) l->sharp = OB_SHARP_5X;
@@ -332,7 +334,7 @@ static void apply_look_key(ob_look *l, const char *key, const char *v)
 
 static void write_look(FILE *f, const char *prefix, const ob_look *l, int console, int lores)
 {
-    static const char *sharp_name[OB_SHARP_COUNT] = { "2x", "3x", "4x", "5x", "6x", "9x" };
+    static const char *sharp_name[OB_SHARP_COUNT] = { "1x", "2x", "3x", "4x", "5x", "6x", "9x" };
     const char *sh = sharp_name[l->sharp >= 0 && l->sharp < OB_SHARP_COUNT ? l->sharp : OB_SHARP_3X];
     (void)console;
     (void)lores;
@@ -486,7 +488,7 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
         break;
     }
     case OB_ID_VIDEO_CLASS: h->video_class = value ? OB_CLASS_HIRES : OB_CLASS_LORES; break;
-    case OB_ID_SHARP_AMOUNT: look->sharp = value; break;
+    case OB_ID_SHARP_AMOUNT: look->sharp = value + (cls == OB_CLASS_HIRES ? 0 : 1); break;
     case OB_ID_CRT_LOOK: look->crt = (ob_crt_look)value; break;
     case OB_ID_PICTURE_HEIGHT: look->height = (ob_picture_height)value; break;
     case OB_ID_MONITOR_KHZ: look->khz31 = value; break;

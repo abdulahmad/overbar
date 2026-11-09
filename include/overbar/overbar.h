@@ -83,9 +83,10 @@ typedef enum {
     OB_CRT_COUNT
 } ob_crt_look;
 
-/* Integer prescale before the window fit. 3x (720p) is the default. */
+/* Integer prescale before the window fit. 3x (720p) is the default for lo-res; hi-res defaults to 1x. */
 typedef enum {
-    OB_SHARP_2X = 0,
+    OB_SHARP_1X = 0,            /* hi-res only: the native 640x480, no prescale */
+    OB_SHARP_2X,
     OB_SHARP_3X,
     OB_SHARP_4X,
     OB_SHARP_5X,
@@ -338,7 +339,7 @@ int ob_pixel_sizes(ob_scale_mode m, const char *const **labels, const ob_scale_m
 int ob_mode_has_scanlines(ob_scale_mode m);               /* CRT and MiSTer: they pick Auto Crop */
 
 const char *ob_mode_label(ob_scale_mode m);
-int ob_sharp_mul(int index);                          /* 2, 3, 4, 5, 6 or 9 */
+int ob_sharp_mul(int index);                          /* 1, 2, 3, 4, 5, 6 or 9 */
 int ob_sharp_index(int mul);                          /* nearest step to a multiplier */
 const char *const *ob_mode_choice_list(int *n);       /* overlay cycles these in place */
 int ob_mode_choice_value(int index);                  /* choice index to ob_scale_mode */
