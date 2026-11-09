@@ -23,7 +23,7 @@ LIB_OBJS = \
 	src/netgame.o \
 	src/plat.o \
 	src/plat_pads.o src/osk.o src/gl.o \
-	src/sides.o src/chat.o src/room.o src/lane.o \
+	src/sides.o src/chat.o src/room.o src/lane.o src/save.o \
 	third_party/pulseman/menu.o
 ifeq ($(shell uname -s),Darwin)
 LIB_OBJS += src/bar_mac.o
@@ -87,7 +87,7 @@ check:
 clean:
 	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe tests/test_net tests/test_net.exe tests/test_snap tests/test_snap.exe tests/test_sides tests/test_sides.exe check.o tools/shots
 
-src/%.o: src/%.c include/overbar/overbar.h include/overbar/net.h include/overbar/sides.h include/overbar/chat.h include/overbar/room.h include/overbar/lane.h src/look_tables.h
+src/%.o: src/%.c include/overbar/overbar.h include/overbar/net.h include/overbar/sides.h include/overbar/chat.h include/overbar/room.h include/overbar/lane.h include/overbar/save.h src/look_tables.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 src/net.o: third_party/pulseman/udp.c

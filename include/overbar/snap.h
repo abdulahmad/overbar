@@ -44,6 +44,9 @@ int ob_snap_fits(const ob_snap_store *s, const ob_snap *snap, const ob_snap_regi
 /* put the regions' bytes back: 0, or -1 (the state is not usable any more) */
 int ob_snap_put(const ob_snap_store *s, const ob_snap *snap);
 const void *ob_snap_blob(const ob_snap *snap, size_t *n);
+/* the regions' bytes as the state holds them, one after another (not a difference: whole), into out (cap bytes;
+ * NULL to ask). Their size, or 0 when the state is not usable */
+size_t ob_snap_export(const ob_snap_store *s, const ob_snap *snap, uint8_t *out, size_t cap);
 void ob_snap_free(ob_snap *snap);
 /* where the time of ob_snap_take goes, a line of text for logs */
 const char *ob_snap_stats(const ob_snap_store *s);

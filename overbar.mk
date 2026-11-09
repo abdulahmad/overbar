@@ -16,7 +16,7 @@
 # mister folder next to the program. $(call overbar_copy_mister,DIR) copies them to DIR/mister.
 
 OVERBAR_DIR          ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
-OVERBAR_LIB_NAMES    := scaler host present menu look overlay filemenu bar_win net plat plat_pads osk gl sides chat room lane
+OVERBAR_LIB_NAMES    := scaler host present menu look overlay filemenu bar_win net plat plat_pads osk gl sides chat room lane save
 # macOS: the Cocoa menu bar is Objective-C: compile $(OVERBAR_MAC_SRCS) with -fobjc-arc and link $(OVERBAR_MAC_LIBS)
 ifeq ($(shell uname -s),Darwin)
 OVERBAR_MAC_SRCS     := $(OVERBAR_DIR)/src/bar_mac.m

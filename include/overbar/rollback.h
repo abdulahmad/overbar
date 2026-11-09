@@ -55,6 +55,11 @@ const ob_net_states *ob_rollback_states(ob_rollback *rb);
  * OB_NET_RESTART jumps to the loaded state's ob_rollback_frame */
 int ob_rollback_frame(ob_rollback *rb, int (*step)(void *user), void *user);
 void ob_rollback_reset(ob_rollback *rb);        /* forget every state (a session's end) */
+/* Its states can be shared (ob_net_states.share / take: a player joining a match under way, a recovered match).
+ * A shared state holds the regions whole and the stack, with their addresses; it is taken only where they are
+ * at the same addresses (the same build, the game's memory at fixed places, the game thread's stack at the same
+ * base) and at the same resumable point. Why the last one was not taken ("" taken): */
+const char *ob_rollback_why(ob_rollback *rb);
 /* a line for logs: states taken, their time, the last one's size */
 const char *ob_rollback_stats(ob_rollback *rb);
 /* FNV-1a of the regions as they are now (desync hunting) */

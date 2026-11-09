@@ -32,9 +32,10 @@
 extern "C" {
 #endif
 
-#define OB_NET_PROTOCOL 4               /* the messages' version: every machine must have the same (2: each INPUT
+#define OB_NET_PROTOCOL 5               /* the messages' version: every machine must have the same (2: each INPUT
                                            carries the sender's step and lead, for rollback's time sync; 3: rooms,
-                                           matches and messages; 4: 16 pads) */
+                                           matches and messages; 4: 16 pads; 5: a match
+                                           begun from a state, seats held for a player who dropped) */
 #define OB_NET_MAX_MACHINES 4           /* the host and three guests */
 #define OB_NET_MAX_PADS 16              /* seats' pads first; a room's match can give each machine a menu lane past them (overbar/lane.h) */
 #define OB_NET_MAX_DELAY 30             /* steps */
@@ -82,6 +83,9 @@ typedef struct ob_net_game {
                                    Each machine's own: it changes how far it guesses, never what it plays */
     int room;                   /* 1: a room (below): the session lasts across matches; 0: the session is one
                                    game, begun once every seat is taken (o->all) */
+    int hold_seats;             /* (a room, rollback with share / take) a player who drops does not end the match: it
+                                   waits for them (ob_net_waiting_for), and goes on from its newest state whose buttons
+                                   were all known once a machine of the same name comes back */
 } ob_net_game;
 
 /* Opens the socket and starts connecting (host: o->port; join: o->addr[:port], o->port when no
@@ -174,6 +178,11 @@ typedef struct ob_net_match {
     int delay;                      /* input delay, steps (-1: the room's) */
     const void *settings;           /* sent with it to every machine (ob_net_settings) */
     size_t settings_size;
+    /* (rollback with share / take; NULL: from the start) a shared state (ob_net_share_confirmed, a save) every
+     * machine takes at its first resumable ob_net_frame (OB_NET_RESTART), the match going on from state_step */
+    const void *state;
+    size_t state_size;
+    uint32_t state_step;
 } ob_net_match;
 
 /* (the host, in its lobby) a match: every machine of the room takes part (those without pads watch). 0, or -1
@@ -190,6 +199,11 @@ unsigned ob_net_members(ob_net *n);     /* the machines in the room (bit k: mach
 int ob_net_here_of(ob_net *n, int machine);     /* the players at a machine (as it said when it joined) */
 int ob_net_ping_of(ob_net *n, int machine);     /* its round trip to the host, ms (-1: not known) */
 uint32_t ob_net_room_changes(ob_net *n);        /* counts each change of who is in the room */
+/* (the host, hold_seats) the machines whose players dropped out of the match on and are waited for (bit k: machine k) */
+unsigned ob_net_waiting_for(ob_net *n);
+/* (rollback with share) the newest state of this match whose buttons are all known, shared (as share does):
+ * its size (more than cap: nothing written; 0: none yet), its step in *step. For saves */
+size_t ob_net_share_confirmed(ob_net *n, uint32_t *step, void *out, size_t cap);
 /* a message of type (0 .. OB_NET_TYPE_LAST) to a machine of the room (OB_NET_ALL: every other one);
  * 0, or -1 (no such machine, too large, not in a room yet) */
 int ob_net_send(ob_net *n, int to, int type, const void *data, size_t size);

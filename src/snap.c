@@ -158,6 +158,30 @@ int ob_snap_put(const ob_snap_store *s, const ob_snap *snap)
     return 0;
 }
 
+size_t ob_snap_export(const ob_snap_store *s, const ob_snap *snap, uint8_t *out, size_t cap)
+{
+    size_t total = 0, p;
+    int i;
+    if (!snap->valid || snap->base_id != s->base_id) return 0;
+    for (i = 0; i < snap->nregs; i++) total += snap->r[i].n;
+    if (!out || cap < total) return total;
+    memcpy(out, s->base, total);                           /* the base holds the regions one after another */
+    for (p = snap->blob; p < snap->size;) {
+        uint8_t *dst;
+        uint32_t len;
+        size_t at = 0;
+        memcpy(&dst, snap->data + p, sizeof dst); p += sizeof dst;
+        memcpy(&len, snap->data + p, sizeof len); p += sizeof len;
+        for (i = 0; i < snap->nregs; i++) {                /* the page's place among the regions */
+            uint8_t *r0 = snap->r[i].p;
+            if (dst >= r0 && dst + len <= r0 + snap->r[i].n) { memcpy(out + at + (size_t)(dst - r0), snap->data + p, len); break; }
+            at += snap->r[i].n;
+        }
+        p += len;
+    }
+    return total;
+}
+
 const void *ob_snap_blob(const ob_snap *snap, size_t *n)
 {
     if (n) *n = snap->blob;
