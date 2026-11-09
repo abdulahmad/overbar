@@ -27,6 +27,7 @@
 #include "overbar/overbar.h"
 #include "overbar/room.h"
 #include "overbar/lane.h"
+#include "overbar/save.h"
 #include "mdrt/menu.h"
 #include <stdint.h>
 #include "../src/fsdir.h"
@@ -550,6 +551,7 @@ static int rtoy_take(void *user, const void *in, size_t size) { rtoy *t = user; 
 
 static int room_hold;                   /* make_room: seats held for players who drop */
 static uint16_t room_host_bits;         /* make_room: the host's control bits */
+static int rm_corrupt = -1;             /* room_tick: machine 1's game goes wrong at this step (once) */
 static ob_net *make_room(int role, int port, const char *addr, int here, const char *name, rtoy *t)
 {
     ob_online o;
@@ -622,6 +624,7 @@ static int room_tick(int i, uint32_t end)
     if (r != OB_NET_RUN) return 0;
     if (cur + 1 > t->high) t->high = cur + 1;
     for (p = 0; p < OB_NET_MAX_PADS; p++) t->h = (t->h ^ all[p]) * 0x100000001B3ull + cur;
+    if (i == 1 && (int)cur == rm_corrupt && !t->joined) t->h ^= 1;   /* (a desync) */
     if (cur < RM_MAX) t->final[cur] = t->h;
     if (cur % 60 == 59) ob_net_check(n, cur, t->h);
     /* the game ends after a step at or past end - 1 once every button before end is known (a wrong guess before it
@@ -850,6 +853,26 @@ static void reconnect(void)
     until = seconds() + 10;
     while (seconds() < until && !held_ben()) { for (i = 0; i < 3; i++) room_tick(i, 700); nap(); }
     CHECK(held_ben(), "reconnect: the host holds Ben's seat");
+    {                                                 /* the host saves the game when Ben drops */
+        ob_saves sv;
+        ob_save_summary sum;
+        ob_save_entry e[8];
+        const char *dir = "test_net_saves";
+        int k, n, drops = 0;
+        memset(&sum, 0, sizeof sum);
+        snprintf(sum.team[0], sizeof sum.team[0], "Ann's");
+        CHECK(!ob_saves_begin(&sv, dir, "room toy", &m, 0x77), "reconnect: saves begin");
+        ob_saves_event(&sv, OB_SAVE_FACEOFF, ob_net_step_count(M[0].n) + 1000, &sum);   /* (a point whose buttons never come while held) */
+        sv.dropped = 0;
+        until = seconds() + 5;
+        while (seconds() < until && !sv.seq[OB_SAVE_DROP]) { ob_saves_poll(&sv, M[0].n); for (i = 0; i < 3; i++) room_tick(i, 700); nap(); }
+        n = ob_saves_list(dir, "room toy", e, 8);
+        for (k = 0; k < n; k++) drops += e[k].kind == OB_SAVE_DROP && !strcmp(e[k].sum.team[0], "Ann's");
+        CHECK(drops == 1, "reconnect: the game saved when Ben dropped");
+        ob_saves_done(&sv);
+        ob_saves_free(&sv);
+        CHECK(ob_saves_list(dir, "room toy", e, 8) == 0, "reconnect: the saves gone once done");
+    }
     ob_net_status(M[0].n, line, sizeof line);
     CHECK(strstr(line, "waiting for Ben") != NULL, "reconnect: the host's status says so");
     stop_at = ob_net_step_count(M[0].n);
@@ -1195,6 +1218,7 @@ static void lane_net(int loss)
 static ob_console CON[3];
 static uint32_t con_reset_at[3], con_load_at[3];
 static long con_menus[3];
+static int con_sent, con_reset_asked;   /* (the host asks once) */
 #define CON_POWER_ON 0x5EEDull
 #define CON_STATE 0x1D0ADull
 static void con_messages(int i)
@@ -1230,8 +1254,8 @@ static int con_tick(int i, uint32_t end)
     pads = ob_net_my_pads(n);
     for (p = 0; p < OB_NET_MAX_PADS; p++)
         if (pads >> p & 1) local[j++] = (uint16_t)(toy_buttons(i, p, cur + (uint32_t)ob_net_delay(n)) | (i == 2 ? OB_CONSOLE_BITS : 0));
-    if (i == 0 && cur == 200 && !ob_net_replaying(n)) ob_console_reset(&CON[0]);
-    if (i == 0 && cur == 400 && !ob_net_replaying(n)) { uint64_t v = CON_STATE; CHECK(!ob_console_load(&CON[0], n, &v, sizeof v), "the host sends a state"); }
+    if (i == 0 && cur >= 200 && !con_reset_asked) { con_reset_asked = 1; ob_console_reset(&CON[0]); }
+    if (i == 0 && cur >= 400 && !con_sent) { uint64_t v = CON_STATE; con_sent = 1; CHECK(!ob_console_load(&CON[0], n, &v, sizeof v), "the host sends a state"); }
     if (i != 2) ob_console_local(&CON[i], n, local, j);
     r = ob_net_frame(n, 1, local, all);
     if (r < 0) { printf("machine %d ended at step %u: %s\n", i, (unsigned)cur, ob_net_why(n)); t->playing = 0; t->over = 1; return -1; }
@@ -1263,6 +1287,7 @@ static void console_net(int loss)
     memset(con_reset_at, 0, sizeof con_reset_at);
     memset(con_load_at, 0, sizeof con_load_at);
     memset(con_menus, 0, sizeof con_menus);
+    con_sent = con_reset_asked = 0;
     for (i = 0; i < 3; i++) ob_console_init(&CON[i]);
     room_host_bits = OB_CONSOLE_BITS;
     M[0].n = make_room(0, port, NULL, 1, "Ann", &R[0]);
@@ -1296,6 +1321,44 @@ static void console_net(int loss)
     free_all(3);
 }
 
+/* a desync: machine 1's game goes wrong at step 300; the host finds it at the next check and every machine goes
+ * on from the host's state (a new match, the same seats), the match playing out with the same steps after it */
+static void resync_net(void)
+{
+    char addr[32], err[120];
+    int port = BASE_PORT + 170, i;
+    ob_net_match m;
+    ob_net_stats st;
+    double until;
+    const uint32_t end = 900;
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    room_reset();
+    M[0].n = make_room(0, port, NULL, 1, "Ann", &R[0]);
+    M[1].n = make_room(1, 0, addr, 1, "Ben", &R[1]);
+    M[2].n = NULL;
+    CHECK(M[0].n && M[1].n, "resync machines open");
+    if (!M[0].n || !M[1].n) { free_all(2); return; }
+    if (!lobby_all(2, 10)) { CHECK(0, "two machines in the room"); free_all(2); return; }
+    memset(&m, 0, sizeof m);
+    for (i = 0; i < OB_NET_MAX_PADS; i++) m.owner[i] = -1;
+    m.owner[0] = 0; m.owner[1] = 1; m.delay = -1;
+    CHECK(!ob_net_match_begin(M[0].n, &m, err, sizeof err), "the match begins");
+    rm_corrupt = 300;
+    until = seconds() + 60;
+    while (seconds() < until && !(R[0].over && R[1].over)) {
+        int moved = 0;
+        for (i = 0; i < 2; i++) moved |= room_tick(i, end) != 0;
+        if (!moved) nap();
+    }
+    rm_corrupt = -1;
+    ob_net_stats_get(M[0].n, &st);
+    CHECK(R[0].over && R[1].over && ob_net_state(M[0].n) != OB_NET_ENDED, "the match played out after the desync");
+    CHECK(st.resyncs == 1 && R[1].joined && R[1].first > 300 && R[1].first < 420, "one resync, from a state after the desync's step");
+    CHECK(room_agree(2, end), "the steps after it the host's");
+    printf("resync: machine 1 wrong at step 300, everyone went on from the host's state at step %u (%d resync)\n", (unsigned)R[1].first, st.resyncs);
+    free_all(2);
+}
+
 int main(void)
 {
     char lan[64];
@@ -1318,6 +1381,7 @@ int main(void)
         reconnect();
         console_net(0);
         console_net(5);
+        resync_net();
         if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
         printf("room tests ok\n");
         return 0;
@@ -1347,6 +1411,7 @@ int main(void)
     reconnect();
     console_net(0);
     console_net(5);
+    resync_net();
     printf("LAN address: \"%s\"\n", ob_net_lan_address(lan, sizeof lan));
     if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
     printf("net tests ok\n");

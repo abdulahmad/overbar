@@ -132,6 +132,26 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
   raised on `ob_serial_irq_edge`, `ob_serial_poll` once a frame. In play, a game's own lockstep exchange is replaced by a
   room match (per port; 96: NHL96PC docs/MODEM.md).
 
+## Console features, resync and drop saves (online play phase 7, 2026-11-09)
+
+- `ob_net_game.host_bits`: button bits only the host's pads carry, a control word beside its buttons. The core
+  clears them from every other machine's buttons and never holds them in a guess, so a guessed step has none and
+  the real one rolls back to it. No protocol change.
+- `overbar/console.h` (`ob_console`): on a console the whole machine is the state and one match lasts the whole
+  stay. The host's reset (`OB_CONSOLE_RESET`) and its state for everyone (sent over the room, type 245, then
+  `OB_CONSOLE_LOAD` on one step once every machine has it) are carried out by every machine after the same step.
+  `ob_console_step` also has a "host only in the menus" switch; Abdul chose every pad in the menus, so the
+  Genesis port passes 0. `ob_room_console` routes its messages.
+- Desync (Abdul: resync from the host's state): in a room whose states can be shared, a desync makes every
+  machine go on from the host's newest state whose buttons were all known (a new match, same seats),
+  `OB_NET_MAX_RESYNCS` times a match at most; then it ends as before. `ob_net_stats.resyncs`.
+- A player who drops (Abdul: end match, and save on disconnect): `ob_saves_poll` writes an `OB_SAVE_DROP` save
+  (last 3 kept) as soon as `ob_net_waiting_for` names someone new; a match ended for the drop keeps it for
+  Recover game.
+- `ob_net_stats_get`, `ob_net_pads_of`. A room can be opened by two "both connect" machines.
+- NHL94Genesis-C-Port's netplay is now on ob_net (native/net.c): `make netplay-check` passes all its cases
+  (head to head, 2+2, four, 2+1+1, 1+3, delay 0, host reset, host's state for everyone, roster set).
+
 ## Rules
 
 - No port includes `<SDL.h>` except through its own non-Overbar needs (PulseMan core stays untouched).

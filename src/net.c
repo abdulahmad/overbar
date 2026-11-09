@@ -141,7 +141,8 @@ struct ob_net {
     int last_replay;
     check pend[CHECKS];                 /* (rollback) checks of steps whose buttons are not all known yet */
     long rollbacks, replayed, gave_back, predicted, checks;
-    int most_replayed;
+    int most_replayed, resyncs;
+    uint32_t resynced;                  /* (the host) the step of the last desync it went on from (+0; resyncs 0: none) */
     uint16_t host_bits;                 /* (ob_net_game.host_bits) bits only the host's buttons carry */
     check mine[CHECKS];                 /* (the host) its desync checks */
     int nmine;
@@ -685,7 +686,8 @@ static void host_guest(ob_net *n, int from, uint64_t nonce, const uint8_t *id, s
         for (k = MACH - 1; k > 0; k--) if (!n->p[k].used && (n->held >> k & 1) && !strcmp(n->held_name[k], nm)) free_k = k;
     }
     if (n->room && !free_k) snprintf(why, sizeof why, "the room is full");
-    else if (n->room && n->phase != P_ROOM && n->phase != P_RUNNING) snprintf(why, sizeof why, "the room is closing");
+    else if (n->room && n->phase != P_ROOM && n->phase != P_RUNNING && !(n->role == ROLE_BOTH && n->phase == P_HELLO))
+        snprintf(why, sizeof why, "the room is closing");
     else if (!n->room && n->phase == P_RUNNING) snprintf(why, sizeof why, "the game has begun");
     else if (idn != strlen(n->identity) || memcmp(id, n->identity, idn))
         snprintf(why, sizeof why, "another game, build or settings (here: %.60s; there: %.*s)", n->identity, idn > 60 ? 60 : (int)idn, (const char *)id);
@@ -697,6 +699,7 @@ static void host_guest(ob_net *n, int from, uint64_t nonce, const uint8_t *id, s
     if (why[0]) { refuse(n, from, nonce, why); return; }
     n->host = 1;
     if (!n->room) n->phase = P_HOSTING;
+    else if (n->phase == P_HELLO) { n->phase = P_ROOM; n->changes++; }   /* (both connect: this one hosts the room) */
     if (!n->p[0].used) {
         n->p[0].used = 1;
         n->p[0].here = n->here;
@@ -914,6 +917,7 @@ int ob_net_match_begin(ob_net *n, const ob_net_match *m, char *err, int err_size
     say(err, err_size, "");
     if (!n->room || !n->host || n->phase == P_DONE) { say(err, err_size, "not the host of a room"); return -1; }
     if (n->phase == P_RUNNING) { say(err, err_size, "a match is on"); return -1; }
+    n->resyncs = 0;
     if (!m || (m->settings_size && !m->settings) || m->settings_size > OB_NET_MAX_SETTINGS) { say(err, err_size, "bad settings"); return -1; }
     for (p = 0; p < n->pads; p++)
         if (m->owner[p] >= 0 && !member(n, m->owner[p])) { say(err, err_size, "a pad's machine is not in the room"); return -1; }
@@ -1135,10 +1139,17 @@ static void send_inputs(ob_net *n)
     n->dirty = 0;
 }
 
+static int go_on_from_state(ob_net *n, const char *note);
 static void desync(ob_net *n, uint32_t step)
 {
-    char why[64];
+    char why[64], note[80];
     snprintf(why, sizeof why, "desync at step %u", (unsigned)step);
+    if (n->room && n->rb && n->st.share && n->st.take && n->resyncs < OB_NET_MAX_RESYNCS) {   /* (every machine from the host's state) */
+        n->resyncs++;
+        n->resynced = step;
+        snprintf(note, sizeof note, "desync at step %u: everyone went on from the host's state", (unsigned)step);
+        if (!go_on_from_state(n, note)) return;
+    }
     if (n->room) end_match_all(n, 0, why);
     else end_all(n, why);
 }
@@ -1268,24 +1279,30 @@ static void try_join(ob_net *n, int k)
  * were all known, as a new match with the same seats (their buttons after it are played again) */
 static void resume_held(ob_net *n)
 {
+    int k;
+    for (k = 1; k < MACH; k++) if ((n->held >> k & 1) && !(member(n, k) && n->p[k].ready)) return;   /* (all of them back) */
+    if (go_on_from_state(n, "back")) end_match_all(n, 0, "the match could not go on from a state");
+}
+
+/* (the host) every machine goes on from the host's newest state whose buttons were all known, as a new match
+ * with the same seats: 0, or -1 (no such state) */
+static int go_on_from_state(ob_net *n, const char *note)
+{
     struct slot *t;
     size_t need;
     uint8_t *state;
     int8_t owner[PADS];
     uint32_t step;
-    int k;
-    for (k = 1; k < MACH; k++) if ((n->held >> k & 1) && !(member(n, k) && n->p[k].ready)) return;   /* (all of them back) */
     t = newest_upto(n, sound_upto(n));
-    if (!t || !(need = n->st.share(n->st.user, t->b, t->size, NULL, 0)) || !(state = malloc(need))) {
-        end_match_all(n, 0, "the match could not go on from a state");
-        return;
-    }
+    if (!t || !(need = n->st.share(n->st.user, t->b, t->size, NULL, 0)) || !(state = malloc(need))) return -1;
     step = t->step;
-    if (n->st.share(n->st.user, t->b, t->size, state, need) != need) { free(state); end_match_all(n, 0, "the match could not go on from a state"); return; }
+    if (n->st.share(n->st.user, t->b, t->size, state, need) != need) { free(state); return -1; }
     memcpy(owner, n->owner, sizeof owner);
     set_owners(n, owner);
-    if (!begin_from_state(n, step, state, need)) snprintf(n->note, sizeof n->note, "back: the match goes on from step %u", (unsigned)step);
+    if (begin_from_state(n, step, state, need)) { free(state); return -1; }
+    snprintf(n->note, sizeof n->note, "%.150s: the match goes on from step %u", note, (unsigned)step);
     free(state);
+    return 0;
 }
 
 unsigned ob_net_waiting_for(ob_net *n) { return n->phase == P_RUNNING ? n->held : 0; }
@@ -1829,8 +1846,10 @@ void ob_net_stats_get(ob_net *n, ob_net_stats *s)
     s->gave_back = n->gave_back;
     s->waited = n->waited_steps;
     s->checks = n->checks;
+    s->resyncs = n->resyncs;
     for (k = 0; k < MACH; k++) if (talks(n, k) && n->p[k].rtt_us > rtt) rtt = n->p[k].rtt_us;
     s->rtt_ms = rtt < 0 ? -1 : (rtt + 500) / 1000;
+    for (k = 0; k < MACH; k++) if (talks(n, k) && n->p[k].ping_ms > s->rtt_ms) s->rtt_ms = n->p[k].ping_ms;   /* (a room's host: as it said) */
 }
 
 void ob_net_quit(ob_net *n)

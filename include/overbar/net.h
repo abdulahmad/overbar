@@ -41,6 +41,8 @@ extern "C" {
 #define OB_NET_MAX_DELAY 30             /* steps */
 #define OB_NET_MAX_ROLLBACK 30          /* steps a rollback may play again, at most */
 #define OB_NET_MAX_SETTINGS (16u << 20) /* bytes of the host's settings */
+#define OB_NET_MAX_RESYNCS 5            /* (a room, states shared) desyncs in one match that every machine goes on from the
+                                           host's state, before the next ends the match */
 #define OB_NET_TIMEOUT_MS 10000         /* a machine not heard from for this long ends the session */
 #define OB_NET_MAX_MESSAGE (16u << 20)  /* bytes of one message (ob_net_send) */
 #define OB_NET_MESSAGE_TYPES 240        /* a game's message types: 0 .. 239 */
@@ -153,12 +155,15 @@ typedef struct ob_net_stats {
     int most_replayed;              /* the most one rollback played again */
     long gave_back, waited;         /* steps given back to keep in step; steps that waited for someone's buttons */
     long checks;                    /* desync checks made (each step's once its buttons were all known) */
+    int resyncs;                    /* (the host) desyncs this match went on from by the host's state */
     int rtt_ms;                     /* the longest round trip to a machine this one talks to (-1: not known) */
 } ob_net_stats;
 void ob_net_stats_get(ob_net *n, ob_net_stats *s);
 
 /* every so often (every 60 steps, say): the simulation's hash after running step `step`. The host
- * compares the guests' with its own; a difference ends the session as "desync at step N". With
+ * compares the guests' with its own; a difference ends the session as "desync at step N". In a room
+ * whose states can be shared, every machine instead goes on from the host's newest state whose buttons
+ * were all known (a new match with the same seats, OB_NET_MAX_RESYNCS times at most). With
  * rollback, give it each time the step is run (a replay's replaces the guess's): it is compared
  * once every button up to that step is known. */
 void ob_net_check(ob_net *n, uint32_t step, uint64_t sim_hash);
