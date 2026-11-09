@@ -5,6 +5,7 @@ src/menu.c
 src/look.c
 src/overlay.c
 src/filemenu.c
+src/bar_win.c
 src/net.c
 src/snap.c
 src/rollback.c

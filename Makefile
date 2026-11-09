@@ -16,7 +16,7 @@ LIB_OBJS = \
 	src/menu.o \
 	src/look.o \
 	src/overlay.o \
-	src/filemenu.o \
+	src/filemenu.o src/bar_win.o \
 	src/net.o \
 	src/snap.o \
 	src/rollback.o \
@@ -24,6 +24,11 @@ LIB_OBJS = \
 	src/plat.o \
 	src/plat_pads.o src/osk.o src/gl.o \
 	third_party/pulseman/menu.o
+ifeq ($(shell uname -s),Darwin)
+LIB_OBJS += src/bar_mac.o
+src/bar_mac.o: src/bar_mac.m
+	$(CC) -fobjc-arc -Iinclude -c -o $@ $<
+endif
 ifdef SDL
 CFLAGS += -DOVERBAR_SDL $(shell pkg-config --cflags sdl2)
 LIB_OBJS += src/present_sdl.o
