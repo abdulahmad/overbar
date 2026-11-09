@@ -24,3 +24,4 @@ src/fsdir.c
 src/files.c
 src/vdrive.c
 src/season.c
+src/serial.c

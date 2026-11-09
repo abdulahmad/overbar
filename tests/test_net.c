@@ -1023,6 +1023,45 @@ static void room_files(int loss)
     ob_fs_clear("build_test_net_files");
 }
 
+/* a serial port through a real room (overbar/serial.h over ob_room): Ann dials, Ben's modem answers, 5000 bytes go */
+static ob_serial GSER[2];
+static uint8_t ser_got[6000];
+static int ser_n;
+static void ser_type(int i, const char *s) { while (*s) ob_serial_out(&GSER[i], 0, (uint8_t)*s++); }
+static void ser_read(int i) { while (ob_serial_in(&GSER[i], 5) & 1) { uint8_t b = ob_serial_in(&GSER[i], 0); if (i == 1 && ser_n < (int)sizeof ser_got) ser_got[ser_n++] = b; } }
+static int ser_online(void) { int i; for (i = 0; i < 2; i++) { ob_serial_poll(&GSER[i], 0); ser_read(i); } return GSER[0].call == OB_SERIAL_ONLINE && GSER[1].call == OB_SERIAL_ONLINE; }
+static int ser_all(void) { int i; for (i = 0; i < 2; i++) { ob_serial_poll(&GSER[i], 0); ser_read(i); } return ser_n >= 5000; }
+
+static void room_serial(int loss)
+{
+    char addr[32];
+    int port = BASE_PORT + 210 + loss, i, same = 1;
+    room_reset();
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    M[0].n = make_room(0, port, NULL, 1, "Ann", &R[0]);
+    M[1].n = make_room(1, 0, addr, 1, "Ben", &R[1]);
+    M[2].n = NULL;
+    if (!M[0].n || !M[1].n || !lobby_all(2, 10)) { CHECK(0, "serial: Ben in the room"); free_all(2); return; }
+    if (loss) { ob_net_simulate(M[0].n, 3, 6, loss, 2); ob_net_simulate(M[1].n, 3, 6, loss, 2); }
+    for (i = 0; i < 2; i++) {
+        ob_room_init(&GR[i], M[i].n, NULL, NULL);
+        ob_serial_init(&GSER[i], OB_SERIAL_MODEM, ob_room_serial_send, M[i].n);
+        ob_room_serial(&GR[i], &GSER[i]);
+        ob_serial_out(&GSER[i], 4, 0x0B);
+    }
+    glue_poll(2);
+    ser_type(1, "ATS0=1\r");
+    ser_type(0, "ATDT0\r");
+    CHECK(glue_until(2, ser_online, 10), "serial: Ann's call answered by Ben's modem through the room");
+    ser_n = 0;
+    for (i = 0; i < 5000; i++) ob_serial_out(&GSER[0], 0, (uint8_t)(i * 13 + loss));
+    CHECK(glue_until(2, ser_all, 20), "serial: 5000 bytes reach Ben");
+    for (i = 0; i < 5000 && i < ser_n; i++) if (ser_got[i] != (uint8_t)(i * 13 + loss)) same = 0;
+    CHECK(same && ser_n == 5000, "serial: every byte, in order");
+    printf("serial through the room%s: dialed, answered, 5000 bytes %s\n", loss ? " (loss)" : "", same && ser_n == 5000 ? "the same" : "NOT the same");
+    free_all(2);
+}
+
 /* the menu lane over a real match with rollback: Ben pauses, types in the menu, resumes; Ann's pause
  * while Ben holds it is dropped; Ann pauses later and the game's own Resume ends it. Every machine sees
  * the same pause and keys on the same steps. */
@@ -1160,6 +1199,8 @@ int main(void)
         room_glue();
         room_files(0);
         room_files(5);
+        room_serial(0);
+        room_serial(5);
         lane_net(0);
         lane_net(5);
         recover();
@@ -1185,6 +1226,8 @@ int main(void)
     room_glue();
     room_files(0);
     room_files(5);
+    room_serial(0);
+    room_serial(5);
     lane_net(0);
     lane_net(5);
     recover();

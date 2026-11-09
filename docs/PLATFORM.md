@@ -121,6 +121,17 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
   until a sync merges it, and the master hands each such game to the merge once (its ledger keeps the keys merged).
   `ob_room_modules` routes both modules' messages; the room page shows a line about a sync.
 
+## Modem and cable play carried by the room (online play phase 6, 2026-11-09)
+
+- `include/overbar/serial.h` (DOS): an 8250/16550 UART at the register level with a Hayes modem behind it (or a
+  null-modem cable), for two machines of a room. The game's own serial driver and modem code run unchanged: AT commands
+  answered (E, Q, V, S registers, H, Z, O), dialing reaches the other machine whatever the number, auto-answer or ATA,
+  CONNECT at once, `+++` with its guard time, DTR dropped or the other machine leaving: NO CARRIER. Bytes go over the
+  room's message lane (`OB_NET_TYPE_SERIAL`), which loses nothing. `ob_room_serial` routes it and tells it when the other
+  machine comes and goes. The port: the game's in / out on the COM port to `ob_serial_in` / `ob_serial_out`, the IRQ
+  raised on `ob_serial_irq_edge`, `ob_serial_poll` once a frame. In play, a game's own lockstep exchange is replaced by a
+  room match (per port; 96: NHL96PC docs/MODEM.md).
+
 ## Rules
 
 - No port includes `<SDL.h>` except through its own non-Overbar needs (PulseMan core stays untouched).

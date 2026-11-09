@@ -49,6 +49,7 @@ extern "C" {
 #define OB_NET_TYPE_CHAT 241            /* chat (overbar/chat.h) */
 #define OB_NET_TYPE_FILES 242           /* folders sent (overbar/files.h) */
 #define OB_NET_TYPE_SEASON 243          /* the online season (overbar/season.h) */
+#define OB_NET_TYPE_SERIAL 244          /* a serial port carried by the room (overbar/serial.h) */
 #define OB_NET_TYPE_LAST 249
 
 /* OB_NET_LOBBY: (a room) everyone in it is connected and no match of this machine's goes on */
