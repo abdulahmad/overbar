@@ -216,6 +216,7 @@ static int osk_event(const SDL_Event *e)
 {
     int in = -1;
     if (!ob_plat_osk_is_open()) return 0;
+    if (P.host->overlay_open) { ob_osk_close(&osk); return 0; }   /* the overlay and the keyboard are not open together */
     if (e->type == SDL_CONTROLLERBUTTONDOWN && !P.hk.no_pads) {
         int b = e->cbutton.button;
         in = b == SDL_CONTROLLER_BUTTON_DPAD_UP ? MDRT_MENU_UP : b == SDL_CONTROLLER_BUTTON_DPAD_DOWN ? MDRT_MENU_DOWN
