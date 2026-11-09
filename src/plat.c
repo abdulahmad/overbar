@@ -5,6 +5,7 @@
  * the other ports duplicated, so one copy runs on a desktop and on a Linux handheld.
  */
 #include "overbar/plat.h"
+#include "overbar/osk.h"
 
 #ifdef OVERBAR_SDL
 #include <stdio.h>
@@ -201,6 +202,34 @@ void ob_plat_close(void)
 
 /* ---- text input, the cursor, the overlay's keys ---- */
 
+static ob_osk osk;
+static int osk_ready;
+static void osk_key(int sc, int down, void *ud) { (void)ud; if (P.hk.key) P.hk.key(sc, down); }
+static void osk_init_once(void) { if (!osk_ready) { ob_osk_init(&osk, osk_key, NULL); osk_ready = 1; } }
+void ob_plat_osk_open(void) { osk_init_once(); ob_osk_open(&osk); }
+void ob_plat_osk_close(void) { osk_init_once(); ob_osk_close(&osk); }
+int ob_plat_osk_is_open(void) { return osk_ready && osk.open; }
+void ob_plat_osk_draw(uint32_t *px, int w, int h, int pitch) { if (osk_ready) ob_osk_draw(&osk, px, w, h, pitch); }
+
+/* the keyboard takes the d-pad, A / Enter and B / Esc while it is open (its own copy of the event: 1 when used) */
+static int osk_event(const SDL_Event *e)
+{
+    int in = -1;
+    if (!ob_plat_osk_is_open()) return 0;
+    if (e->type == SDL_CONTROLLERBUTTONDOWN && !P.hk.no_pads) {
+        int b = e->cbutton.button;
+        in = b == SDL_CONTROLLER_BUTTON_DPAD_UP ? MDRT_MENU_UP : b == SDL_CONTROLLER_BUTTON_DPAD_DOWN ? MDRT_MENU_DOWN
+           : b == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? MDRT_MENU_LEFT : b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? MDRT_MENU_RIGHT
+           : b == SDL_CONTROLLER_BUTTON_A ? MDRT_MENU_OK : b == SDL_CONTROLLER_BUTTON_B ? MDRT_MENU_BACK
+           : b == SDL_CONTROLLER_BUTTON_START ? -2 : -1;
+        if (in == -2) { ob_osk_close(&osk); return 1; }
+        if (in >= 0) { ob_osk_input(&osk, in); return 1; }
+        return e->type != 0;                               /* other pad buttons do not reach the game meanwhile */
+    }
+    if (e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_CONTROLLERAXISMOTION) return !P.hk.no_pads;
+    return 0;                                              /* the keyboard types for itself */
+}
+
 static void sync_text_input(void)
 {
     int want = P.host->overlay_open && ob_overlay_editing(P.host);
@@ -303,6 +332,7 @@ void ob_plat_pump(void)
     cursor_update();
     while (SDL_PollEvent(&e)) {
         if (P.hk.event && P.hk.event(&e)) continue;
+        if (osk_event(&e)) continue;
         if (e.type == SDL_KEYDOWN && !e.key.repeat && e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT)) {
             static int win_w, win_h, win_x, win_y;            /* Alt+Enter; the windowed size and place, which the bar's coming back would move */
             int full = !!(SDL_GetWindowFlags(P.win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP));
@@ -456,6 +486,31 @@ static void overlay_draw(const SDL_Rect *dst)
     P.over_x = to.x; P.over_y = to.y; P.over_w = to.w; P.over_h = to.h;
 }
 
+static void osk_draw_screen(const SDL_Rect *dst)
+{
+    int t = (int)(dst->h * 0.8 / (P.cur_h > 0 ? P.cur_h : P.hk.src_h) + 0.5), mw, mh;
+    static uint32_t px[OVER_W * OVER_H];
+    static SDL_Texture *tex;
+    static int tw, th;
+    if (t < 1) t = 1;
+    mw = dst->w / t;
+    mh = dst->h / t;
+    while ((mw > OVER_W || mh > OVER_H) && t < 64) { t++; mw = dst->w / t; mh = dst->h / t; }
+    if (tex && (tw != mw || th != mh)) { SDL_DestroyTexture(tex); tex = NULL; }
+    if (!tex && (tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, mw, mh))) {
+        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureScaleMode(tex, SDL_ScaleModeNearest);
+    }
+    tw = mw;
+    th = mh;
+    if (!tex) return;
+    memset(px, 0, (size_t)mw * mh * 4);
+    ob_osk_draw(&osk, px, mw, mh, mw);
+    SDL_Rect to = { dst->x + (dst->w - mw * t) / 2, dst->y + (dst->h - mh * t) / 2, mw * t, mh * t };
+    SDL_UpdateTexture(tex, NULL, px, mw * 4);
+    SDL_RenderCopy(P.ren, tex, NULL, &to);
+}
+
 void ob_plat_present(void)
 {
     int ww, wh, sw = P.hk.src_w, sh = P.hk.src_h;
@@ -507,6 +562,7 @@ void ob_plat_present(void)
     if (P.hk.draw_over) P.hk.draw_over(&dst);
     if (P.hk.captures && P.hk.captures()) { /* the port's setup screen is drawn over the picture by draw_over */ }
     else if (P.host->overlay_open) overlay_draw(&dst);
+    if (ob_plat_osk_is_open()) osk_draw_screen(&dst);
     SDL_RenderPresent(P.ren);
 }
 

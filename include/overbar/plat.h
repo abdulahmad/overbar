@@ -41,6 +41,7 @@ typedef struct ob_plat_hooks {
     void (*unused)(const SDL_Event *e);       /* an event the layer did not use itself (the game's keys, mouse and joystick while the overlay is closed) */
     void (*modal)(int on);                    /* (Windows) the window's menu or sizing loop started / ended: the game is not running, so mute the sound */
     void (*draw_over)(const SDL_Rect *dst);   /* the port's own layer over the picture (banner, setup screen), under the overlay */
+    void (*key)(int scancode, int down);      /* the on-screen keyboard (osk.h) types: a USB HID scancode (SDL's), the port turns it into the game's own keyboard */
     void (*quit)(void);                       /* the player closed the game: save and leave (should not return) */
     void (*controller)(int slot, int added);  /* a controller came or went */
 } ob_plat_hooks;
@@ -52,6 +53,13 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h);
 void ob_plat_close(void);
 
 void ob_plat_pump(void);                      /* the window's events: overlay keys, pads, mouse, text, the bar */
+/* The on-screen keyboard: the port opens it when the game waits for text (or a player asks for it). While it is open the layer takes the
+ * d-pad / arrows, A / Enter (type), B / Esc (delete) and sends the keys through hooks.key. Ports that draw themselves (window_only) call
+ * ob_plat_osk_draw over their picture where they draw the overlay. */
+void ob_plat_osk_open(void);
+void ob_plat_osk_close(void);
+int ob_plat_osk_is_open(void);
+void ob_plat_osk_draw(uint32_t *px, int w, int h, int pitch);
 void ob_plat_present(void);                   /* draws the picture, the port's layer, the stats and the overlay, and flips */
 void ob_plat_frame_done(int is_new);          /* count a frame shown (is_new: the game produced a new picture) */
 

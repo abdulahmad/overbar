@@ -54,10 +54,10 @@ the layer installs it, so ports no longer do.
 ## On-screen keyboard (planned, Abdul 2026-11-08)
 
 The PC ports need it for typing league names, team owner names, created players and so on, on handhelds and with a
-controller on a desktop. `src/plat_osk.c`: a grid drawn over the picture (the same way as the pad setup screen), moved with
-the d-pad, A types, B deletes, Start accepts. It does not know the game: it calls a hook `ob_plat_hooks.key(scancode, down)`
+controller on a desktop. `src/osk.c` (model and drawing, no SDL; `ob_plat_osk_*` in the layer routes the input): a grid drawn over the picture (the same way as the pad setup screen), moved with
+the d-pad, A types, B deletes, Start accepts. It does not know the game: it calls a hook `ob_plat_hooks.key(scancode, down)` (USB HID codes, Shift sent around a shifted letter)
 that the port turns into the game's own keyboard (the DOS keyboard interrupt for the PC ports). The port tells the layer when
-the game is waiting for text (`ob_plat_osk_wanted(int)`: for the PC ports found from the game's text-entry routines, to be
+the game is waiting for text (`ob_plat_osk_open()` / `ob_plat_osk_close()`: for the PC ports found from the game's text-entry routines, to be
 located in each game's code); a player can also open it by hand from the overlay. The layer's overlay fields (the Online page)
 use the same keyboard on a handheld.
 
