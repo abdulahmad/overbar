@@ -99,9 +99,17 @@ static void fill(uint32_t *px, int w, int h, int pitch, int x, int y, int rw, in
     }
 }
 
-void ob_osk_draw(const ob_osk *k, uint32_t *px, int w, int h, int pitch)
+#define TW (COLS * KW + 8)
+#define TH (ROWS * KH + 8 + 12)                 /* 12 rows of pixels above the keys: the caps indicator */
+
+/* the keyboard is drawn at twice its basic size when the picture is big enough for that (the basic size is 208 x 90 pixels) */
+static int osk_scale(int w, int h) { return w >= 2 * TW + 8 && h >= 2 * TH + 8 ? 2 : 1; }
+
+int ob_osk_height(int w, int h) { return TH * osk_scale(w, h) + 4; }
+
+static void osk_draw1(const ob_osk *k, uint32_t *px, int w, int h, int pitch)
 {
-    int r, c, x0, y0, tw = COLS * KW + 8, th = ROWS * KH + 8 + 12;      /* 12 rows of pixels above the keys: the caps indicator */
+    int r, c, x0, y0, tw = TW, th = TH;
     if (!k->open || w < tw || h < th) return;
     x0 = (w - tw) / 2;
     y0 = h - th - 4;
@@ -127,5 +135,25 @@ void ob_osk_draw(const ob_osk *k, uint32_t *px, int w, int h, int pitch)
             if (r == 4 && bottom_kind[bottom(c)] == K_SHIFT && k->shift && !on)
                 fill(px, w, h, pitch, x0 + 4 + c * KW, y, kw, KH - 2, 0xFF508050u);
             mdrt_menu_text(px, w, h, pitch, sx, sy, lab, on ? 0xFF000000u : 0xFFFFFFFFu);
+        }
+}
+
+void ob_osk_draw(const ob_osk *k, uint32_t *px, int w, int h, int pitch) { ob_osk_draw_at(k, px, w, h, pitch, 0); }
+
+void ob_osk_draw_at(const ob_osk *k, uint32_t *px, int w, int h, int pitch, int scale)
+{
+    int s = scale ? scale : osk_scale(w, h);
+    static uint32_t small[(TW + 8) * (TH + 8)];
+    int sw = TW + 8, sh = TH + 8, x0, y0, i, j;
+    if (!k->open) return;
+    if (s == 1) { osk_draw1(k, px, w, h, pitch); return; }
+    memset(small, 0, sizeof small);
+    osk_draw1(k, small, sw, sh, sw);                       /* the keyboard at its basic size: it sits at the bottom of the small picture */
+    x0 = (w - sw * s) / 2;
+    y0 = h - sh * s;
+    for (j = 0; j < sh * s; j++)
+        for (i = 0; i < sw * s; i++) {
+            uint32_t v = small[(j / s) * sw + i / s];
+            if (v >> 24) px[(size_t)(y0 + j) * pitch + x0 + i] = v;
         }
 }

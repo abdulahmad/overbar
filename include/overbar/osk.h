@@ -26,6 +26,10 @@ void ob_osk_close(ob_osk *k);
 /* in: MDRT_MENU_UP / DOWN / LEFT / RIGHT / OK / BACK (as the overlay). 1 when used (always while open). */
 int ob_osk_input(ob_osk *k, int mdrt_input);
 /* draws the keyboard over the bottom of a w x h ARGB picture */
+/* the height in pixels the keyboard takes at the bottom of a w x h picture (it is drawn twice as big when there is room) */
+/* the same with the scale given (1 or 2; 0: as ob_osk_draw decides) */
+void ob_osk_draw_at(const ob_osk *k, uint32_t *px, int w, int h, int pitch, int scale);
+int ob_osk_height(int w, int h);
 void ob_osk_draw(const ob_osk *k, uint32_t *px, int w, int h, int pitch);
 /* the key at a place, for tests: its label ("A", "Space", "Done") */
 const char *ob_osk_label(int col, int row);

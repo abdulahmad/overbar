@@ -649,7 +649,7 @@ static void overlay_draw(const SDL_Rect *dst)
 {
     int mw, mh, t = (int)(dst->h * 0.8 / (P.cur_h > 0 ? P.cur_h : P.hk.src_h) + 0.5);
     if (t < 1) t = 1;
-    if (ob_plat_osk_is_open()) t *= 2;                 /* the keyboard is drawn at twice the size of the overlay's text */
+    if (ob_plat_osk_is_open()) t *= 2;                 /* the keyboard is drawn at twice the size of the overlay's text (its own scale stays 1 here) */
     mw = dst->w / t;
     mh = dst->h / t;
     while (ob_plat_osk_is_open() && t > 1 && (mw < 208 || mh < 90)) { t--; mw = dst->w / t; mh = dst->h / t; }   /* (the keyboard's size in these pixels) */
@@ -694,8 +694,8 @@ static void osk_draw_screen(const SDL_Rect *dst)
     if (!tex) return;
     memset(px, 0, (size_t)mw * mh * 4);
     if (ob_plat_osk_is_open()) {
-        if (R_chat) ob_chat_draw(R_chat, px, mw, mh - 5 * 14 - 16, mw);   /* chat's line above the keyboard */
-        ob_osk_draw(&osk, px, mw, mh, mw);
+        if (R_chat) ob_chat_draw(R_chat, px, mw, mh - 5 * 14 - 16 - 12, mw);   /* chat's line above the keyboard */
+        ob_osk_draw_at(&osk, px, mw, mh, mw, 1);
     } else ob_plat_room_draw(px, mw, mh, mw);
     SDL_Rect to = { dst->x + (dst->w - mw * t) / 2, dst->y + (dst->h - mh * t) / 2, mw * t, mh * t };
     SDL_UpdateTexture(tex, NULL, px, mw * 4);
