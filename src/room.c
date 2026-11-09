@@ -16,6 +16,22 @@ void ob_room_init(ob_room *r, ob_net *net, ob_sides *sides, ob_chat *chat)
     r->chat = chat;
 }
 
+void ob_room_modules(ob_room *r, ob_files *files, ob_season *season)
+{
+    r->files = files;
+    r->season = season;
+}
+
+void ob_room_files_send(void *net, int to, const void *data, size_t size)
+{
+    ob_net_send((ob_net *)net, to, OB_NET_TYPE_FILES, data, size);
+}
+
+void ob_room_season_send(void *net, int to, const void *data, size_t size)
+{
+    ob_net_send((ob_net *)net, to, OB_NET_TYPE_SEASON, data, size);
+}
+
 void ob_room_sides_send(void *net, int to, const void *data, size_t size)
 {
     ob_net_send((ob_net *)net, to < 0 ? OB_NET_ALL : to, OB_NET_TYPE_SIDES, data, size);
@@ -51,6 +67,8 @@ void ob_room_poll(ob_room *r, void (*game)(void *, int, int, const void *, size_
             }
         } else if (!(now & bit) && (r->members & bit)) {
             if (r->sides) ob_sides_machine_gone(r->sides, k);
+            if (r->files) ob_files_machine_gone(r->files, k);
+            if (r->season) ob_season_machine_gone(r->season, k);
             news(r, r->name[k], "left");
         }
     }
@@ -67,6 +85,8 @@ void ob_room_poll(ob_room *r, void (*game)(void *, int, int, const void *, size_
         }
         if (type == OB_NET_TYPE_SIDES) { if (r->sides) ob_sides_message(r->sides, from, data, size); }
         else if (type == OB_NET_TYPE_CHAT) { if (r->chat) ob_chat_message(r->chat, data, size); }
+        else if (type == OB_NET_TYPE_FILES) { if (r->files) ob_files_message(r->files, from, data, size); }
+        else if (type == OB_NET_TYPE_SEASON) { if (r->season) ob_season_message(r->season, from, data, size); }
         else if (game) game(ud, from, type, data, size);
         free(big);
     }
@@ -78,6 +98,10 @@ int ob_room_lines(ob_room *r, char (*line)[OB_ROOM_LINE + 1], int max)
     unsigned members = ob_net_members(r->net);
     char st[96];
     if (n < max) { ob_net_status(r->net, st, sizeof st); snprintf(line[n++], OB_ROOM_LINE + 1, "%.48s", st); }
+    if (r->season && n < max) {
+        ob_season_status(r->season, st, sizeof st);
+        if (st[0]) snprintf(line[n++], OB_ROOM_LINE + 1, "%.48s", st);
+    }
     for (k = 0; k < OB_NET_MAX_MACHINES && n < max; k++) {
         int ping, here;
         char pings[16];

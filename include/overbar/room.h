@@ -7,13 +7,16 @@
  *
  * ob_room_poll, once a frame: the messages that came go to sides and chat (the rest to the game's
  * hook, in order), and each machine that joins or leaves is told to sides (a guest's devices go when
- * it leaves; one that joins is sent the screen) and said in chat ("Bea joined"). */
+ * it leaves; one that joins is sent the screen) and said in chat ("Bea joined"); files and the season
+ * (ob_room_modules) get theirs too, and the page shows a line about a season sync. */
 #ifndef OVERBAR_ROOM_H
 #define OVERBAR_ROOM_H
 
 #include "overbar/net.h"
 #include "overbar/sides.h"
 #include "overbar/chat.h"
+#include "overbar/files.h"
+#include "overbar/season.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,11 +29,18 @@ typedef struct ob_room {
     ob_net *net;
     ob_sides *sides;                /* NULL: none */
     ob_chat *chat;                  /* NULL: none */
+    ob_files *files;                /* NULL: none (ob_room_modules) */
+    ob_season *season;              /* NULL: none */
     unsigned members;               /* as last seen */
     char name[OB_NET_MAX_MACHINES][OB_NET_NAME + 1];   /* (kept, to say who left) */
 } ob_room;
 
 void ob_room_init(ob_room *r, ob_net *net, ob_sides *sides, ob_chat *chat);
+/* the room's files and season (either NULL): their messages go to them, and each machine that leaves */
+void ob_room_modules(ob_room *r, ob_files *files, ob_season *season);
+/* the senders for ob_files_init and ob_season_init (ud: the ob_net) */
+void ob_room_files_send(void *net, int to, const void *data, size_t size);
+void ob_room_season_send(void *net, int to, const void *data, size_t size);
 /* the senders for ob_sides_init and ob_chat_init (ud: the ob_net) */
 void ob_room_sides_send(void *net, int to, const void *data, size_t size);
 void ob_room_chat_send(void *net, const void *data, size_t size);

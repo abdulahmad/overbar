@@ -9,3 +9,6 @@
 tools/shots
 tools/shots.exe
 /build_test_saves/
+/tests/test_season
+/build_test_season/
+/build_test_net_files/
