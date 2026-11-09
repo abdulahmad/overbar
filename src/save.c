@@ -29,7 +29,7 @@
 #define VERSION 1u
 #define HEAD_MAX 4096           /* enough for everything before the settings */
 
-static const char kind_char[4] = { '?', 'f', 'c', 'p' };
+static const char kind_char[5] = { '?', 'f', 'c', 'p', 'd' };
 
 static void text(char *to, const char *from, size_t max)
 {
@@ -67,7 +67,9 @@ void ob_saves_free(ob_saves *s)
 void ob_saves_event(ob_saves *s, int kind, uint32_t step, const ob_save_summary *now)
 {
     int i;
-    if (kind < OB_SAVE_FACEOFF || kind > OB_SAVE_PERIOD || !now) return;
+    if (kind < OB_SAVE_FACEOFF || kind > OB_SAVE_DROP || !now) return;
+    s->now = *now;
+    s->have_now = 1;
     if (step + 1 <= s->done_step[kind]) return;     /* (this point, or a later one, already: a replay) */
     s->done_step[kind] = step + 1;
     if (s->npend == 8) {                            /* (full: the oldest goes) */
@@ -83,6 +85,7 @@ void ob_saves_event(ob_saves *s, int kind, uint32_t step, const ob_save_summary 
 void ob_saves_clock(ob_saves *s, uint32_t step, int game_seconds, const ob_save_summary *now)
 {
     int mark = game_seconds / OB_SAVE_CLOCK_EVERY;
+    if (now) { s->now = *now; s->have_now = 1; }
     if (game_seconds <= 0 || mark <= s->clock_mark) return;
     s->clock_mark = mark;
     ob_saves_event(s, OB_SAVE_CLOCK, step, now);
@@ -206,7 +209,20 @@ static size_t net_share(void *ud, uint32_t *step, void *out, size_t cap) { retur
 
 int ob_saves_poll(ob_saves *s, ob_net *n)
 {
-    if (!n || !ob_net_is_host(n) || !s->npend) return 0;
+    unsigned w;
+    if (!n || !ob_net_is_host(n)) return 0;
+    w = ob_net_waiting_for(n);
+    if (w & ~s->dropped && s->npend < 8) {               /* (a player dropped out: a save now, from any state) */
+        int i = 0;                                       /* (first: the points after it wait for buttons that may not come) */
+        memmove(&s->pend[1], &s->pend[0], (size_t)s->npend * sizeof s->pend[0]);
+        s->npend++;
+        s->pend[i].kind = OB_SAVE_DROP;
+        s->pend[i].step = 0;
+        if (s->have_now) s->pend[i].sum = s->now;
+        else memset(&s->pend[i].sum, 0, sizeof s->pend[i].sum);
+    }
+    s->dropped = w;
+    if (!s->npend) return 0;
     return ob_saves_poll_with(s, ob_net_confirmed(n), net_share, n);
 }
 
@@ -214,7 +230,7 @@ void ob_saves_done(ob_saves *s)
 {
     char path[400];
     int k, q;
-    for (k = OB_SAVE_FACEOFF; k <= OB_SAVE_PERIOD; k++)
+    for (k = OB_SAVE_FACEOFF; k <= OB_SAVE_DROP; k++)
         for (q = 0; q < s->seq[k]; q++) { file_name(s, k, q, path, sizeof path); remove(path); }
     s->npend = 0;
 }
@@ -233,7 +249,7 @@ static int read_head(rd *r, const char *identity, ob_save_entry *e)
     e->step = u32r(r);
     e->when = i64r(r);
     summary_r(r, &e->sum);
-    return r->bad || e->kind < OB_SAVE_FACEOFF || e->kind > OB_SAVE_PERIOD ? -1 : 0;
+    return r->bad || e->kind < OB_SAVE_FACEOFF || e->kind > OB_SAVE_DROP ? -1 : 0;
 }
 
 static int is_save(const char *name)

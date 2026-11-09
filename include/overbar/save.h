@@ -3,7 +3,8 @@
  *
  * Saves of an online match as it goes, on the host, for Recover game after a crash (a dropped player
  * comes back through ob_net's held seats, ob_net_game.hold_seats). Save points:
- *   each faceoff: the last 3 kept;  every 2 minutes of game clock: the last 3;  each period's start: all.
+ *   each faceoff: the last 3 kept;  every 2 minutes of game clock: the last 3;  each period's start: all;
+ *   each time a player drops out (ob_net_waiting_for): the last 3, kept when the match is ended for it.
  * A save holds a shared state of a step whose every button is known (ob_net_share_confirmed: the newest
  * one at or after the save point), the match's set-up (settings, seats, delay) and a summary for the
  * Recover list: the teams and who played them, score, period and clock, the league and which game it is.
@@ -25,7 +26,7 @@
 extern "C" {
 #endif
 
-enum { OB_SAVE_FACEOFF = 1, OB_SAVE_CLOCK, OB_SAVE_PERIOD };
+enum { OB_SAVE_FACEOFF = 1, OB_SAVE_CLOCK, OB_SAVE_PERIOD, OB_SAVE_DROP };
 #define OB_SAVE_KEEP 3              /* faceoff and clock saves kept */
 #define OB_SAVE_CLOCK_EVERY 120     /* game seconds between clock saves */
 #define OB_SAVE_TEXT 47
@@ -50,9 +51,12 @@ typedef struct ob_saves {
     int delay;
     struct { int kind; uint32_t step; ob_save_summary sum; } pend[8];   /* points waiting for their buttons */
     int npend;
-    uint32_t done_step[4];          /* by kind: the newest point's step (+1) taken */
+    uint32_t done_step[5];          /* by kind: the newest point's step (+1) taken */
     int clock_mark;                 /* game seconds / OB_SAVE_CLOCK_EVERY last saved at */
-    int seq[4];                     /* files written, by kind */
+    int seq[5];                     /* files written, by kind */
+    ob_save_summary now;            /* the newest summary the game gave (a drop's) */
+    int have_now;
+    unsigned dropped;               /* (ob_saves_poll) the machines waited for, last seen */
     int saved;                      /* files written in all */
     char why[160];                  /* the last failure ("" none) */
 } ob_saves;
@@ -64,11 +68,13 @@ void ob_saves_free(ob_saves *s);
 void ob_saves_event(ob_saves *s, int kind, uint32_t step, const ob_save_summary *now);
 /* (in the simulation) the game clock: game_seconds played in all (periods before included) */
 void ob_saves_clock(ob_saves *s, uint32_t step, int game_seconds, const ob_save_summary *now);
-/* (the host, outside the simulation, once a frame) writes the points whose buttons are all known. Files written now */
+/* (the host, outside the simulation, once a frame) writes the points whose buttons are all known, and a save when a
+ * player drops out (the newest state whose buttons were all known, with the newest summary). Files written now */
 int ob_saves_poll(ob_saves *s, ob_net *n);
 /* the same with any source of shared states (tests): confirmed, and share as ob_net_share_confirmed */
 int ob_saves_poll_with(ob_saves *s, uint32_t confirmed, size_t (*share)(void *ud, uint32_t *step, void *out, size_t cap), void *ud);
-/* the match's result is in the league (or it was ended): its files go */
+/* the match's result is in the league: its files go (not when it was ended because a player dropped: the drop's
+ * save stays for Recover game) */
 void ob_saves_done(ob_saves *s);
 
 /* ---- Recover game ---- */

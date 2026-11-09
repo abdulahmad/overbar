@@ -17,6 +17,7 @@ src/osk.c
 src/gl.c
 src/sides.c
 src/chat.c
+src/console.c
 src/room.c
 src/lane.c
 src/save.c

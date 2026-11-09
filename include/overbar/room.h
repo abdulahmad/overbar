@@ -18,6 +18,7 @@
 #include "overbar/files.h"
 #include "overbar/season.h"
 #include "overbar/serial.h"
+#include "overbar/console.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +34,7 @@ typedef struct ob_room {
     ob_files *files;                /* NULL: none (ob_room_modules) */
     ob_season *season;              /* NULL: none */
     ob_serial *serial;              /* NULL: none (ob_room_serial) */
+    ob_console *console;            /* NULL: none (ob_room_console) */
     unsigned members;               /* as last seen */
     char name[OB_NET_MAX_MACHINES][OB_NET_NAME + 1];   /* (kept, to say who left) */
 } ob_room;
@@ -43,6 +45,8 @@ void ob_room_modules(ob_room *r, ob_files *files, ob_season *season);
 /* the room carries a serial port (a DOS game's modem or cable play, two machines): its messages go to it, it is told
  * when the other machine comes and goes, and the page shows its line */
 void ob_room_serial(ob_room *r, ob_serial *serial);
+/* a console's states for everyone (overbar/console.h): its messages go to it */
+void ob_room_console(ob_room *r, ob_console *console);
 void ob_room_serial_send(void *net, const void *data, size_t size);     /* the sender for ob_serial_init (ud: the ob_net) */
 /* the senders for ob_files_init and ob_season_init (ud: the ob_net) */
 void ob_room_files_send(void *net, int to, const void *data, size_t size);

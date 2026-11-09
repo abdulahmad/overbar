@@ -23,6 +23,7 @@ void ob_room_modules(ob_room *r, ob_files *files, ob_season *season)
 }
 
 void ob_room_serial(ob_room *r, ob_serial *serial) { r->serial = serial; }
+void ob_room_console(ob_room *r, ob_console *console) { r->console = console; }
 
 void ob_room_serial_send(void *net, const void *data, size_t size)
 {
@@ -96,6 +97,7 @@ void ob_room_poll(ob_room *r, void (*game)(void *, int, int, const void *, size_
         else if (type == OB_NET_TYPE_FILES) { if (r->files) ob_files_message(r->files, from, data, size); }
         else if (type == OB_NET_TYPE_SEASON) { if (r->season) ob_season_message(r->season, from, data, size); }
         else if (type == OB_NET_TYPE_SERIAL) { if (r->serial) ob_serial_message(r->serial, data, size); }
+        else if (type == OB_NET_TYPE_CONSOLE) { if (r->console) ob_console_message(r->console, r->net, from, data, size); }
         else if (game) game(ud, from, type, data, size);
         free(big);
     }
