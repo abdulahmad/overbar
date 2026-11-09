@@ -50,6 +50,7 @@ extern "C" {
 #define OB_NET_TYPE_FILES 242           /* folders sent (overbar/files.h) */
 #define OB_NET_TYPE_SEASON 243          /* the online season (overbar/season.h) */
 #define OB_NET_TYPE_SERIAL 244          /* a serial port carried by the room (overbar/serial.h) */
+#define OB_NET_TYPE_CONSOLE 245         /* a console's states for everyone (overbar/console.h) */
 #define OB_NET_TYPE_LAST 249
 
 /* OB_NET_LOBBY: (a room) everyone in it is connected and no match of this machine's goes on */
@@ -89,6 +90,9 @@ typedef struct ob_net_game {
     int hold_seats;             /* (a room, rollback with share / take) a player who drops does not end the match: it
                                    waits for them (ob_net_waiting_for), and goes on from its newest state whose buttons
                                    were all known once a machine of the same name comes back */
+    uint16_t host_bits;         /* (0: none) button bits only the host's pads may carry, a control word beside its buttons
+                                   (a console's reset, overbar/console.h): cleared from every other machine's, and never
+                                   held in a guess (a guessed step has none of them; the real one, if it has, rolls back) */
 } ob_net_game;
 
 /* Opens the socket and starts connecting (host: o->port; join: o->addr[:port], o->port when no
@@ -140,6 +144,18 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
  * outside the game (no rumble, files, stats); the game's own sound state still runs */
 int ob_net_replaying(ob_net *n);
 uint32_t ob_net_confirmed(ob_net *n);   /* steps whose every button is known (a prefix) */
+unsigned ob_net_pads_of(ob_net *n, int machine);   /* the pads a machine plays (bit p: pad p), once GO */
+
+/* how the steps have gone, for a log or a test */
+typedef struct ob_net_stats {
+    uint32_t step, confirmed;       /* steps run, and of them those whose every button is known */
+    long rollbacks, replayed;       /* rollbacks, and the steps they played again */
+    int most_replayed;              /* the most one rollback played again */
+    long gave_back, waited;         /* steps given back to keep in step; steps that waited for someone's buttons */
+    long checks;                    /* desync checks made (each step's once its buttons were all known) */
+    int rtt_ms;                     /* the longest round trip to a machine this one talks to (-1: not known) */
+} ob_net_stats;
+void ob_net_stats_get(ob_net *n, ob_net_stats *s);
 
 /* every so often (every 60 steps, say): the simulation's hash after running step `step`. The host
  * compares the guests' with its own; a difference ends the session as "desync at step N". With

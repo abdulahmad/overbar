@@ -549,6 +549,7 @@ static size_t rtoy_share(void *user, const void *state, size_t size, void *out, 
 static int rtoy_take(void *user, const void *in, size_t size) { rtoy *t = user; int r = rtoy_load(user, in, size); t->joined = 1; t->took_h = t->h; return r; }
 
 static int room_hold;                   /* make_room: seats held for players who drop */
+static uint16_t room_host_bits;         /* make_room: the host's control bits */
 static ob_net *make_room(int role, int port, const char *addr, int here, const char *name, rtoy *t)
 {
     ob_online o;
@@ -564,7 +565,7 @@ static ob_net *make_room(int role, int port, const char *addr, int here, const c
     snprintf(o.addr, sizeof o.addr, "%s", addr ? addr : "");
     o.port = port; o.delay = 1; o.here = here; o.all = 2;
     st.user = t; st.save = rtoy_save; st.load = rtoy_load; st.share = rtoy_share; st.take = rtoy_take;
-    g.identity = "room toy"; g.pads = 4; g.states = &st; g.room = 1; g.hold_seats = room_hold;
+    g.identity = "room toy"; g.pads = 4; g.states = &st; g.room = 1; g.hold_seats = room_hold; g.host_bits = room_host_bits;
     g.settings = set; g.settings_size = sizeof set;
     n = ob_net_new(&o, &g, err, sizeof err);
     if (!n) printf("ob_net_new: %s\n", err);
@@ -1185,6 +1186,116 @@ static void lane_net(int loss)
     free_all(2);
 }
 
+/* ---- a console's features (overbar/console.h) ----
+ * Three machines, one match: the toy's step mixes every pad's buttons in; the host resets the console at step 200
+ * (the toy's state back to its power on) and loads a state for everyone at step 400; the toy is "in its menus"
+ * while its hash's low three bits are 0 (guests' pads read as nothing then). Machine 2 gives its buttons with the
+ * control bits set and without ob_console_local: the core keeps them off. Every machine's final steps and the
+ * steps of the reset and the load must be the host's. */
+static ob_console CON[3];
+static uint32_t con_reset_at[3], con_load_at[3];
+static long con_menus[3];
+#define CON_POWER_ON 0x5EEDull
+#define CON_STATE 0x1D0ADull
+static void con_messages(int i)
+{
+    uint8_t buf[64];
+    int from, type;
+    size_t size;
+    while (M[i].n && ob_net_recv(M[i].n, &from, &type, buf, sizeof buf, &size) == 1)
+        if (type == OB_NET_TYPE_CONSOLE) ob_console_message(&CON[i], M[i].n, from, buf, size);
+}
+static int con_tick(int i, uint32_t end)
+{
+    ob_net *n = M[i].n;
+    rtoy *t = &R[i];
+    uint32_t cur;
+    uint16_t local[OB_NET_MAX_PADS], all[OB_NET_MAX_PADS];
+    unsigned pads;
+    int p, j = 0, r, ev, menus;
+    const void *st = NULL;
+    size_t sz = 0;
+    if (!n) return 0;
+    con_messages(i);
+    if (!t->playing) {
+        if (ob_net_poll(n) != OB_NET_GO || t->over) return 0;
+        t->playing = 1;
+        t->h = CON_POWER_ON;
+        t->first = ob_net_step_count(n);
+        t->high = t->first;
+        t->start = seconds();
+    }
+    cur = ob_net_step_count(n);
+    if (cur >= t->high && cur - t->first > (uint32_t)((seconds() - t->start) * 120)) { ob_net_poll(n); return 0; }
+    pads = ob_net_my_pads(n);
+    for (p = 0; p < OB_NET_MAX_PADS; p++)
+        if (pads >> p & 1) local[j++] = (uint16_t)(toy_buttons(i, p, cur + (uint32_t)ob_net_delay(n)) | (i == 2 ? OB_CONSOLE_BITS : 0));
+    if (i == 0 && cur == 200 && !ob_net_replaying(n)) ob_console_reset(&CON[0]);
+    if (i == 0 && cur == 400 && !ob_net_replaying(n)) { uint64_t v = CON_STATE; CHECK(!ob_console_load(&CON[0], n, &v, sizeof v), "the host sends a state"); }
+    if (i != 2) ob_console_local(&CON[i], n, local, j);
+    r = ob_net_frame(n, 1, local, all);
+    if (r < 0) { printf("machine %d ended at step %u: %s\n", i, (unsigned)cur, ob_net_why(n)); t->playing = 0; t->over = 1; return -1; }
+    if (r == OB_NET_OVER) { t->playing = 0; t->over = 1; return 1; }
+    if (r == OB_NET_RESTART) { t->restarts++; return 1; }
+    if (r != OB_NET_RUN) return 0;
+    if (cur + 1 > t->high) t->high = cur + 1;
+    menus = (t->h & 7) == 0;
+    ev = ob_console_step(&CON[i], n, all, 4, menus, &st, &sz);
+    for (p = 0; p < 4; p++) t->h = (t->h ^ all[p]) * 0x100000001B3ull + cur;
+    if (menus) con_menus[i]++;
+    if (ev == OB_CONSOLE_DO_RESET) { t->h = CON_POWER_ON; con_reset_at[i] = cur; }
+    if (ev == OB_CONSOLE_DO_LOAD) { CHECK(sz == sizeof t->h, "the state's size"); if (sz == sizeof t->h) memcpy(&t->h, st, sz); con_load_at[i] = cur; }
+    if (cur < RM_MAX) t->final[cur] = t->h;
+    if (cur % 60 == 59) ob_net_check(n, cur, t->h);
+    if (cur + 1 >= end && ob_net_confirmed(n) >= end) { ob_net_match_end(n); t->playing = 0; t->over = 1; }
+    return 1;
+}
+
+static void console_net(int loss)
+{
+    char addr[32], err[120];
+    int port = BASE_PORT + 150 + loss, i;
+    ob_net_match m;
+    double until;
+    const uint32_t end = 700;
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    room_reset();
+    memset(con_reset_at, 0, sizeof con_reset_at);
+    memset(con_load_at, 0, sizeof con_load_at);
+    memset(con_menus, 0, sizeof con_menus);
+    for (i = 0; i < 3; i++) ob_console_init(&CON[i]);
+    room_host_bits = OB_CONSOLE_BITS;
+    M[0].n = make_room(0, port, NULL, 1, "Ann", &R[0]);
+    M[1].n = make_room(1, 0, addr, 1, "Ben", &R[1]);
+    M[2].n = make_room(1, 0, addr, 1, "Cal", &R[2]);
+    room_host_bits = 0;
+    CHECK(M[0].n && M[1].n && M[2].n, "console machines open");
+    if (!M[0].n || !M[1].n || !M[2].n) { free_all(3); return; }
+    for (i = 0; i < 3 && loss; i++) ob_net_simulate(M[i].n, 3, 6, loss, 2);
+    if (!lobby_all(3, 10)) { CHECK(0, "three machines in the room"); free_all(3); return; }
+    memset(&m, 0, sizeof m);
+    for (i = 0; i < OB_NET_MAX_PADS; i++) m.owner[i] = -1;
+    m.owner[0] = 0; m.owner[1] = 1; m.owner[2] = 2; m.delay = -1;
+    CHECK(!ob_net_match_begin(M[0].n, &m, err, sizeof err), "the console's match begins");
+    until = seconds() + 60;
+    while (seconds() < until && !(R[0].over && R[1].over && R[2].over)) {
+        int moved = 0;
+        for (i = 0; i < 3; i++) moved |= con_tick(i, end) != 0;
+        if (!moved) nap();
+    }
+    CHECK(R[0].over && R[1].over && R[2].over, "the console's match played out");
+    CHECK(room_agree(3, end), "every machine's steps the host's (reset, load, menus and all)");
+    CHECK(con_reset_at[0] >= 200 && con_reset_at[0] < 240 && con_reset_at[1] == con_reset_at[0] && con_reset_at[2] == con_reset_at[0],
+          "the reset on the same step everywhere");
+    CHECK(con_load_at[0] > 400 && con_load_at[0] < 600 && con_load_at[1] == con_load_at[0] && con_load_at[2] == con_load_at[0],
+          "the state loaded on the same step everywhere");
+    CHECK(con_menus[0] > 0, "some steps in the menus");
+    printf("console%s: reset at step %u, state loaded at step %u, %ld steps in the menus, %d/%d/%d rollbacks\n", loss ? " (loss)" : "",
+           (unsigned)con_reset_at[0], (unsigned)con_load_at[0], con_menus[0], R[0].restarts, R[1].restarts, R[2].restarts);
+    for (i = 0; i < 3; i++) ob_console_free(&CON[i]);
+    free_all(3);
+}
+
 int main(void)
 {
     char lan[64];
@@ -1205,6 +1316,8 @@ int main(void)
         lane_net(5);
         recover();
         reconnect();
+        console_net(0);
+        console_net(5);
         if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
         printf("room tests ok\n");
         return 0;
@@ -1232,6 +1345,8 @@ int main(void)
     lane_net(5);
     recover();
     reconnect();
+    console_net(0);
+    console_net(5);
     printf("LAN address: \"%s\"\n", ob_net_lan_address(lan, sizeof lan));
     if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
     printf("net tests ok\n");

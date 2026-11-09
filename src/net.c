@@ -140,7 +140,9 @@ struct ob_net {
     uint32_t gave_at;                   /* the step a step was last given back at (+1; 0 none) */
     int last_replay;
     check pend[CHECKS];                 /* (rollback) checks of steps whose buttons are not all known yet */
-    long rollbacks, replayed, gave_back, predicted;
+    long rollbacks, replayed, gave_back, predicted, checks;
+    int most_replayed;
+    uint16_t host_bits;                 /* (ob_net_game.host_bits) bits only the host's buttons carry */
     check mine[CHECKS];                 /* (the host) its desync checks */
     int nmine;
     check last;                         /* (a guest) its newest, sent with its buttons */
@@ -478,6 +480,7 @@ ob_net *ob_net_new(const ob_online *o, const ob_net_game *g, char *err, int err_
     n->pads = pads;
     n->room = g->room != 0;
     n->hold = n->room && g->hold_seats;
+    n->host_bits = g->host_bits;
     n->here = o->here < (n->room ? 0 : 1) ? (n->room ? 0 : 1) : o->here > pads - 1 ? pads - 1 : o->here;
     n->total = o->all <= n->here ? n->here + 1 : o->all > pads ? pads : o->all;
     n->delay = o->delay < 0 ? 0 : o->delay > OB_NET_MAX_DELAY ? OB_NET_MAX_DELAY : o->delay;
@@ -728,7 +731,8 @@ static void go_running(ob_net *n)
     for (k = 0; k < CHECKS; k++) n->pend[k].used = 0;
     n->rb_to = NONE;
     n->replay_end = n->gave_at = 0;
-    n->rollbacks = n->replayed = n->gave_back = n->predicted = 0;
+    n->rollbacks = n->replayed = n->gave_back = n->predicted = n->checks = 0;
+    n->most_replayed = 0;
     memset(n->mine, 0, sizeof n->mine);                   /* (a room's earlier match's checks are not this one's) */
     n->nmine = 0;
     memset(&n->last, 0, sizeof n->last);
@@ -1162,6 +1166,7 @@ static void check_now(ob_net *n, uint32_t step, uint64_t sim_hash)
     check c;
     int k;
     c.step = step; c.hash = sim_hash; c.used = 1;
+    n->checks++;
     if (!n->host) { n->last = c; return; }
     add_check(n->mine, &n->nmine, step, sim_hash);
     for (k = 1; k < n->npeers && n->phase == P_RUNNING; k++) compare(n, &c, n->p[k].theirs, CHECKS);
@@ -1211,6 +1216,7 @@ static void take_inputs(ob_net *n, in *i, int whose, uint32_t first, uint32_t co
         uint16_t b[PADS] = { 0 };
         for (p = 0; p < PADS; p++) if (w->pads >> p & 1) b[p] = (uint16_t)g16(i);
         if (i->bad) return;
+        if (whose) for (p = 0; p < PADS; p++) b[p] &= (uint16_t)~n->host_bits;   /* (the host's alone) */
         if (f != n->known[whose] || f >= n->cur + RING / 2) continue;   /* (had already, or a gap: it comes again) */
         for (p = 0; p < PADS; p++)
             if (w->pads >> p & 1) {
@@ -1729,7 +1735,7 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
     if (s == n->known[n->me]) {                          /* (this machine's buttons for step cur + delay, once; none in a replay) */
         unsigned mine = n->p[n->me].pads;
         for (p = 0, j = 0; p < PADS; p++)
-            if (mine >> p & 1) { n->btn[s % RING][p] = local ? local[j] : 0; j++; }
+            if (mine >> p & 1) { n->btn[s % RING][p] = (uint16_t)((local ? local[j] : 0) & (n->me ? (unsigned)(uint16_t)~n->host_bits : 0xFFFFu)); j++; }
         n->known[n->me] = s + 1;
         n->dirty = 1;
     }
@@ -1747,6 +1753,7 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
         if (n->cur > n->replay_end) n->replay_end = n->cur;
         n->rollbacks++;
         n->replayed += (long)(n->cur - t->step);
+        if ((int)(n->cur - t->step) > n->most_replayed) n->most_replayed = (int)(n->cur - t->step);
         n->cur = t->step;
         n->rb_to = NONE;
         n->waited = 0;
@@ -1782,7 +1789,8 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
         uint16_t b = 0;
         if (o >= 0) {
             if (n->known[o] > n->cur) b = n->btn[n->cur % RING][p];
-            else if (n->known[o]) b = n->btn[(n->known[o] - 1) % RING][p];   /* (the guess: the last known, held) */
+            else if (n->known[o]) b = (uint16_t)(n->btn[(n->known[o] - 1) % RING][p] & ~n->host_bits);   /* (the guess: the last known, held;
+                                                                                                 never the host's bits) */
         }
         all[p] = b;
         n->ran[n->cur % RING][p] = b;
@@ -1802,6 +1810,28 @@ int ob_net_step(ob_net *n, const uint16_t *local, uint16_t *all)
 }
 
 int ob_net_replaying(ob_net *n) { return n->phase == P_RUNNING && n->last_replay; }
+
+unsigned ob_net_pads_of(ob_net *n, int machine)
+{
+    if (machine < 0 || machine >= MACH || n->phase != P_RUNNING) return 0;
+    return n->p[machine].pads;
+}
+
+void ob_net_stats_get(ob_net *n, ob_net_stats *s)
+{
+    int k, rtt = -1;
+    memset(s, 0, sizeof *s);
+    s->step = n->cur;
+    s->confirmed = confirmed_of(n);
+    s->rollbacks = n->rollbacks;
+    s->replayed = n->replayed;
+    s->most_replayed = n->most_replayed;
+    s->gave_back = n->gave_back;
+    s->waited = n->waited_steps;
+    s->checks = n->checks;
+    for (k = 0; k < MACH; k++) if (talks(n, k) && n->p[k].rtt_us > rtt) rtt = n->p[k].rtt_us;
+    s->rtt_ms = rtt < 0 ? -1 : (rtt + 500) / 1000;
+}
 
 void ob_net_quit(ob_net *n)
 {
