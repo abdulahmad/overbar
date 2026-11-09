@@ -5,7 +5,9 @@
  * its own random buttons; every machine must see the same buttons for every step, each machine's
  * own where it put them (delay steps on). Also: packet loss, both connect, a refused identity and
  * version, a desync, and a goodbye. And rollback: a toy game whose state is a hash of every
- * button it was run with, played with lag and loss; every final step must agree. */
+ * button it was run with, played with lag and loss; every final step must agree. Rooms: messages
+ * (a large one, guest to guest), two matches with other seats, a watcher that joins a match as it
+ * goes on, a player who leaves mid-match; with and without loss. OB_NET_TEST_ROOMS=1: only those. */
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -507,13 +509,272 @@ static void rollback(int lag_ms, int loss)
     free_all(3);
 }
 
+/* ---- rooms ---- */
+
+#define RM_MAX 1000
+typedef struct rtoy {
+    uint64_t h;
+    uint64_t final[RM_MAX];
+    int playing, over, joined, restarts;
+    uint32_t first;                     /* the first step it ran (a machine that joined late: the state's) */
+    uint32_t high;
+    double start;
+} rtoy;
+static rtoy R[3];
+
+static size_t rtoy_save(void *user, void *out, size_t cap)
+{
+    rtoy *t = user;
+    if (cap >= sizeof t->h) memcpy(out, &t->h, sizeof t->h);
+    return sizeof t->h;
+}
+static int rtoy_load(void *user, const void *in, size_t size)
+{
+    rtoy *t = user;
+    if (size != sizeof t->h) return -1;
+    memcpy(&t->h, in, size);
+    return 0;
+}
+static size_t rtoy_share(void *user, const void *state, size_t size, void *out, size_t cap)
+{
+    (void)user;
+    if (cap >= size) memcpy(out, state, size);
+    return size;
+}
+static int rtoy_take(void *user, const void *in, size_t size) { ((rtoy *)user)->joined = 1; return rtoy_load(user, in, size); }
+
+static ob_net *make_room(int role, int port, const char *addr, int here, const char *name, rtoy *t)
+{
+    ob_online o;
+    ob_net_game g;
+    ob_net_states st;
+    char err[200];
+    ob_net *n;
+    static const char set[] = "the room's settings";
+    memset(&o, 0, sizeof o);
+    memset(&g, 0, sizeof g);
+    snprintf(o.name, sizeof o.name, "%s", name);
+    o.role = role;
+    snprintf(o.addr, sizeof o.addr, "%s", addr ? addr : "");
+    o.port = port; o.delay = 1; o.here = here; o.all = 2;
+    st.user = t; st.save = rtoy_save; st.load = rtoy_load; st.share = rtoy_share; st.take = rtoy_take;
+    g.identity = "room toy"; g.pads = 4; g.states = &st; g.room = 1;
+    g.settings = set; g.settings_size = sizeof set;
+    n = ob_net_new(&o, &g, err, sizeof err);
+    if (!n) printf("ob_net_new: %s\n", err);
+    return n;
+}
+
+static void poll_all(int k) { int i; for (i = 0; i < k; i++) if (M[i].n) ob_net_poll(M[i].n); }
+
+/* polls until every machine of the k is in the lobby (1) */
+static int lobby_all(int k, double secs)
+{
+    double until = seconds() + secs;
+    while (seconds() < until) {
+        int i, in = 0;
+        for (i = 0; i < k; i++) {
+            int s = ob_net_poll(M[i].n);
+            if (s == OB_NET_ENDED) { printf("machine %d ended: %s\n", i, ob_net_why(M[i].n)); return 0; }
+            in += s == OB_NET_LOBBY;
+        }
+        if (in == k) return 1;
+        nap();
+    }
+    printf("lobby timed out\n");
+    return 0;
+}
+
+/* one machine of a room's match: a step when it may */
+static int room_tick(int i, uint32_t end)
+{
+    ob_net *n = M[i].n;
+    rtoy *t = &R[i];
+    uint32_t cur;
+    uint16_t local[OB_NET_MAX_PADS], all[OB_NET_MAX_PADS];
+    unsigned pads;
+    int p, j = 0, r;
+    if (!n) return 0;
+    if (!t->playing) {
+        if (ob_net_poll(n) != OB_NET_GO || t->over) return 0;
+        t->playing = 1;
+        t->h = 0;
+        t->first = ob_net_step_count(n);
+        t->high = t->first;
+        t->start = seconds();
+    }
+    cur = ob_net_step_count(n);
+    if (cur >= end && ob_net_confirmed(n) >= end) { ob_net_match_end(n); t->playing = 0; t->over = 1; return 1; }
+    if (cur >= t->high && cur - t->first > (uint32_t)((seconds() - t->start) * 120)) { ob_net_poll(n); return 0; }
+    pads = ob_net_my_pads(n);
+    for (p = 0; p < OB_NET_MAX_PADS; p++)
+        if (pads >> p & 1) local[j++] = toy_buttons(i, p, cur + (uint32_t)ob_net_delay(n));
+    r = ob_net_frame(n, 1, local, all);
+    if (r < 0) { printf("machine %d ended at step %u: %s\n", i, (unsigned)cur, ob_net_why(n)); t->playing = 0; t->over = 1; return -1; }
+    if (r == OB_NET_OVER) { t->playing = 0; t->over = 1; return 1; }
+    if (r == OB_NET_RESTART) { t->restarts++; if (t->joined == 1) { t->joined = 2; t->first = t->high = ob_net_step_count(n); } return 1; }
+    if (r != OB_NET_RUN) return 0;
+    if (cur + 1 > t->high) t->high = cur + 1;
+    for (p = 0; p < OB_NET_MAX_PADS; p++) t->h = (t->h ^ all[p]) * 0x100000001B3ull + cur;
+    if (cur < RM_MAX) t->final[cur] = t->h;
+    if (cur % 60 == 59) ob_net_check(n, cur, t->h);
+    return 1;
+}
+
+static void room_reset(void) { memset(R, 0, sizeof R); }
+
+/* every machine's final hashes the host's, from the first step it ran to end */
+static int room_agree(int k, uint32_t end)
+{
+    int i, bad = 0;
+    uint32_t s;
+    for (i = 1; i < k; i++) {
+        if (!M[i].n) continue;
+        for (s = R[i].first; s < end; s++) if (R[i].final[s] != R[0].final[s]) { printf("machine %d differs at step %u (first %u)\n", i, (unsigned)s, (unsigned)R[i].first); bad++; break; }
+    }
+    return !bad;
+}
+
+static void rooms(int loss)
+{
+    char addr[32], err[120], line[120];
+    int port = BASE_PORT + 120 + loss, i, from, type, got, owner_ok;
+    size_t size;
+    static uint8_t big[300000], back[300000];
+    ob_net_match m;
+    double until;
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    room_reset();
+    for (i = 0; i < (int)sizeof big; i++) big[i] = (uint8_t)(i * 31 + 7);
+    M[0].n = make_room(0, port, NULL, 1, "Ann", &R[0]);
+    M[1].n = make_room(1, 0, addr, 1, "Ben", &R[1]);
+    M[2].n = NULL;
+    CHECK(M[0].n && M[1].n, "room machines open");
+    if (!M[0].n || !M[1].n) { free_all(2); return; }
+    if (loss) { ob_net_simulate(M[0].n, 3, 6, loss, 2); ob_net_simulate(M[1].n, 3, 6, loss, 2); }
+    CHECK(ob_net_state(M[0].n) == OB_NET_LOBBY, "the host's room is open at once");
+    if (!lobby_all(2, 10)) { CHECK(0, "the guest comes into the room"); free_all(2); return; }
+    CHECK(ob_net_me(M[1].n) == 1 && ob_net_members(M[1].n) == 3 && ob_net_members(M[0].n) == 3, "two machines in the room");
+    CHECK(!strcmp(ob_net_name_of(M[1].n, 0), "Ann") && !strcmp(ob_net_name_of(M[0].n, 1), "Ben"), "room names");
+    {
+        const void *rs = ob_net_settings(M[1].n, &size);
+        CHECK(rs && size == sizeof "the room's settings" && !strcmp(rs, "the room's settings"), "the room's settings");
+    }
+
+    /* messages: a small one to the host, a large one from it to all */
+    CHECK(!ob_net_send(M[1].n, 0, 5, "hello", 5), "a guest sends");
+    CHECK(!ob_net_send(M[0].n, OB_NET_ALL, 7, big, sizeof big), "the host sends a large message");
+    CHECK(ob_net_send(M[0].n, 0, 7, "x", 1) < 0 && ob_net_send(M[0].n, 1, 250, "x", 1) < 0, "no message to itself or of the core's types");
+    until = seconds() + 20;
+    got = 0;
+    while (seconds() < until && got < 2) {
+        char small[16];
+        poll_all(2);
+        if (ob_net_recv(M[0].n, &from, &type, small, sizeof small, &size) == 1) { CHECK(from == 1 && type == 5 && size == 5 && !memcmp(small, "hello", 5), "the host has the guest's"); got++; }
+        if (ob_net_recv(M[1].n, &from, &type, back, sizeof back, &size) == 1) { CHECK(from == 0 && type == 7 && size == sizeof big && !memcmp(back, big, size), "the guest has the large one"); got++; }
+        nap();
+    }
+    CHECK(got == 2, "both messages through");
+
+    /* match 1: Ann pad 1, Ben pad 2; Cal comes in at step 120 to watch */
+    memset(&m, 0, sizeof m);
+    for (i = 0; i < OB_NET_MAX_PADS; i++) m.owner[i] = -1;
+    m.owner[0] = 0; m.owner[1] = 1; m.delay = -1;
+    m.settings = "match one"; m.settings_size = 10;
+    CHECK(!ob_net_match_begin(M[0].n, &m, err, sizeof err), "match 1 begins");
+    CHECK(ob_net_match_begin(M[0].n, &m, err, sizeof err) < 0, "not two at once");
+    until = seconds() + 60;
+    while (seconds() < until && !(R[0].over && R[1].over && (M[2].n && R[2].over))) {
+        int moved = 0;
+        if (!M[2].n && ob_net_step_count(M[0].n) >= 120) {
+            M[2].n = make_room(1, 0, addr, 0, "Cal", &R[2]);
+            if (M[2].n && loss) ob_net_simulate(M[2].n, 3, 6, loss, 2);
+        }
+        for (i = 0; i < 3; i++) { int r = room_tick(i, 900); if (r < 0) until = 0; moved |= r > 0; }
+        if (!moved) nap();
+    }
+    CHECK(R[0].over && R[1].over && M[2].n && R[2].over, "match 1 played to its end on all three");
+    if (!M[2].n) { printf("steps %u %u\n", (unsigned)ob_net_step_count(M[0].n), (unsigned)ob_net_step_count(M[1].n)); free_all(3); return; }
+    {
+        const void *ms = ob_net_settings(M[1].n, &size);
+        CHECK(ms && size == 10 && !strcmp(ms, "match one"), "the match's settings");
+    }
+    CHECK(R[2].joined && R[2].first > 0 && R[2].first < 900, "the watcher joined as the match went on");
+    CHECK(room_agree(3, 900), "match 1: every machine's steps agree");
+    CHECK(ob_net_my_pads(M[2].n) == 0 && ob_net_here_of(M[0].n, 2) == 0, "the watcher plays no pad");
+    CHECK(lobby_all(3, 10), "back in the lobby after match 1");
+    printf("room match 1%s: watcher joined at step %u\n", loss ? " (loss)" : "", (unsigned)R[2].first);
+
+    /* a message from one guest to the other, through the host */
+    CHECK(!ob_net_send(M[2].n, 1, 9, "from Cal", 8), "guest to guest");
+    until = seconds() + 10;
+    got = 0;
+    while (seconds() < until && !got) {
+        char small[16];
+        poll_all(3);
+        if (ob_net_recv(M[1].n, &from, &type, small, sizeof small, &size) == 1)
+            got = from == 2 && type == 9 && size == 8 && !memcmp(small, "from Cal", 8);
+        nap();
+    }
+    CHECK(got, "guest to guest arrives");
+    CHECK(ob_net_recv(M[0].n, &from, &type, back, sizeof back, &size) == 0, "the host does not keep a message for a guest");
+
+    /* match 2: Ben pad 1, Cal pad 2, the host watches */
+    room_reset();
+    for (i = 0; i < OB_NET_MAX_PADS; i++) m.owner[i] = -1;
+    m.owner[0] = 1; m.owner[1] = 2;
+    m.settings = "match two"; m.settings_size = 10;
+    CHECK(!ob_net_match_begin(M[0].n, &m, err, sizeof err), "match 2 begins");
+    until = seconds() + 60;
+    while (seconds() < until && !(R[0].over && R[1].over && R[2].over)) {
+        int moved = 0;
+        for (i = 0; i < 3; i++) { int r = room_tick(i, 300); if (r < 0) until = 0; moved |= r > 0; }
+        if (!moved) nap();
+    }
+    CHECK(R[0].over && R[1].over && R[2].over, "match 2 played to its end");
+    owner_ok = ob_net_my_pads(M[0].n) == 0 && ob_net_my_pads(M[1].n) == 1 && ob_net_my_pads(M[2].n) == 2;
+    CHECK(owner_ok, "match 2's seats");
+    CHECK(room_agree(3, 300), "match 2: every machine's steps agree");
+    CHECK(ob_net_match_id(M[2].n) == 2, "two matches in one room");
+    CHECK(lobby_all(3, 10), "back in the lobby after match 2");
+
+    /* match 3: Ben leaves at step 60; the match ends for the others, the room stays */
+    room_reset();
+    m.owner[0] = 0; m.owner[1] = 1;
+    CHECK(!ob_net_match_begin(M[0].n, &m, err, sizeof err), "match 3 begins");
+    until = seconds() + 30;
+    while (seconds() < until && !(R[0].over && R[2].over)) {
+        int moved = 0;
+        if (M[1].n && R[1].playing && ob_net_step_count(M[1].n) >= 60) { ob_net_free(M[1].n); M[1].n = NULL; }
+        for (i = 0; i < 3; i++) { int r = M[i].n ? room_tick(i, 400) : 0; moved |= r > 0; }
+        if (!moved) nap();
+    }
+    CHECK(R[0].over && R[2].over && ob_net_step_count(M[0].n) < 400, "a player leaving ends the match");
+    CHECK(strstr(ob_net_match_why(M[0].n), "left") && strstr(ob_net_match_why(M[2].n), "left"), "the others told who left");
+    CHECK(lobby_all(1, 5) && ob_net_state(M[2].n) == OB_NET_LOBBY, "the room stays");
+    until = seconds() + 5;
+    while (seconds() < until && ob_net_members(M[2].n) != 5) { ob_net_poll(M[0].n); ob_net_poll(M[2].n); nap(); }
+    CHECK(ob_net_members(M[0].n) == 5 && ob_net_members(M[2].n) == 5, "who is in, after one left");
+    ob_net_status(M[2].n, line, sizeof line);
+    printf("room%s: %s; match 3: %s\n", loss ? " (loss)" : "", line, ob_net_match_why(M[2].n));
+    free_all(3);
+}
+
 int main(void)
 {
     char lan[64];
+    setvbuf(stdout, NULL, _IONBF, 0);
 #ifdef _WIN32
     WSADATA w;
     WSAStartup(MAKEWORD(2, 2), &w);
 #endif
+    if (getenv("OB_NET_TEST_ROOMS")) {    /* (only the rooms) */
+        rooms(0);
+        rooms(5);
+        if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
+        printf("room tests ok\n");
+        return 0;
+    }
     two_machines();
     three_machines(0);
     three_machines(20);
@@ -526,6 +787,8 @@ int main(void)
     rollback(80, 10);
     rb_resumable = 0;
     rollback(30, 1);
+    rooms(0);
+    rooms(5);
     printf("LAN address: \"%s\"\n", ob_net_lan_address(lan, sizeof lan));
     if (fails) { printf("%d net check(s) failed\n", fails); return 1; }
     printf("net tests ok\n");
