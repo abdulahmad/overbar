@@ -24,7 +24,7 @@ LIB_OBJS = \
 	src/plat.o \
 	src/plat_pads.o src/osk.o src/gl.o \
 	src/sides.o src/chat.o src/room.o src/lane.o src/save.o \
-	src/fsdir.o src/files.o src/vdrive.o src/season.o src/serial.o \
+	src/fsdir.o src/files.o src/vdrive.o src/season.o src/serial.o src/game.o \
 	third_party/pulseman/menu.o
 ifeq ($(shell uname -s),Darwin)
 LIB_OBJS += src/bar_mac.o

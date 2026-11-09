@@ -8,7 +8,9 @@
 #ifndef OVERBAR_H
 #define OVERBAR_H
 
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include "mdrt/menu.h"
 
 #ifdef __cplusplus
@@ -110,6 +112,7 @@ enum {
     OB_PAGE_OPTS_HI,
     OB_PAGE_OPTS_LO,
     OB_PAGE_MISTER,             /* one directory of the MiSTer tree */
+    OB_PAGE_GAME,               /* the client's own game options (ob_game_set_ops) */
     OB_PAGE_COUNT
 };
 
@@ -173,6 +176,8 @@ enum {
     OB_ID_NET_ALL,              /* players in all (the host's) */
     OB_ID_NET_START,            /* Host game / Connect */
     OB_ID_NET_LEAVE,            /* Leave session */
+    OB_ID_GAME,                 /* main page: the Game page */
+    OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
     OB_ID_ADDON = 1000
 };
 
@@ -246,6 +251,32 @@ typedef struct ob_online_ops {
     const char *(*lan_address)(char *buf, int size);
 } ob_online_ops;
 
+/* ---- game options -------------------------------------------------------
+ * The Game page holds options of the client's own game logic (its rules, its feel). What an
+ * option does is the client's; Overbar only draws the rows (overlay and menu bar), keeps the
+ * choices in the ini (game_<key>=<choice>), and packs the ones marked net for an online session
+ * so every machine plays with the host's. */
+#define OB_GAME_OPTS_MAX 64
+typedef struct ob_game_opt {
+    const char *key;            /* ini name, letters digits and _ */
+    const char *label;
+    const char *const *choices;
+    int nchoices;
+    int def;                    /* the choice a new install starts with */
+    int net;                    /* 1: online, every machine uses the host's choice */
+    int group;                  /* a divider before the row when it differs from the row above */
+} ob_game_opt;
+
+typedef struct ob_game_ops {
+    const char *title;          /* the page and its main-page row ("Game" when NULL) */
+    const ob_game_opt *opts;    /* kept by pointer: static storage */
+    int nopts;
+    /* a choice changed (the menu, the ini, a session): the client applies it. It may move other
+     * rows with ob_game_set (a preset); those get no call of their own. */
+    void (*changed)(void *ctx, int index, int value);
+    void *ctx;
+} ob_game_ops;
+
 typedef struct ob_host {
     ob_port port;
     ob_profile profile;
@@ -283,6 +314,13 @@ typedef struct ob_host {
     ob_online online;           /* the Online page's settings (kept in the ini) */
     ob_online_ops online_ops;
     char online_msg[128];       /* why the last Host / Connect did not start */
+    ob_game_ops game_ops;       /* the Game page (game_ready: the client gave it) */
+    int game_ready;
+    int game_value[OB_GAME_OPTS_MAX];
+    int game_kept[OB_GAME_OPTS_MAX];    /* this machine's choices while a session uses the host's */
+    int game_session;
+    int ngame_stash;            /* ini lines read before the client gave its options */
+    char game_stash[OB_GAME_OPTS_MAX][2][48];
 } ob_host;
 
 typedef struct ob_item {
@@ -458,6 +496,24 @@ int ob_overlay_text(ob_host *h, const char *utf8);
  * page when page is set (the bar's Online Play item). */
 void ob_online_set_ops(ob_host *h, const ob_online_ops *ops);
 void ob_online_open(ob_host *h);
+
+/* The Game page. Call ob_game_set_ops before or after ob_host_load_ini (choices read earlier are
+ * kept and applied here); every option's changed hook runs once with its value. */
+void ob_game_set_ops(ob_host *h, const ob_game_ops *ops);
+int ob_game_get(const ob_host *h, int index);
+/* set a row without a changed call (a preset moving the rows it covers); saved in the ini */
+void ob_game_set(ob_host *h, int index, int value);
+int ob_game_apply(ob_host *h, int id, int value);      /* a Game page row picked: 1 if it was one */
+int ob_game_items(const ob_host *h, ob_item *out, int cap);
+const char *ob_game_title(const ob_host *h);
+void ob_game_write_ini(const ob_host *h, FILE *f);
+int ob_game_read_ini(ob_host *h, const char *key, const char *value);   /* 1 if it was a game_ key */
+/* Online: the net options as text ("key=choice" lines, the host's), the size written (0: none or
+ * no room). A session applies the host's choices (changed runs for each that differs) and does
+ * not save them; ending it brings back this machine's own. */
+size_t ob_game_pack(const ob_host *h, char *buf, size_t size);
+int ob_game_session_begin(ob_host *h, const void *data, size_t size);
+void ob_game_session_end(ob_host *h);
 /* the Online page's numbers: their bottom, step and unit (1 for those ids) */
 int ob_online_number_range(int id, int *lo, int *step, const char **unit);
 int ob_stats_toggle_key(ob_host *h, int sdl_scancode);    /* F12; 1 if handled */

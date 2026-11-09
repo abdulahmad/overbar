@@ -25,3 +25,4 @@ src/files.c
 src/vdrive.c
 src/season.c
 src/serial.c
+src/game.c

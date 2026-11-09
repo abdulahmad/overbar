@@ -630,6 +630,106 @@ static void test_look_render(void)
     ob_host_free(&h);
 }
 
+
+/* ---- the Game page ---- */
+static const char *const g_src[] = { "95 PC", "94G per pixel", "94G scaled to rink" };
+static const char *const g_onoff[] = { "Off", "On" };
+static const char *const g_preset[] = { "Original", "94 Genesis", "Custom" };
+static const ob_game_opt g_opts[] = {
+    { "feel_preset", "Feel", g_preset, 3, 0, 1, 0 },
+    { "skate_speed", "Skating speed", g_src, 3, 0, 1, 1 },
+    { "fights", "Fights", g_onoff, 2, 1, 1, 2 },
+    { "hud", "Local only", g_onoff, 2, 0, 0, 2 },
+};
+static int g_calls[8], g_last[8];
+static ob_host *g_h;
+static void g_changed(void *ctx, int i, int v)
+{
+    (void)ctx;
+    g_calls[i]++;
+    g_last[i] = v;
+    if (i == 0 && v == 1) ob_game_set(g_h, 1, 1);   /* a preset moves the row it covers */
+    if (i == 1 && v != 0 && ob_game_get(g_h, 0) == 0) ob_game_set(g_h, 0, 2);
+}
+
+static void test_game_page(void)
+{
+    ob_host h, g;
+    ob_game_ops ops;
+    ob_item items[OB_ITEMS_MAX];
+    char path[] = "/tmp/overbar-test-game.ini", buf[8192];
+    int n, i, sep = 0, found = 0;
+    size_t sz;
+    FILE *f;
+    remove(path);
+    memset(&ops, 0, sizeof ops);
+    ops.title = "Hockey";
+    ops.opts = g_opts;
+    ops.nopts = 4;
+    ops.changed = g_changed;
+
+    /* ini first, options after: the lines are kept and applied */
+    f = fopen(path, "w");
+    fprintf(f, "[overbar]\ngame_skate_speed=94G scaled to rink\ngame_future=7\n");
+    fclose(f);
+    ob_host_init(&h, OB_PORT_PC95, OB_PROFILE_DESKTOP);
+    g_h = &h;
+    CHECK(ob_host_load_ini(&h, path) == 1);
+    memset(g_calls, 0, sizeof g_calls);
+    ob_game_set_ops(&h, &ops);
+    CHECK(h.game_ready);
+    CHECK(ob_game_get(&h, 1) == 2);
+    CHECK(ob_game_get(&h, 2) == 1);              /* its default */
+    CHECK(g_calls[0] == 1 && g_calls[1] == 1 && g_calls[2] == 1 && g_calls[3] == 1);
+
+    /* the main page has the row, the page has every option and a divider per group */
+    n = ob_main_items(&h, items, OB_ITEMS_MAX);
+    for (i = 0; i < n; i++) if (items[i].id == OB_ID_GAME) found = 1;
+    CHECK(found);
+    n = ob_page_items(&h, OB_PAGE_GAME, items, OB_ITEMS_MAX);
+    for (i = 0; i < n; i++) if (items[i].kind == OB_ITEM_SEP) sep++;
+    CHECK(sep == 2);
+    CHECK(items[n - 1].id == OB_ID_BACK);
+    CHECK(items[0].id == OB_ID_GAME_OPT && items[0].kind == MDRT_ITEM_CHOICE);
+
+    /* picking a preset: one call, the covered row moves, the ini keeps both */
+    memset(g_calls, 0, sizeof g_calls);
+    CHECK(ob_host_apply(&h, OB_CLASS_LORES, OB_ID_GAME_OPT + 0, 1));
+    CHECK(g_calls[0] == 1 && g_last[0] == 1 && g_calls[1] == 0);
+    CHECK(ob_game_get(&h, 1) == 1);
+    ob_host_apply(&h, OB_CLASS_LORES, OB_ID_GAME_OPT + 3, 1);
+    ob_host_free(&h);
+
+    ob_host_init(&g, OB_PORT_PC95, OB_PROFILE_DESKTOP);
+    g_h = &g;
+    ob_game_set_ops(&g, &ops);
+    CHECK(ob_host_load_ini(&g, path) == 1);       /* options first, ini after */
+    CHECK(ob_game_get(&g, 0) == 1 && ob_game_get(&g, 1) == 1 && ob_game_get(&g, 3) == 1);
+    f = fopen(path, "r");
+    sz = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
+    if (f) fclose(f);
+    buf[sz] = 0;
+    CHECK(strstr(buf, "game_feel_preset=94 Genesis") != NULL);
+    CHECK(strstr(buf, "game_future=7") != NULL);   /* an option this build lacks stays */
+
+    /* online: the host's net options only; the guest's own come back after */
+    sz = ob_game_pack(&g, buf, sizeof buf);
+    CHECK(sz > 0 && strstr(buf, "skate_speed=1\n") && !strstr(buf, "hud="));
+    ob_game_set(&g, 1, 0);
+    ob_game_set(&g, 3, 0);
+    memset(g_calls, 0, sizeof g_calls);
+    CHECK(ob_game_session_begin(&g, "skate_speed=2\nfights=0\nhud=1\n", 29) == 2);
+    CHECK(ob_game_get(&g, 1) == 2 && ob_game_get(&g, 2) == 0 && ob_game_get(&g, 3) == 0);
+    CHECK(g_calls[1] == 1 && g_calls[2] == 1 && g_calls[3] == 0);
+    ob_host_apply(&g, OB_CLASS_LORES, OB_ID_GAME_OPT + 1, 0);   /* locked to the host's */
+    CHECK(ob_game_get(&g, 1) == 2);
+    ob_game_session_end(&g);
+    CHECK(ob_game_get(&g, 1) == 0 && ob_game_get(&g, 2) == 1);
+    CHECK(ob_game_pack(&g, buf, 4) == 0);          /* no room: nothing */
+    ob_host_free(&g);
+    remove(path);
+}
+
 int main(void)
 {
     test_scaler_console();
@@ -644,6 +744,7 @@ int main(void)
     test_view_from_host();
     test_mister_presets();
     test_look_render();
+    test_game_page();
     if (fails) {
         fprintf(stderr, "%d check(s) failed\n", fails);
         return 1;
