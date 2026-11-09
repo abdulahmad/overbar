@@ -334,11 +334,118 @@ static int event_used(const SDL_Event *e, int captured)
     }
 }
 
+/* ---- test hooks (no real input needed): OVERBAR_TEST_KEYS="3000:alt+return 6000:f9 7000:down" pushes those key presses at those times (ms after the
+ * first pump) as SDL events, so they take the same road as real keys; each is followed by a "TEST" line on stderr (and in OVERBAR_TEST_LOG) with the
+ * window's place, size, fullscreen, overlay and keyboard state. OVERBAR_TEST_DUMP=dir (windows the layer presents itself) writes the composed
+ * window as a PPM about every 500 ms and after each key. ---- */
+static struct { uint32_t at; int sc, mod, done, down; uint32_t up_at; } tk[64];
+static int tk_n, tk_init;
+static uint32_t tk_t0;
+
+static void test_log(const char *what)
+{
+    int x = 0, y = 0, w = 0, h = 0;
+    const char *lp = getenv("OVERBAR_TEST_LOG");
+    char line[256];
+    if (P.win) { SDL_GetWindowPosition(P.win, &x, &y); SDL_GetWindowSize(P.win, &w, &h); }
+    snprintf(line, sizeof line, "TEST t=%u %s window=%d,%d,%d,%d full=%d overlay=%d osk=%d\n", (unsigned)(SDL_GetTicks() - tk_t0), what, x, y, w, h,
+             P.win ? !!(SDL_GetWindowFlags(P.win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) : 0, P.host ? P.host->overlay_open : 0,
+             ob_plat_osk_is_open());
+    fputs(line, stderr);
+    if (lp) { FILE *f = fopen(lp, "ab"); if (f) { fputs(line, f); fclose(f); } }
+}
+
+static void test_parse(void)
+{
+    const char *s = getenv("OVERBAR_TEST_KEYS");
+    tk_init = 1;
+    tk_t0 = SDL_GetTicks();
+    while (s && *s && tk_n < 64) {
+        char name[48];
+        int n = 0;
+        unsigned at = (unsigned)strtoul(s, (char **)&s, 10);
+        if (*s != ':') break;
+        s++;
+        while (*s && *s != ' ' && n < 47) name[n++] = *s++;
+        name[n] = 0;
+        while (*s == ' ') s++;
+        int mod = 0, sc = 0;
+        char *tok = name, *plus;
+        for (;;) {
+            plus = strchr(tok, '+');
+            if (plus) *plus = 0;
+            if (!SDL_strcasecmp(tok, "alt")) mod |= KMOD_LALT;
+            else if (!SDL_strcasecmp(tok, "ctrl")) mod |= KMOD_LCTRL;
+            else if (!SDL_strcasecmp(tok, "shift")) mod |= KMOD_LSHIFT;
+            else sc = SDL_GetScancodeFromName(tok);
+            if (!plus) break;
+            tok = plus + 1;
+        }
+        if (sc) { tk[tk_n].at = at; tk[tk_n].sc = sc; tk[tk_n].mod = mod; tk_n++; }
+    }
+}
+
+static void test_dump(void)
+{
+    static uint32_t last;
+    static int n;
+    const char *dir = getenv("OVERBAR_TEST_DUMP");
+    int w, h;
+    uint32_t now = SDL_GetTicks();
+    if (!dir || !P.ren || now - last < 500) return;
+    last = now;
+    SDL_GetRendererOutputSize(P.ren, &w, &h);
+    uint32_t *px = malloc((size_t)w * h * 4);
+    if (!px) return;
+    if (SDL_RenderReadPixels(P.ren, NULL, SDL_PIXELFORMAT_ARGB8888, px, w * 4) == 0) {
+        char name[600];
+        FILE *f;
+        snprintf(name, sizeof name, "%s/win_%05d_%07ums.ppm", dir, n++, (unsigned)(now - tk_t0));
+        if ((f = fopen(name, "wb"))) {
+            fprintf(f, "P6\n%d %d\n255\n", w, h);
+            for (int i = 0; i < w * h; i++) { unsigned char c[3] = { px[i] >> 16, px[i] >> 8, px[i] }; fwrite(c, 1, 3, f); }
+            fclose(f);
+        }
+    }
+    free(px);
+}
+
+static void test_keys(void)
+{
+    uint32_t now;
+    if (!tk_init) test_parse();
+    now = SDL_GetTicks() - tk_t0;
+    for (int i = 0; i < tk_n; i++) {
+        SDL_Event e;
+        if (!tk[i].done && now >= tk[i].at) {
+            SDL_zero(e);
+            e.type = SDL_KEYDOWN;
+            e.key.keysym.scancode = (SDL_Scancode)tk[i].sc;
+            e.key.keysym.sym = SDL_GetKeyFromScancode((SDL_Scancode)tk[i].sc);
+            e.key.keysym.mod = (Uint16)tk[i].mod;
+            e.key.state = SDL_PRESSED;
+            SDL_PushEvent(&e);
+            tk[i].done = 1;
+            tk[i].up_at = now + 100;
+        } else if (tk[i].done == 1 && now >= tk[i].up_at) {
+            SDL_zero(e);
+            e.type = SDL_KEYUP;
+            e.key.keysym.scancode = (SDL_Scancode)tk[i].sc;
+            e.key.keysym.sym = SDL_GetKeyFromScancode((SDL_Scancode)tk[i].sc);
+            e.key.keysym.mod = (Uint16)tk[i].mod;
+            SDL_PushEvent(&e);
+            tk[i].done = 2;
+            test_log(SDL_GetScancodeName((SDL_Scancode)tk[i].sc));
+        }
+    }
+}
+
 void ob_plat_pump(void)
 {
     SDL_Event e;
     int captured, pass;
     cursor_update();
+    if (getenv("OVERBAR_TEST_KEYS")) test_keys();
     while (SDL_PollEvent(&e)) {
         if (P.hk.event && P.hk.event(&e)) continue;
         if (osk_event(&e)) continue;
@@ -572,6 +679,7 @@ void ob_plat_present(void)
     if (P.hk.captures && P.hk.captures()) { /* the port's setup screen is drawn over the picture by draw_over */ }
     else if (P.host->overlay_open) overlay_draw(&dst);
     if (ob_plat_osk_is_open()) osk_draw_screen(&dst);
+    test_dump();
     SDL_RenderPresent(P.ren);
 }
 
