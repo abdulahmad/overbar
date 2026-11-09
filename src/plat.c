@@ -159,7 +159,7 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
         P.cur_h = hooks->src_h;
         P.fps_tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FPS_W, FPS_H);
     }
-    if (!P.tex || !P.fps_tex) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); ob_plat_close(); return 0; }
+    if (!P.tex || !P.fps_tex) { fprintf(stderr, "SDL: %s (%s%s%s)\n", SDL_GetError(), P.ren ? "renderer ok" : "no renderer", P.tex ? "" : ", no picture texture", P.fps_tex ? "" : ", no fps texture"); ob_plat_close(); return 0; }
     SDL_SetTextureBlendMode(P.fps_tex, SDL_BLENDMODE_BLEND);
     SDL_SetTextureScaleMode(P.fps_tex, SDL_ScaleModeNearest);
 window_ready:

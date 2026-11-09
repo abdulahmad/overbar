@@ -70,19 +70,23 @@ int main(void)
     SDL_Event e;
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
+    SDL_setenv("OVERBAR_TEST_KEYS", "0:f11", 1);                 /* the scripted key hook: opens the overlay with no real input */
     CHECK(ob_plat_init(&profile));
     ob_host_init(&host, OB_PORT_SNES, profile);
     CHECK(ob_plat_open(&hk, &host));
     CHECK(ob_plat_window() && ob_plat_renderer());
     for (int i = 0; i < W * H; i++) pic[i] = 0xFF000000u | (uint32_t)i;
     for (int f = 0; f < 3; f++) { ob_plat_pump(); ob_plat_present(); ob_plat_frame_done(f & 1); }
+    SDL_Delay(20);
+    ob_plat_pump();
+    CHECK(host.overlay_open);                               /* from OVERBAR_TEST_KEYS */
     /* the overlay key opens the overlay; a draw with it open must not fail */
     SDL_zero(e);
     e.type = SDL_KEYDOWN;
     e.key.keysym.scancode = SDL_SCANCODE_GRAVE;
     SDL_PushEvent(&e);
     ob_plat_pump();
-    CHECK(host.overlay_open);
+    CHECK(!host.overlay_open);                              /* the overlay key again closes it */
     CHECK(changed_calls >= 1);
     ob_plat_present();
     ob_plat_close();
