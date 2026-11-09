@@ -227,7 +227,16 @@ static int osk_event(const SDL_Event *e)
         return e->type != 0;                               /* other pad buttons do not reach the game meanwhile */
     }
     if (e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_CONTROLLERAXISMOTION) return !P.hk.no_pads;
-    return 0;                                              /* the keyboard types for itself */
+    if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) {  /* arrows, Enter and Esc drive it (a real keyboard types the letters itself) */
+        int k = e->key.keysym.scancode;
+        in = k == SDL_SCANCODE_UP ? MDRT_MENU_UP : k == SDL_SCANCODE_DOWN ? MDRT_MENU_DOWN : k == SDL_SCANCODE_LEFT ? MDRT_MENU_LEFT
+           : k == SDL_SCANCODE_RIGHT ? MDRT_MENU_RIGHT : k == SDL_SCANCODE_RETURN || k == SDL_SCANCODE_KP_ENTER ? MDRT_MENU_OK
+           : k == SDL_SCANCODE_ESCAPE ? MDRT_MENU_BACK : -1;
+        if (in < 0) return 0;
+        if (e->type == SDL_KEYDOWN && !e->key.repeat) ob_osk_input(&osk, in);
+        return 1;
+    }
+    return 0;
 }
 
 static void sync_text_input(void)
