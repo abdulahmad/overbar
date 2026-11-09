@@ -25,7 +25,18 @@
  *              u32 and its lead on the receiver (steps, s16: its steps run less the receiver's last heard)
  *   PING, PONG session u32, time u64 (PONG echoes PING's)
  *   BYE        session u32, why (length u8, bytes)
- *   ROOM       session u32, players in so far u8, players in all u8 (the host's waiting room) */
+ *   ROOM       session u32, players in so far u8, players in all u8 (the host's waiting room)
+ *   LANE       session u32, seq u32, length u16, bytes: one fragment of the messages between two
+ *              machines that talk (in order, resent until acknowledged)
+ *   LANE_ACK   session u32, fragments had in a row u32, which of the 64 after the first missing it has u64
+ * A fragment: from u8 (the machine that sent the message), to u8 (255: all), type u8, flags u8 (1: the
+ * message's first, 2: its last), the first's the message's size u32, then bytes. The host passes a
+ * guest's on to the machines it is for. The core's own messages (types 250 ..):
+ *   MEMBERS    machines u8, then each: number u8, players u8, ping ms u16, name
+ *   MATCH      match u32, delay u8, pads u8, each pad's machine u8 (255: none), state's step u32,
+ *              settings' size u32, settings, then the state (shared: ob_net_states.share; none: no bytes)
+ *   END        match u32, at step u32 (0: now), why
+ * In a room an INPUT's session is followed by its match u32. */
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -47,9 +58,29 @@
 #define PING_US (250u * MS)
 #define NONE 0xFFFFFFFFu
 #define GIVE_EVERY 8                    /* steps at least between two steps given back */
+#define LANE_WIN 64                     /* fragments in flight past the other's acknowledgement */
+#define FRAG 1000                       /* bytes of a fragment */
+#define TO_ALL 255
+#define MEMBERS_US (2000u * MS)         /* (a room's host) who is in, again this often */
 
-enum { T_HELLO = 1, T_ACCEPT, T_REFUSE, T_CHUNK, T_CHUNK_ACK, T_READY, T_START, T_INPUT, T_PING, T_PONG, T_BYE, T_ROOM };
-enum { P_HELLO, P_HOSTING, P_GUEST, P_RUNNING, P_DONE };
+enum { T_HELLO = 1, T_ACCEPT, T_REFUSE, T_CHUNK, T_CHUNK_ACK, T_READY, T_START, T_INPUT, T_PING, T_PONG, T_BYE, T_ROOM,
+       T_LANE, T_LANE_ACK };
+enum { P_HELLO, P_HOSTING, P_GUEST, P_RUNNING, P_DONE, P_ROOM };
+enum { M_MEMBERS = 250, M_MATCH, M_END };
+
+/* the messages between two machines that talk: fragments base .. base + qn - 1 (the oldest not
+ * acknowledged first) to send, and those come in */
+typedef struct frag { uint32_t seq; uint16_t len; uint8_t acked, sent; uint64_t at; uint8_t b[FRAG]; } frag;
+typedef struct lane {
+    frag **q;
+    uint32_t qn, qcap, base, next;
+    uint32_t in_have;                   /* fragments had in a row */
+    uint8_t *in_b[LANE_WIN];            /* those past it, by seq % LANE_WIN */
+    uint32_t in_seq[LANE_WIN];
+    uint16_t in_len[LANE_WIN];
+} lane;
+typedef struct msg { struct msg *next; int from, type; size_t size; uint8_t *b; } msg;
+typedef struct asmb { uint8_t *b; size_t size, have; int type, on; } asmb;   /* a message coming, from one machine */
 enum { ROLE_HOST, ROLE_JOIN, ROLE_BOTH };            /* ob_online.role */
 
 typedef struct check { uint32_t step; uint64_t hash; int used; } check;
@@ -72,6 +103,10 @@ typedef struct peer {
     int their_lead, heard_cur;          /* its lead on this machine as it said; whether either was heard */
     check theirs[CHECKS];               /* (a host's guest) its desync checks */
     int ntheirs;
+    int inm;                            /* (a room) in the match that goes on */
+    int lin;                            /* (a room's host) was in the match that just ended: still sent its buttons */
+    int ping_ms;                        /* (a room) its round trip to the host, as the host said (-1: not known) */
+    lane ln;                            /* (one this machine talks to) the messages */
 } peer;
 
 struct ob_net {
@@ -108,6 +143,18 @@ struct ob_net {
     check mine[CHECKS];                 /* (the host) its desync checks */
     int nmine;
     check last;                         /* (a guest) its newest, sent with its buttons */
+    /* a room */
+    int room, room_delay;
+    uint32_t match, end_at, changes, join_step;
+    int end_pending, join_pending;
+    uint64_t end_heard, linger_until;   /* (a guest) when the host's END came; (the host) buttons sent until */
+    char mwhy[200];
+    uint8_t *msettings, *join_state;    /* the match's settings; (one that joins a match) the state it takes */
+    size_t msettings_size, join_size;
+    uint64_t members_at;
+    int members_dirty;
+    asmb as[MACH];
+    msg *inbox, *inbox_end;
 };
 
 /* ---- bytes ------------------------------------------------------------------------------------ */
@@ -203,6 +250,209 @@ static void end_all(ob_net *n, const char *why)
 
 static void say(char *err, int size, const char *s) { if (err && size > 0) snprintf(err, (size_t)size, "%s", s); }
 
+/* ---- the messages (a room) -------------------------------------------------------------------- */
+
+static int lane_wait_us(const ob_net *n, int k)
+{
+    int w = n->p[k].rtt_us > 0 ? 2 * n->p[k].rtt_us : 0;
+    return w < (int)(100 * MS) ? (int)(100 * MS) : w;
+}
+
+static void lane_free(lane *l)
+{
+    uint32_t i;
+    for (i = 0; i < l->qn; i++) free(l->q[i]);
+    free(l->q);
+    for (i = 0; i < LANE_WIN; i++) free(l->in_b[i]);
+    memset(l, 0, sizeof *l);
+}
+
+static void send_lane(ob_net *n, int k, frag *f)
+{
+    out o;
+    begin(&o, T_LANE);
+    p32(&o, n->session); p32(&o, f->seq); p16(&o, f->len); pbytes(&o, f->b, f->len);
+    to_peer(n, k, &o);
+    f->sent = 1;
+    f->at = now();
+}
+
+/* a fragment for machine k (one this machine talks to), sent at once when the window has room */
+static int lane_push(ob_net *n, int k, const uint8_t *b, size_t len)
+{
+    lane *l = &n->p[k].ln;
+    frag *f;
+    if (len > FRAG) return -1;
+    if (l->qn == l->qcap) {
+        uint32_t cap = l->qcap ? l->qcap * 2 : 64;
+        frag **q = realloc(l->q, cap * sizeof *q);
+        if (!q) return -1;
+        l->q = q;
+        l->qcap = cap;
+    }
+    f = malloc(sizeof *f);
+    if (!f) return -1;
+    f->seq = l->next++;
+    f->len = (uint16_t)len;
+    f->acked = f->sent = 0;
+    memcpy(f->b, b, len);
+    l->q[l->qn++] = f;
+    if (l->qn <= LANE_WIN) send_lane(n, k, f);
+    return 0;
+}
+
+/* a message (from: the machine it is from; to: the one it is for, TO_ALL) in fragments to machine k */
+static int lane_message(ob_net *n, int k, int from, int to, int type, const uint8_t *data, size_t size)
+{
+    uint8_t b[FRAG];
+    size_t at = 0;
+    int first = 1;
+    do {
+        size_t head = first ? 8 : 4, take = size - at < FRAG - head ? size - at : FRAG - head;
+        b[0] = (uint8_t)from; b[1] = (uint8_t)to; b[2] = (uint8_t)type;
+        b[3] = (uint8_t)((first ? 1 : 0) | (at + take == size ? 2 : 0));
+        if (first) { b[4] = (uint8_t)size; b[5] = (uint8_t)(size >> 8); b[6] = (uint8_t)(size >> 16); b[7] = (uint8_t)(size >> 24); }
+        if (take) memcpy(b + head, data + at, take);
+        if (lane_push(n, k, b, head + take)) return -1;
+        at += take;
+        first = 0;
+    } while (at < size);
+    return 0;
+}
+
+static void lane_pump(ob_net *n, int k, uint64_t t)
+{
+    lane *l = &n->p[k].ln;
+    uint32_t i;
+    uint64_t wait = (uint64_t)lane_wait_us(n, k);
+    for (i = 0; i < l->qn && i < LANE_WIN; i++) {
+        frag *f = l->q[i];
+        if (!f->acked && (!f->sent || since(t, f->at) >= wait)) send_lane(n, k, f);
+    }
+}
+
+static void lane_acked(ob_net *n, int k, uint32_t have, uint64_t mask)
+{
+    lane *l = &n->p[k].ln;
+    uint32_t i, j = 0;
+    for (i = 0; i < l->qn; i++) {
+        frag *f = l->q[i];
+        uint32_t d = f->seq - have - 1;
+        if (f->seq < have || (f->seq > have && d < 64 && (mask >> d & 1))) f->acked = 1;
+    }
+    while (j < l->qn && l->q[j]->acked) { free(l->q[j]); j++; }
+    if (j) {
+        memmove(l->q, l->q + j, (l->qn - j) * sizeof *l->q);
+        l->qn -= j;
+        l->base += j;
+        for (i = 0; i < l->qn && i < LANE_WIN; i++) if (!l->q[i]->sent) send_lane(n, k, l->q[i]);
+    }
+}
+
+static void send_lane_ack(ob_net *n, int k)
+{
+    lane *l = &n->p[k].ln;
+    uint64_t mask = 0;
+    uint32_t j;
+    out o;
+    for (j = 0; j < 64; j++) {
+        uint32_t s = l->in_have + 1 + j, w = s % LANE_WIN;
+        if (l->in_b[w] && l->in_seq[w] == s) mask |= (uint64_t)1 << j;
+    }
+    begin(&o, T_LANE_ACK); p32(&o, n->session); p32(&o, l->in_have); p64(&o, mask);
+    to_peer(n, k, &o);
+}
+
+static void core_message(ob_net *n, int from, int type, uint8_t *b, size_t size);
+
+/* a whole message from machine `from` */
+static void got_message(ob_net *n, int from, int type, uint8_t *b, size_t size)
+{
+    msg *m;
+    if (type >= OB_NET_MESSAGE_TYPES) { core_message(n, from, type, b, size); free(b); return; }
+    m = malloc(sizeof *m);
+    if (!m) { free(b); return; }
+    m->next = NULL; m->from = from; m->type = type; m->size = size; m->b = b;
+    if (n->inbox_end) n->inbox_end->next = m; else n->inbox = m;
+    n->inbox_end = m;
+}
+
+/* whether machine k is in the room (the host, or a guest that has the room's settings) */
+static int member(const ob_net *n, int k)
+{
+    if (k < 0 || k >= MACH || !n->p[k].used) return 0;
+    return k == 0 || !n->host || n->p[k].ready;
+}
+
+/* a fragment, in order, from machine k (one this machine talks to) */
+static void lane_fragment(ob_net *n, int k, const uint8_t *b, size_t len)
+{
+    int from, to, type, flags, j;
+    size_t head;
+    asmb *a;
+    if (len < 4) return;
+    from = b[0]; to = b[1]; type = b[2]; flags = b[3];
+    head = flags & 1 ? 8 : 4;
+    if (len < head || from >= MACH) return;
+    if (n->host) {
+        if (from != k) return;                            /* (a guest sends its own) */
+        if (to == TO_ALL) { for (j = 1; j < MACH; j++) if (j != k && member(n, j)) lane_push(n, j, b, len); }
+        else if (to != 0) { if (member(n, to)) lane_push(n, to, b, len); return; }
+    }
+    a = &n->as[from];
+    if (flags & 1) {
+        size_t size = (size_t)b[4] | (size_t)b[5] << 8 | (size_t)b[6] << 16 | (size_t)b[7] << 24;
+        free(a->b);
+        a->b = NULL; a->on = 0;
+        if (size > OB_NET_MAX_MESSAGE) return;
+        a->b = malloc(size ? size : 1);
+        if (!a->b) return;
+        a->size = size; a->have = 0; a->type = type; a->on = 1;
+    }
+    if (!a->on) return;
+    if (len - head > a->size - a->have) { free(a->b); a->b = NULL; a->on = 0; return; }
+    memcpy(a->b + a->have, b + head, len - head);
+    a->have += len - head;
+    if (flags & 2) {
+        uint8_t *whole = a->b;
+        a->b = NULL; a->on = 0;
+        if (a->have == a->size) got_message(n, from, a->type, whole, a->size);
+        else free(whole);
+    }
+}
+
+static void lane_in(ob_net *n, int k, uint32_t seq, const uint8_t *b, size_t len)
+{
+    lane *l = &n->p[k].ln;
+    uint32_t w = seq % LANE_WIN;
+    if (seq == l->in_have) {
+        l->in_have++;
+        lane_fragment(n, k, b, len);
+        while (n->phase != P_DONE) {
+            w = l->in_have % LANE_WIN;
+            if (!l->in_b[w] || l->in_seq[w] != l->in_have) break;
+            {
+                uint8_t *held = l->in_b[w];
+                l->in_b[w] = NULL;
+                l->in_have++;
+                lane_fragment(n, k, held, l->in_len[w]);
+                free(held);
+            }
+        }
+    } else if (seq > l->in_have && seq - l->in_have < LANE_WIN && !(l->in_b[w] && l->in_seq[w] == seq)) {
+        free(l->in_b[w]);
+        l->in_b[w] = malloc(len ? len : 1);
+        if (l->in_b[w]) { memcpy(l->in_b[w], b, len); l->in_seq[w] = seq; l->in_len[w] = (uint16_t)len; }
+    }
+    send_lane_ack(n, k);
+}
+
+/* the core's own message to every member that is a guest of this host (from: the host) */
+static void host_tell(ob_net *n, int k, int type, const uint8_t *b, size_t size)
+{
+    if (k > 0 && member(n, k)) lane_message(n, k, 0, k, type, b, size);
+}
+
 /* ---- the start -------------------------------------------------------------------------------- */
 
 ob_net *ob_net_new(const ob_online *o, const ob_net_game *g, char *err, int err_size)
@@ -222,13 +472,14 @@ ob_net *ob_net_new(const ob_online *o, const ob_net_game *g, char *err, int err_
     if (!n) { say(err, err_size, "out of memory"); return NULL; }
     n->role = o->role < 0 ? ROLE_HOST : o->role % 3;
     n->pads = pads;
-    n->here = o->here < 1 ? 1 : o->here > pads - 1 ? pads - 1 : o->here;
+    n->room = g->room != 0;
+    n->here = o->here < (n->room ? 0 : 1) ? (n->room ? 0 : 1) : o->here > pads - 1 ? pads - 1 : o->here;
     n->total = o->all <= n->here ? n->here + 1 : o->all > pads ? pads : o->all;
     n->delay = o->delay < 0 ? 0 : o->delay > OB_NET_MAX_DELAY ? OB_NET_MAX_DELAY : o->delay;
     snprintf(n->identity, sizeof n->identity, "%s", g->identity ? g->identity : "");
     take_name(n->name, (const uint8_t *)o->name, strlen(o->name));
     snprintf(n->addr, sizeof n->addr, "%s", o->addr);
-    for (k = 0; k < MACH; k++) { n->p[k].slot = -1; n->p[k].rtt_us = -1; }
+    for (k = 0; k < MACH; k++) { n->p[k].slot = -1; n->p[k].rtt_us = -1; n->p[k].ping_ms = -1; }
     for (k = 0; k < PADS; k++) n->owner[k] = -1;
     port = (uint16_t)(o->port >= 1 && o->port <= 65535 ? o->port : OB_NET_PORT_DEFAULT);
     n->u = ob_udp_open(n->role == ROLE_JOIN ? 0 : port, n->role == ROLE_HOST ? NULL : o->addr, port, e, sizeof e);
@@ -249,9 +500,12 @@ ob_net *ob_net_new(const ob_online *o, const ob_net_game *g, char *err, int err_
         n->nslots = n->max_rb + 2;
     }
     n->rb_to = NONE;
+    n->room_delay = n->delay;
+    if (n->room) n->npeers = MACH;
     if (n->role == ROLE_HOST) {
         n->host = 1;
-        n->phase = P_HOSTING;
+        n->phase = n->room ? P_ROOM : P_HOSTING;
+        n->changes = 1;
         n->session = (uint32_t)next_random(n) | 1;
         n->p[0].used = 1;
         n->p[0].here = n->here;
@@ -267,16 +521,23 @@ void ob_net_free(ob_net *n)
     if (n->phase != P_DONE) ob_net_quit(n);
     ob_udp_close(n->u);
     for (k = 0; k < OB_NET_MAX_ROLLBACK + 2; k++) free(n->slot[k].b);
+    for (k = 0; k < MACH; k++) { lane_free(&n->p[k].ln); free(n->as[k].b); }
+    while (n->inbox) { msg *m = n->inbox; n->inbox = m->next; free(m->b); free(m); }
+    free(n->msettings);
+    free(n->join_state);
     free(n->settings);
     free(n->got);
     free(n);
 }
 
-int ob_net_state(ob_net *n) { return n->phase == P_DONE ? OB_NET_ENDED : n->phase == P_RUNNING ? OB_NET_GO : OB_NET_CONNECTING; }
+int ob_net_state(ob_net *n)
+{
+    return n->phase == P_DONE ? OB_NET_ENDED : n->phase == P_RUNNING ? OB_NET_GO : n->phase == P_ROOM ? OB_NET_LOBBY : OB_NET_CONNECTING;
+}
 int ob_net_is_host(ob_net *n) { return n->host; }
 unsigned ob_net_my_pads(ob_net *n) { return n->p[n->me].pads; }
 int ob_net_delay(ob_net *n) { return n->delay; }
-int ob_net_machines(ob_net *n) { return n->npeers; }
+int ob_net_machines(ob_net *n) { return n->room ? count_bits(ob_net_members(n)) : n->npeers; }
 uint32_t ob_net_step_count(ob_net *n) { return n->cur; }
 const char *ob_net_why(ob_net *n) { return n->phase == P_DONE ? n->why : ""; }
 const char *ob_net_name_of(ob_net *n, int k) { return k >= 0 && k < MACH && n->p[k].used ? n->p[k].name : ""; }
@@ -289,7 +550,12 @@ unsigned ob_net_all_pads(ob_net *n)
 }
 const void *ob_net_settings(ob_net *n, size_t *size)
 {
-    int have = n->host || n->phase == P_RUNNING || (n->started && n->got_have == n->chunks);
+    int have;
+    if (n->room && (n->phase == P_RUNNING || n->match)) {
+        if (size) *size = n->msettings_size;
+        return n->msettings_size ? n->msettings : NULL;
+    }
+    have = n->room ? n->host || n->got_have == n->chunks : n->host || n->phase == P_RUNNING || (n->started && n->got_have == n->chunks);
     if (size) *size = have ? n->settings_size : 0;
     return have && n->settings_size ? n->settings : NULL;
 }
@@ -312,6 +578,7 @@ static void send_accept(ob_net *n, int k)
     out o;
     begin(&o, T_ACCEPT);
     p64(&o, n->p[k].nonce); p32(&o, n->session); p8(&o, (uint32_t)n->delay); p32(&o, (uint32_t)n->settings_size);
+    p8(&o, (uint32_t)n->room); p8(&o, (uint32_t)k);
     pstr(&o, n->name);
     to_peer(n, k, &o);
 }
@@ -382,10 +649,14 @@ static void send_chunks(ob_net *n, int k, int again)
 
 static void drop_guest(ob_net *n, int k)
 {
+    lane_free(&n->p[k].ln);
+    free(n->as[k].b);
+    memset(&n->as[k], 0, sizeof n->as[k]);
     if (n->p[k].slot >= 0) n->u->slot[n->p[k].slot].pinned = 0;
     memset(&n->p[k], 0, sizeof n->p[k]);
     n->p[k].slot = -1;
     n->p[k].rtt_us = -1;
+    n->p[k].ping_ms = -1;
 }
 
 /* a guest's HELLO (from: its address's slot), taken by this machine as the host */
@@ -400,16 +671,19 @@ static void host_guest(ob_net *n, int from, uint64_t nonce, const uint8_t *id, s
     for (k = 0; k < MACH; k++) if (n->p[k].used) seats -= n->p[k].here;
     if (!n->p[0].used) seats -= n->here;                  /* (a "both connect" machine that is about to host) */
     for (k = MACH - 1; k > 0; k--) if (!n->p[k].used) free_k = k;
-    if (n->phase == P_RUNNING) snprintf(why, sizeof why, "the game has begun");
+    if (n->room && !free_k) snprintf(why, sizeof why, "the room is full");
+    else if (n->room && n->phase != P_ROOM && n->phase != P_RUNNING) snprintf(why, sizeof why, "the room is closing");
+    else if (!n->room && n->phase == P_RUNNING) snprintf(why, sizeof why, "the game has begun");
     else if (idn != strlen(n->identity) || memcmp(id, n->identity, idn))
         snprintf(why, sizeof why, "another game, build or settings (here: %.60s; there: %.*s)", n->identity, idn > 60 ? 60 : (int)idn, (const char *)id);
     else if (pads != n->pads) snprintf(why, sizeof why, "another game (%d pads here, %d there)", n->pads, pads);
+    else if (n->room) why[0] = 0;
     else if (here < 1 || here > seats || !free_k)
         snprintf(why, sizeof why, seats > 0 ? "the game has room for %d more player%s" : "the game is full", seats, seats == 1 ? "" : "s");
     else why[0] = 0;
     if (why[0]) { refuse(n, from, nonce, why); return; }
     n->host = 1;
-    n->phase = P_HOSTING;
+    if (!n->room) n->phase = P_HOSTING;
     if (!n->p[0].used) {
         n->p[0].used = 1;
         n->p[0].here = n->here;
@@ -445,6 +719,10 @@ static void go_running(ob_net *n)
     n->rb_to = NONE;
     n->replay_end = n->gave_at = 0;
     n->rollbacks = n->replayed = n->gave_back = n->predicted = 0;
+    memset(n->mine, 0, sizeof n->mine);                   /* (a room's earlier match's checks are not this one's) */
+    n->nmine = 0;
+    memset(&n->last, 0, sizeof n->last);
+    for (k = 0; k < MACH; k++) { memset(n->p[k].theirs, 0, sizeof n->p[k].theirs); n->p[k].ntheirs = 0; }
     for (k = 0; k < MACH; k++) {
         n->p[k].heard_cur = 0;
         n->known[k] = (uint32_t)n->delay;
@@ -475,6 +753,282 @@ static void begin_session(ob_net *n)
     go_running(n);
 }
 
+/* ---- rooms and matches -------------------------------------------------------------------------- */
+
+typedef struct wbuf { uint8_t *b; size_t n, cap; int bad; } wbuf;
+static void bput(wbuf *w, const void *d, size_t k)
+{
+    if (w->bad) return;
+    if (w->n + k > w->cap) {
+        size_t cap = w->cap ? w->cap : 256;
+        uint8_t *b;
+        while (cap < w->n + k) cap *= 2;
+        b = realloc(w->b, cap);
+        if (!b) { w->bad = 1; return; }
+        w->b = b; w->cap = cap;
+    }
+    memcpy(w->b + w->n, d, k);
+    w->n += k;
+}
+static void b8(wbuf *w, uint32_t v) { uint8_t c = (uint8_t)v; bput(w, &c, 1); }
+static void b16(wbuf *w, uint32_t v) { b8(w, v); b8(w, v >> 8); }
+static void b32(wbuf *w, uint32_t v) { b16(w, v); b16(w, v >> 16); }
+static void bstr(wbuf *w, const char *s) { size_t k = strlen(s); if (k > 255) k = 255; b8(w, (uint32_t)k); bput(w, s, k); }
+
+/* (the host) who is in, to every guest in the room */
+static void tell_members(ob_net *n)
+{
+    wbuf w = { 0 };
+    int k, count = 0;
+    for (k = 0; k < MACH; k++) count += member(n, k);
+    b8(&w, (uint32_t)count);
+    for (k = 0; k < MACH; k++) {
+        int ms = k == 0 ? 0 : n->p[k].rtt_us < 0 ? 0xFFFF : (n->p[k].rtt_us + 500) / 1000;
+        if (!member(n, k)) continue;
+        b8(&w, (uint32_t)k); b8(&w, (uint32_t)n->p[k].here); b16(&w, (uint32_t)(ms > 0xFFFE ? 0xFFFE : ms)); bstr(&w, n->p[k].name);
+    }
+    if (!w.bad) for (k = 1; k < MACH; k++) host_tell(n, k, M_MEMBERS, w.b, w.n);
+    free(w.b);
+    n->members_at = now();
+    n->members_dirty = 0;
+}
+
+/* this machine's match over: back to the lobby */
+static void stop_match(ob_net *n, const char *why)
+{
+    int k;
+    if (n->phase != P_RUNNING) return;
+    n->phase = P_ROOM;
+    for (k = 0; k < MACH; k++) n->p[k].inm = 0;
+    snprintf(n->mwhy, sizeof n->mwhy, "%s", why ? why : "");
+    n->end_pending = n->join_pending = 0;
+    free(n->join_state); n->join_state = NULL; n->join_size = 0;
+}
+
+static void tell_end(ob_net *n, int k, uint32_t at, const char *why)
+{
+    wbuf w = { 0 };
+    b32(&w, n->match); b32(&w, at); bstr(&w, why);
+    if (!w.bad) host_tell(n, k, M_END, w.b, w.n);
+    free(w.b);
+}
+
+/* (the host) the match ended for every machine: at the host's step (at), or now (why: someone left) */
+static void end_match_all(ob_net *n, uint32_t at, const char *why)
+{
+    int k;
+    if (n->phase != P_RUNNING) return;
+    for (k = 1; k < MACH; k++) {
+        n->p[k].lin = at && n->p[k].inm;
+        if (n->p[k].inm) tell_end(n, k, at, why);
+    }
+    if (at) n->linger_until = now() + 2000 * MS;          /* (the buttons up to it, to those that lack them) */
+    stop_match(n, why);
+}
+
+/* the match's message: its seats, settings and (one that joins it as it goes on) a shared state */
+static int match_message(ob_net *n, wbuf *w, uint32_t step, const void *state, size_t state_size)
+{
+    int p;
+    b32(w, n->match); b8(w, (uint32_t)n->delay); b8(w, (uint32_t)n->pads);
+    for (p = 0; p < n->pads; p++) b8(w, n->owner[p] < 0 ? 255u : (uint32_t)n->owner[p]);
+    b32(w, step); b32(w, (uint32_t)n->msettings_size);
+    if (n->msettings_size) bput(w, n->msettings, n->msettings_size);
+    if (state_size) bput(w, state, state_size);
+    return w->bad ? -1 : 0;
+}
+
+static void set_owners(ob_net *n, const int8_t *owner)
+{
+    int k, p;
+    for (k = 0; k < MACH; k++) n->p[k].pads = 0;
+    for (p = 0; p < PADS; p++) {
+        n->owner[p] = p < n->pads ? owner[p] : -1;
+        if (n->owner[p] >= 0) n->p[n->owner[p]].pads |= 1u << p;
+    }
+}
+
+int ob_net_match_begin(ob_net *n, const ob_net_match *m, char *err, int err_size)
+{
+    int p, k;
+    say(err, err_size, "");
+    if (!n->room || !n->host || n->phase == P_DONE) { say(err, err_size, "not the host of a room"); return -1; }
+    if (n->phase == P_RUNNING) { say(err, err_size, "a match is on"); return -1; }
+    if (!m || (m->settings_size && !m->settings) || m->settings_size > OB_NET_MAX_SETTINGS) { say(err, err_size, "bad settings"); return -1; }
+    for (p = 0; p < n->pads; p++)
+        if (m->owner[p] >= 0 && !member(n, m->owner[p])) { say(err, err_size, "a pad's machine is not in the room"); return -1; }
+    free(n->msettings);
+    n->msettings = NULL;
+    n->msettings_size = 0;
+    if (m->settings_size) {
+        n->msettings = malloc(m->settings_size);
+        if (!n->msettings) { say(err, err_size, "out of memory"); return -1; }
+        memcpy(n->msettings, m->settings, m->settings_size);
+        n->msettings_size = m->settings_size;
+    }
+    n->delay = m->delay < 0 ? n->room_delay : m->delay > OB_NET_MAX_DELAY ? OB_NET_MAX_DELAY : m->delay;
+    set_owners(n, m->owner);
+    n->match++;
+    for (k = 0; k < MACH; k++) n->p[k].lin = 0;
+    go_running(n);
+    n->mwhy[0] = 0;
+    n->p[0].inm = 1;
+    {
+        wbuf w = { 0 };
+        if (match_message(n, &w, 0, NULL, 0)) { free(w.b); say(err, err_size, "out of memory"); n->phase = P_ROOM; return -1; }
+        for (k = 1; k < MACH; k++)
+            if (member(n, k)) { n->p[k].inm = 1; n->p[k].heard_cur = 0; host_tell(n, k, M_MATCH, w.b, w.n); }
+        free(w.b);
+    }
+    return 0;
+}
+
+struct slot;
+static struct slot *newest_upto(ob_net *n, uint32_t step);
+
+/* (the host) machine k came into the room while a match goes on: the newest state whose buttons are
+ * all known, shared, so it can join (when there is one yet) */
+static void try_join(ob_net *n, int k);
+static uint32_t confirmed_of(ob_net *n);
+
+void ob_net_match_end(ob_net *n)
+{
+    if (!n->room || n->phase != P_RUNNING) return;
+    if (n->host) end_match_all(n, n->cur, "");
+    else stop_match(n, "");
+}
+
+uint32_t ob_net_match_id(ob_net *n) { return n->match; }
+const char *ob_net_match_why(ob_net *n) { return n->mwhy; }
+int ob_net_me(ob_net *n) { return n->me; }
+unsigned ob_net_members(ob_net *n)
+{
+    unsigned m = 0;
+    int k;
+    if (!n->room) { for (k = 0; k < n->npeers; k++) m |= 1u << k; return m; }
+    for (k = 0; k < MACH; k++) if (member(n, k)) m |= 1u << k;
+    return m;
+}
+int ob_net_here_of(ob_net *n, int k) { return k >= 0 && k < MACH && n->p[k].used ? n->p[k].here : 0; }
+int ob_net_ping_of(ob_net *n, int k)
+{
+    if (k < 0 || k >= MACH || !n->p[k].used) return -1;
+    if (k == n->me) return n->host ? 0 : n->p[0].rtt_us < 0 ? -1 : (n->p[0].rtt_us + 500) / 1000;
+    if (n->host) return n->p[k].rtt_us < 0 ? -1 : (n->p[k].rtt_us + 500) / 1000;
+    if (k == 0) return 0;
+    return n->p[k].ping_ms;
+}
+uint32_t ob_net_room_changes(ob_net *n) { return n->changes; }
+
+int ob_net_send(ob_net *n, int to, int type, const void *data, size_t size)
+{
+    int k, sent = 0;
+    if (!n->room || type < 0 || type >= OB_NET_MESSAGE_TYPES || size > OB_NET_MAX_MESSAGE || (size && !data)) return -1;
+    if (n->phase != P_ROOM && n->phase != P_RUNNING) return -1;
+    if (to != OB_NET_ALL && (to == n->me || !member(n, to))) return -1;
+    if (n->host) {
+        for (k = 1; k < MACH; k++)
+            if ((to == OB_NET_ALL || to == k) && member(n, k)) {
+                if (lane_message(n, k, 0, k, type, data, size)) return -1;
+                sent++;
+            }
+        return 0;
+    }
+    return lane_message(n, 0, n->me, to == OB_NET_ALL ? TO_ALL : to, type, data, size);
+}
+
+int ob_net_recv(ob_net *n, int *from, int *type, void *b, size_t cap, size_t *size)
+{
+    msg *m = n->inbox;
+    if (!m) return 0;
+    if (size) *size = m->size;
+    if (from) *from = m->from;
+    if (type) *type = m->type;
+    if (m->size > cap) return -1;
+    if (m->size) memcpy(b, m->b, m->size);
+    n->inbox = m->next;
+    if (!n->inbox) n->inbox_end = NULL;
+    free(m->b);
+    free(m);
+    return 1;
+}
+
+/* the core's own messages (a guest's, from its host) */
+static void core_message(ob_net *n, int from, int type, uint8_t *b, size_t size)
+{
+    in i;
+    i.b = b; i.n = 0; i.size = size; i.bad = 0;
+    if (n->host || from != 0) return;
+    if (type == M_MEMBERS) {
+        uint32_t count = g8(&i), c;
+        int seen[MACH] = { 0 }, k, me_in = 0;
+        for (c = 0; c < count && !i.bad; c++) {
+            uint32_t id = g8(&i), here = g8(&i), ms = g16(&i), len = g8(&i);
+            const uint8_t *nm = gbytes(&i, len);
+            if (i.bad || id >= MACH) return;
+            seen[id] = 1;
+            if (!n->p[id].used || n->p[id].here != (int)here) n->changes++;
+            n->p[id].used = 1;
+            n->p[id].here = (int)here;
+            n->p[id].ping_ms = ms == 0xFFFF ? -1 : (int)ms;
+            if (id) take_name(n->p[id].name, nm, len);
+            if ((int)id == n->me) me_in = 1;
+        }
+        for (k = 1; k < MACH; k++) if (!seen[k] && n->p[k].used && k != n->me) { memset(&n->p[k].name, 0, sizeof n->p[k].name); n->p[k].used = 0; n->p[k].pads = 0; n->changes++; }
+        if (me_in && n->phase == P_GUEST) { n->phase = P_ROOM; n->changes++; }
+        return;
+    }
+    if (type == M_MATCH) {
+        uint32_t id = g8(&i), delay, pads, p, step, ssize;
+        int8_t owner[PADS];
+        const uint8_t *set;
+        id |= g8(&i) << 8; id |= g8(&i) << 16; id |= g8(&i) << 24;
+        delay = g8(&i); pads = g8(&i);
+        if (i.bad || pads != (uint32_t)n->pads || delay > OB_NET_MAX_DELAY) return;
+        for (p = 0; p < PADS; p++) owner[p] = -1;
+        for (p = 0; p < pads; p++) { uint32_t o = g8(&i); owner[p] = o == 255 ? -1 : o < MACH ? (int8_t)o : -1; }
+        step = g32(&i); ssize = g32(&i);
+        set = gbytes(&i, ssize);
+        if (i.bad || (n->phase != P_ROOM && n->phase != P_RUNNING)) return;
+        free(n->msettings);
+        n->msettings = ssize ? malloc(ssize) : NULL;
+        n->msettings_size = n->msettings ? ssize : 0;
+        if (n->msettings) memcpy(n->msettings, set, ssize);
+        free(n->join_state); n->join_state = NULL; n->join_size = 0;
+        n->match = id;
+        n->delay = (int)delay;
+        set_owners(n, owner);
+        go_running(n);
+        n->mwhy[0] = 0;
+        n->end_pending = 0;
+        n->join_pending = 0;
+        if (i.n < i.size) {                                /* (it joins the match as it goes on: the state to take) */
+            int k, w;
+            n->join_size = i.size - i.n;
+            n->join_state = malloc(n->join_size);
+            if (!n->join_state) { stop_match(n, "out of memory for the match's state"); return; }
+            memcpy(n->join_state, i.b + i.n, n->join_size);
+            n->join_pending = 1;
+            n->join_step = step;
+            n->cur = step;
+            n->replay_end = step;
+            for (k = 0; k < MACH; k++) { n->known[k] = step; for (w = 0; w < MACH; w++) n->p[k].has[w] = step; }
+        }
+        n->changes++;
+        return;
+    }
+    if (type == M_END) {
+        uint32_t id = g32(&i), at = g32(&i), len = g8(&i);
+        const uint8_t *w = gbytes(&i, len);
+        if (i.bad || id != n->match || n->phase != P_RUNNING) return;
+        n->end_pending = 1;
+        n->end_at = at;
+        n->end_heard = now();
+        snprintf(n->mwhy, sizeof n->mwhy, "%.*s", (int)len, w ? (const char *)w : "");
+        return;
+    }
+}
+
 /* ---- the steps -------------------------------------------------------------------------------- */
 
 /* machine whose's buttons to machine `to`, from the first it lacks; then what this one has of each
@@ -488,7 +1042,9 @@ static void send_buttons(ob_net *n, int to, int whose)
     if (count > MAX_SEND) count = MAX_SEND;
     if (!count && whose != n->me) return;
     begin(&o, T_INPUT);
-    p32(&o, n->session); p8(&o, (uint32_t)whose); p32(&o, first); p8(&o, count); p8(&o, (uint32_t)count_bits(w->pads));
+    p32(&o, n->session);
+    if (n->room) p32(&o, n->match);
+    p8(&o, (uint32_t)whose); p32(&o, first); p8(&o, count); p8(&o, (uint32_t)count_bits(w->pads));
     for (f = first; f < first + count; f++)
         for (p = 0; p < PADS; p++) if (w->pads >> p & 1) p16(&o, n->btn[f % RING][p]);
     p8(&o, (uint32_t)n->npeers);
@@ -508,9 +1064,9 @@ static void send_inputs(ob_net *n)
     int k, w;
     if (!n->dirty && since(t, n->sent_at) < RESEND_US) return;
     for (k = 0; k < n->npeers; k++) {
-        if (!talks(n, k)) continue;
+        if (!talks(n, k) || (n->room && n->host && !(n->phase == P_RUNNING ? n->p[k].inm : n->p[k].lin))) continue;
         send_buttons(n, k, n->me);
-        if (n->host) for (w = 1; w < n->npeers; w++) if (w != k) send_buttons(n, k, w);
+        if (n->host) for (w = 1; w < n->npeers; w++) if (w != k && n->p[w].used && (!n->room || n->p[w].inm || (n->phase != P_RUNNING && n->p[w].lin))) send_buttons(n, k, w);
     }
     n->sent_at = t;
     n->dirty = 0;
@@ -520,7 +1076,8 @@ static void desync(ob_net *n, uint32_t step)
 {
     char why[64];
     snprintf(why, sizeof why, "desync at step %u", (unsigned)step);
-    end_all(n, why);
+    if (n->room) end_match_all(n, 0, why);
+    else end_all(n, why);
 }
 
 /* (the host) a check, its own or a guest's, against the other side's for the same step */
@@ -606,6 +1163,39 @@ static void take_inputs(ob_net *n, in *i, int whose, uint32_t first, uint32_t co
     }
 }
 
+/* (a room's host) guest k left or went quiet: out of the room, and the match over if it played in it */
+static void member_gone(ob_net *n, int k, const char *why)
+{
+    int played = n->p[k].inm && n->p[k].pads, was = member(n, k);
+    if (played) end_match_all(n, 0, why);
+    snprintf(n->note, sizeof n->note, "%.190s", why);
+    drop_guest(n, k);
+    if (was) { n->changes++; tell_members(n); }
+}
+
+static void try_join(ob_net *n, int k)
+{
+    struct slot *t;
+    size_t need;
+    uint8_t *state;
+    wbuf w = { 0 };
+    int j;
+    if (!n->rb || !n->st.share || !n->st.take || n->phase != P_RUNNING || n->p[k].inm || !member(n, k)) return;
+    t = newest_upto(n, confirmed_of(n));
+    if (!t) return;
+    need = n->st.share(n->st.user, t->b, t->size, NULL, 0);
+    if (!need) return;
+    state = malloc(need);
+    if (!state) return;
+    if (n->st.share(n->st.user, t->b, t->size, state, need) != need || match_message(n, &w, t->step, state, need)) { free(state); free(w.b); return; }
+    free(state);
+    host_tell(n, k, M_MATCH, w.b, w.n);
+    free(w.b);
+    n->p[k].inm = 1;
+    n->p[k].heard_cur = 0;
+    for (j = 0; j < MACH; j++) n->p[k].has[j] = t->step;
+}
+
 static void handle(ob_net *n, const uint8_t *b, size_t size, int from)
 {
     in i;
@@ -654,9 +1244,19 @@ static void handle(ob_net *n, const uint8_t *b, size_t size, int from)
         uint64_t nonce = g64(&i);
         uint32_t delay, ssize, namen;
         const uint8_t *name;
+        uint32_t room, id;
         session = g32(&i); delay = g8(&i); ssize = g32(&i);
+        room = g8(&i); id = g8(&i);
         namen = g8(&i); name = gbytes(&i, namen);
         if (i.bad || nonce != n->nonce || n->phase != P_HELLO || n->host || delay > OB_NET_MAX_DELAY || ssize > OB_NET_MAX_SETTINGS) return;
+        if ((int)room != n->room) { end_with(n, room ? "the host has a room; this game wants one game" : "the host has one game; this game wants a room"); return; }
+        if (room) {
+            if (id < 1 || id >= MACH) return;
+            n->me = (int)id;
+            n->p[id].used = 1;
+            n->p[id].here = n->here;
+            snprintf(n->p[id].name, sizeof n->p[id].name, "%s", n->name);
+        }
         n->session = session;
         n->delay = (int)delay;
         n->p[0].used = 1;
@@ -706,8 +1306,32 @@ static void handle(ob_net *n, const uint8_t *b, size_t size, int from)
         break;
     }
     case T_READY:
+        if (n->host && n->room) {
+            if (!sp->ready && sp->set_have == n->chunks) {
+                sp->ready = 1;
+                n->members_dirty = 1;
+                n->changes++;
+                tell_members(n);
+                if (n->phase == P_RUNNING) try_join(n, s);
+            }
+            break;
+        }
         if (n->host && sp->set_have == n->chunks) { sp->ready = 1; if (n->phase == P_RUNNING) send_start(n, s); }
         break;
+    case T_LANE: {
+        uint32_t seq = g32(&i), k = g16(&i);
+        const uint8_t *d = gbytes(&i, k);
+        if (!d || !n->room || k > FRAG || (n->host && !sp->ready)) return;
+        lane_in(n, s, seq, d, k);
+        break;
+    }
+    case T_LANE_ACK: {
+        uint32_t have = g32(&i);
+        uint64_t mask = g64(&i);
+        if (i.bad || !n->room) return;
+        lane_acked(n, s, have, mask);
+        break;
+    }
     case T_START: {
         uint32_t me = g8(&i), np = g8(&i), k;
         unsigned pads[MACH], all = 0;
@@ -739,10 +1363,11 @@ static void handle(ob_net *n, const uint8_t *b, size_t size, int from)
         break;
     }
     case T_INPUT: {
-        uint32_t whose = g8(&i), first = g32(&i), count = g8(&i), npads = g8(&i), np, k, cs;
+        uint32_t match = n->room ? g32(&i) : 0, whose = g8(&i), first = g32(&i), count = g8(&i), npads = g8(&i), np, k, cs;
         uint64_t ch;
         if (i.bad || n->phase != P_RUNNING) return;       /* (buttons come again once it runs) */
-        if (whose >= (uint32_t)n->npeers || (int)whose == n->me || npads != (uint32_t)count_bits(n->p[whose].pads)) return;
+        if (n->room && (match != n->match || (n->host && !sp->inm) || n->join_pending)) return;
+        if (whose >= (uint32_t)n->npeers || !n->p[whose].used || (int)whose == n->me || npads != (uint32_t)count_bits(n->p[whose].pads)) return;
         if (n->host && (int)whose != s) return;           /* (a guest sends its own) */
         take_inputs(n, &i, (int)whose, first, count);
         np = g8(&i);
@@ -799,6 +1424,7 @@ static void handle(ob_net *n, const uint8_t *b, size_t size, int from)
         who(n, s, name, sizeof name);
         if (w && k) snprintf(why, sizeof why, "%.*s", (int)k, (const char *)w);
         else snprintf(why, sizeof why, "%s left", name);
+        if (n->host && n->room) { member_gone(n, s, why); break; }
         if (n->host && n->phase == P_HOSTING) {           /* (it left the waiting room: its seat given up) */
             snprintf(n->note, sizeof n->note, "%.190s", why);
             drop_guest(n, s);
@@ -832,6 +1458,25 @@ int ob_net_poll(ob_net *n)
     if (n->phase == P_DONE) return OB_NET_ENDED;
     t = now();
     if (n->phase == P_HELLO && since(t, n->hello_at) >= HELLO_US) { send_hello(n); n->hello_at = t; }
+    if (n->room && n->host && (n->phase == P_ROOM || n->phase == P_RUNNING)) {
+        for (k = 1; k < MACH && n->phase != P_DONE; k++) {
+            peer *g = &n->p[k];
+            uint64_t wait;
+            if (!g->used) continue;
+            if (since(t, g->heard_at) > GONE_US) {
+                char why[120], name[40];
+                who(n, k, name, sizeof name);
+                snprintf(why, sizeof why, "%s was not heard from for %d seconds", name, OB_NET_TIMEOUT_MS / 1000);
+                member_gone(n, k, why);
+                continue;
+            }
+            wait = g->rtt_us > 0 ? 2 * (uint64_t)g->rtt_us : 0;
+            if (wait < 100 * MS) wait = 100 * MS;
+            if (!g->ready && g->set_have < n->chunks && since(t, g->set_at) >= wait) send_chunks(n, k, 1);
+            if (g->ready && n->phase == P_RUNNING && !g->inm) try_join(n, k);
+        }
+        if (n->members_dirty || since(t, n->members_at) >= MEMBERS_US) tell_members(n);
+    }
     if (n->phase == P_HOSTING) {
         int all_ready = 1, seats = n->total, guests = 0;
         for (k = 0; k < MACH; k++) {
@@ -866,7 +1511,7 @@ int ob_net_poll(ob_net *n)
         if (n->got_have == n->chunks && !n->started && since(t, n->ready_at) >= HELLO_US) { send_session(n, 0, T_READY); n->ready_at = t; }
         if (n->started && n->got_have == n->chunks) go_running(n);
     }
-    if (n->phase == P_GUEST || n->phase == P_RUNNING) {   /* (a machine not heard from) */
+    if ((n->phase == P_GUEST || n->phase == P_RUNNING || n->phase == P_ROOM) && !(n->room && n->host)) {   /* (a machine not heard from) */
         for (k = 0; k < MACH && n->phase != P_DONE; k++) {
             char why[120], name[40];
             if (!talks(n, k) || since(t, n->p[k].heard_at) <= GONE_US) continue;
@@ -876,7 +1521,10 @@ int ob_net_poll(ob_net *n)
             else end_with(n, why);
         }
     }
-    if (n->phase == P_RUNNING) send_inputs(n);
+    if (n->phase == P_RUNNING && !n->join_pending) send_inputs(n);
+    else if (n->room && n->host && n->phase == P_ROOM && t < n->linger_until) send_inputs(n);
+    if (n->room && n->phase != P_DONE)
+        for (k = 0; k < MACH; k++) if (talks(n, k)) lane_pump(n, k, t);
     if (n->phase != P_DONE && n->session)
         for (k = 0; k < MACH; k++)
             if (talks(n, k) && since(t, n->p[k].ping_at) >= PING_US) {
@@ -937,28 +1585,48 @@ static int ahead(ob_net *n)
     for (k = 0; k < n->npeers; k++) {
         const peer *q = &n->p[k];
         long mine;
-        if (!talks(n, k) || !q->heard_cur) continue;
+        if (!talks(n, k) || !q->heard_cur || (n->room && n->host && !q->inm)) continue;
         mine = (long)n->cur - (long)q->their_cur;
         if (mine - q->their_lead >= 2) return 1;
     }
     return 0;
 }
 
-uint32_t ob_net_confirmed(ob_net *n)
+/* the steps whose every button is known: the least any machine that plays a pad has given (a match
+ * nobody plays: this machine's own) */
+static uint32_t confirmed_of(ob_net *n)
 {
     uint32_t c = NONE;
     int k;
     if (n->phase != P_RUNNING) return 0;
-    for (k = 0; k < n->npeers; k++) if (n->known[k] < c) c = n->known[k];
-    return c == NONE ? 0 : c;
+    for (k = 0; k < n->npeers; k++) if (n->p[k].pads && n->known[k] < c) c = n->known[k];
+    return c == NONE ? n->known[n->me] : c;
 }
+
+uint32_t ob_net_confirmed(ob_net *n) { return confirmed_of(n); }
 
 int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
 {
     int k, p, j;
     uint32_t confirmed, s;
     if (n->phase == P_DONE) return -1;
-    if (n->phase != P_RUNNING) return ob_net_poll(n) == OB_NET_ENDED ? -1 : OB_NET_WAIT;
+    if (n->phase != P_RUNNING) {
+        if (ob_net_poll(n) == OB_NET_ENDED) return -1;
+        return n->room && n->phase == P_ROOM ? OB_NET_OVER : OB_NET_WAIT;
+    }
+    if (n->join_pending) {                                /* (it joins a match that goes on: the state taken here) */
+        int r;
+        if (ob_net_poll(n) == OB_NET_ENDED) return -1;
+        if (n->phase != P_RUNNING) return OB_NET_OVER;
+        if (!resumable) return OB_NET_WAIT;
+        r = n->st.take ? n->st.take(n->st.user, n->join_state, n->join_size) : -1;
+        free(n->join_state); n->join_state = NULL; n->join_size = 0;
+        n->join_pending = 0;
+        if (r) { stop_match(n, "the match's state would not load"); return OB_NET_OVER; }
+        n->cur = n->join_step;
+        n->dirty = 1;
+        return OB_NET_RESTART;
+    }
     s = n->cur + (uint32_t)n->delay;
     if (s == n->known[n->me]) {                          /* (this machine's buttons for step cur + delay, once; none in a replay) */
         unsigned mine = n->p[n->me].pads;
@@ -968,6 +1636,14 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
         n->dirty = 1;
     }
     if (ob_net_poll(n) == OB_NET_ENDED) return -1;
+    if (n->room && n->phase != P_RUNNING) return OB_NET_OVER;
+    if (n->end_pending && n->cur >= n->end_at) {         /* (the host ended the match here, once its buttons are in) */
+        char why[200];
+        if (n->end_at && confirmed_of(n) < n->end_at && since(now(), n->end_heard) < 3000 * MS) return OB_NET_WAIT;
+        snprintf(why, sizeof why, "%s", n->mwhy);
+        stop_match(n, why);
+        return OB_NET_OVER;
+    }
     if (n->rb && n->rb_to < n->cur) {                     /* a wrong guess: back to the state before it */
         struct slot *t = newest_upto(n, n->rb_to);
         if (!t || n->st.load(n->st.user, t->b, t->size)) {
@@ -984,7 +1660,7 @@ int ob_net_frame(ob_net *n, int resumable, const uint16_t *local, uint16_t *all)
         n->waited = 0;
         return OB_NET_RESTART;
     }
-    confirmed = ob_net_confirmed(n);
+    confirmed = confirmed_of(n);
     if (n->rb) check_due(n, confirmed);
     if (n->rb && resumable && !slot_of(n, n->cur)) save_state(n);
     if (n->cur >= confirmed) {                            /* someone's buttons have not come */
@@ -1057,6 +1733,12 @@ void ob_net_status(ob_net *n, char *line, int size)
                      n->rollbacks ? (double)n->replayed / n->rollbacks : 0.0, n->cur ? 100.0 * n->waited_steps / n->cur : 0.0);
         else
             snprintf(line, sz, "%s ms, delay %d, waiting %.1f%%", ms, n->delay, n->cur ? 100.0 * n->waited_steps / n->cur : 0.0);
+        return;
+    }
+    if (n->phase == P_ROOM) {
+        int c = ob_net_machines(n);
+        snprintf(line, sz, "in the room: %d machine%s%s%s", c, c == 1 ? "" : "s", n->mwhy[0] ? "; " : n->note[0] ? "; " : "",
+                 n->mwhy[0] ? n->mwhy : n->note);
         return;
     }
     if (n->phase == P_HOSTING) {
