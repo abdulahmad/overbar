@@ -42,7 +42,11 @@ extern "C" {
 #define OB_NET_MAX_SETTINGS (16u << 20) /* bytes of the host's settings */
 #define OB_NET_TIMEOUT_MS 10000         /* a machine not heard from for this long ends the session */
 #define OB_NET_MAX_MESSAGE (16u << 20)  /* bytes of one message (ob_net_send) */
-#define OB_NET_MESSAGE_TYPES 240        /* a message's type: 0 .. 239 (the rest are the core's own) */
+#define OB_NET_MESSAGE_TYPES 240        /* a game's message types: 0 .. 239 */
+/* Overbar's own modules' types (240 .. 249; 250 .. are the core's) */
+#define OB_NET_TYPE_SIDES 240           /* the select-sides screen (overbar/sides.h) */
+#define OB_NET_TYPE_CHAT 241            /* chat (overbar/chat.h) */
+#define OB_NET_TYPE_LAST 249
 
 /* OB_NET_LOBBY: (a room) everyone in it is connected and no match of this machine's goes on */
 enum { OB_NET_CONNECTING, OB_NET_GO, OB_NET_ENDED, OB_NET_LOBBY };
@@ -185,7 +189,7 @@ unsigned ob_net_members(ob_net *n);     /* the machines in the room (bit k: mach
 int ob_net_here_of(ob_net *n, int machine);     /* the players at a machine (as it said when it joined) */
 int ob_net_ping_of(ob_net *n, int machine);     /* its round trip to the host, ms (-1: not known) */
 uint32_t ob_net_room_changes(ob_net *n);        /* counts each change of who is in the room */
-/* a message of type (0 .. OB_NET_MESSAGE_TYPES - 1) to a machine of the room (OB_NET_ALL: every other one);
+/* a message of type (0 .. OB_NET_TYPE_LAST) to a machine of the room (OB_NET_ALL: every other one);
  * 0, or -1 (no such machine, too large, not in a room yet) */
 int ob_net_send(ob_net *n, int to, int type, const void *data, size_t size);
 /* the next message that came: 1 (its sender, type, bytes and size), 0 none, -1 when buf (cap bytes) is too

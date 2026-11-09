@@ -369,7 +369,7 @@ static void core_message(ob_net *n, int from, int type, uint8_t *b, size_t size)
 static void got_message(ob_net *n, int from, int type, uint8_t *b, size_t size)
 {
     msg *m;
-    if (type >= OB_NET_MESSAGE_TYPES) { core_message(n, from, type, b, size); free(b); return; }
+    if (type > OB_NET_TYPE_LAST) { core_message(n, from, type, b, size); free(b); return; }
     m = malloc(sizeof *m);
     if (!m) { free(b); return; }
     m->next = NULL; m->from = from; m->type = type; m->size = size; m->b = b;
@@ -923,7 +923,7 @@ uint32_t ob_net_room_changes(ob_net *n) { return n->changes; }
 int ob_net_send(ob_net *n, int to, int type, const void *data, size_t size)
 {
     int k, sent = 0;
-    if (!n->room || type < 0 || type >= OB_NET_MESSAGE_TYPES || size > OB_NET_MAX_MESSAGE || (size && !data)) return -1;
+    if (!n->room || type < 0 || type > OB_NET_TYPE_LAST || size > OB_NET_MAX_MESSAGE || (size && !data)) return -1;
     if (n->phase != P_ROOM && n->phase != P_RUNNING) return -1;
     if (to != OB_NET_ALL && (to == n->me || !member(n, to))) return -1;
     if (n->host) {

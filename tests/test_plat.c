@@ -6,6 +6,8 @@
 #include <string.h>
 #include "overbar/plat.h"
 #include "overbar/osk.h"
+#include "overbar/sides.h"
+#include "overbar/chat.h"
 #include "mdrt/menu.h"
 
 #define W 64
@@ -60,6 +62,51 @@ static int test_osk(void)
     return 0;
 }
 
+static void key(int sc, int down)
+{
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+    e.key.keysym.scancode = (SDL_Scancode)sc;
+    SDL_PushEvent(&e);
+}
+static void tap(int sc) { key(sc, 1); key(sc, 0); ob_plat_pump(); }
+static int sides_applied, chat_sent;
+static char chat_text[64];
+static void sides_apply(void *ud, const ob_sides_seat *seat, int n) { (void)ud; (void)seat; sides_applied = n + 1; }
+static void chat_send(void *ud, const void *d, size_t n) { (void)ud; chat_sent++; if (n < sizeof chat_text) { memcpy(chat_text, d, n); chat_text[n] = 0; } }
+
+/* the select-sides screen and chat through the layer's keys */
+static int test_room_keys(void)
+{
+    ob_sides s;
+    ob_chat c;
+    ob_sides_game g = { .teams = 2, .seats = 2, .apply = sides_apply };
+    ob_sides_init(&s, &g, 0, NULL, NULL);
+    ob_chat_init(&c, "Ann", chat_send, NULL);
+    ob_plat_room(&s, &c);
+    ob_plat_sides_devices(&s);
+    CHECK(s.n >= 1 && !strcmp(s.d[0].name, "Keyboard"));
+    ob_sides_open(&s);
+    tap(SDL_SCANCODE_LEFT);
+    CHECK(s.d[0].team == 0);
+    tap(SDL_SCANCODE_RETURN);
+    CHECK(s.d[0].ready);
+    ob_plat_present();
+    tap(SDL_SCANCODE_RETURN);
+    CHECK(sides_applied == 2 && s.done);
+    tap(SDL_SCANCODE_T);
+    CHECK(c.typing);
+    tap(SDL_SCANCODE_H);
+    tap(SDL_SCANCODE_I);
+    ob_plat_present();
+    tap(SDL_SCANCODE_RETURN);
+    CHECK(!c.typing && chat_sent == 1 && !strcmp(chat_text + 4, "hi"));
+    ob_plat_present();
+    ob_plat_room(NULL, NULL);
+    return 0;
+}
+
 int main(void)
 {
     if (test_osk()) return 1;
@@ -89,6 +136,7 @@ int main(void)
     CHECK(!host.overlay_open);                              /* the overlay key again closes it */
     CHECK(changed_calls >= 1);
     ob_plat_present();
+    if (test_room_keys()) return 1;
     ob_plat_close();
     CHECK(!ob_plat_window());
     printf("test_plat ok\n");
