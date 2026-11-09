@@ -32,16 +32,20 @@
 extern "C" {
 #endif
 
-#define OB_NET_PROTOCOL 2               /* the messages' version: every machine must have the same (2: each INPUT
-                                           carries the sender's step and lead, for rollback's time sync) */
+#define OB_NET_PROTOCOL 3               /* the messages' version: every machine must have the same (2: each INPUT
+                                           carries the sender's step and lead, for rollback's time sync; 3: rooms,
+                                           matches and messages) */
 #define OB_NET_MAX_MACHINES 4           /* the host and three guests */
 #define OB_NET_MAX_PADS 8
 #define OB_NET_MAX_DELAY 30             /* steps */
 #define OB_NET_MAX_ROLLBACK 30          /* steps a rollback may play again, at most */
 #define OB_NET_MAX_SETTINGS (16u << 20) /* bytes of the host's settings */
 #define OB_NET_TIMEOUT_MS 10000         /* a machine not heard from for this long ends the session */
+#define OB_NET_MAX_MESSAGE (16u << 20)  /* bytes of one message (ob_net_send) */
+#define OB_NET_MESSAGE_TYPES 240        /* a message's type: 0 .. 239 (the rest are the core's own) */
 
-enum { OB_NET_CONNECTING, OB_NET_GO, OB_NET_ENDED };
+/* OB_NET_LOBBY: (a room) everyone in it is connected and no match of this machine's goes on */
+enum { OB_NET_CONNECTING, OB_NET_GO, OB_NET_ENDED, OB_NET_LOBBY };
 
 typedef struct ob_net ob_net;
 
@@ -56,6 +60,11 @@ typedef struct ob_net_states {
     void *user;
     size_t (*save)(void *user, void *out, size_t cap);
     int (*load)(void *user, const void *in, size_t size);
+    /* (a room; NULL: none) share: a state save gave (state, size), as bytes another machine of the same build
+     * can load: size written to out (cap bytes), more than cap writing nothing, 0 when it cannot. take: such
+     * bytes loaded, as load does (0, or -1). With them a machine can join a match that goes on */
+    size_t (*share)(void *user, const void *state, size_t size, void *out, size_t cap);
+    int (*take)(void *user, const void *in, size_t size);
 } ob_net_states;
 
 typedef struct ob_net_game {
@@ -67,6 +76,8 @@ typedef struct ob_net_game {
     const ob_net_states *states;   /* NULL: lockstep; else rollback through ob_net_frame (copied) */
     int rollback;               /* most steps one rollback plays again (0: 12; at most OB_NET_MAX_ROLLBACK).
                                    Each machine's own: it changes how far it guesses, never what it plays */
+    int room;                   /* 1: a room (below): the session lasts across matches; 0: the session is one
+                                   game, begun once every seat is taken (o->all) */
 } ob_net_game;
 
 /* Opens the socket and starts connecting (host: o->port; join: o->addr[:port], o->port when no
@@ -132,6 +143,54 @@ const char *ob_net_why(ob_net *n);      /* why it ended ("" while it goes on) */
 void ob_net_status(ob_net *n, char *line, int size);
 /* this machine's address on its own network ("192.168.1.20"; "" none); fits ob_online_ops.lan_address */
 const char *ob_net_lan_address(char *buf, int size);
+
+/* ---- rooms ----------------------------------------------------------------------------------
+ *
+ * A room (ob_net_game.room = 1) is a session that lasts until its host leaves: machines join it
+ * whenever they like (up to OB_NET_MAX_MACHINES; o->here may be 0, a machine that only watches),
+ * and it plays any number of matches, each begun by the host with a seat table. Its state is
+ * OB_NET_LOBBY between matches and OB_NET_GO in one; ob_net_frame / ob_net_step say OB_NET_OVER
+ * when this machine's match has ended (ob_net_match_why). The game's settings (g->settings) are
+ * the room's, given to each machine as it joins; a match brings its own.
+ *
+ * Every machine in the room is in the host's match, also one that joins while it goes on: when the
+ * states can be shared (ob_net_states.share and take), the newcomer is sent the newest state whose
+ * buttons are all known, and its first resumable ob_net_frame takes it (OB_NET_RESTART), so it must
+ * have started the same match from the match's settings first. Otherwise the newcomer waits in the
+ * lobby for the next match.
+ * A machine that leaves the room ends the match if it played in it.
+ *
+ * Messages go between the machines of a room, in order and without loss, whatever their size (up
+ * to OB_NET_MAX_MESSAGE): chat, a game's set-up, files. They are not part of the steps. */
+enum { OB_NET_OVER = 3 };               /* (ob_net_frame, ob_net_step) */
+#define OB_NET_ALL (-1)                 /* ob_net_send: every other machine of the room */
+
+typedef struct ob_net_match {
+    int8_t owner[OB_NET_MAX_PADS];  /* the machine that plays each pad (-1: nobody); pads past the game's ignored */
+    int delay;                      /* input delay, steps (-1: the room's) */
+    const void *settings;           /* sent with it to every machine (ob_net_settings) */
+    size_t settings_size;
+} ob_net_match;
+
+/* (the host, in its lobby) a match: every machine of the room takes part (those without pads watch). 0, or -1
+ * with why in err (an owner not in the room, a match already on) */
+int ob_net_match_begin(ob_net *n, const ob_net_match *m, char *err, int err_size);
+/* this machine's match is over (its game ended): back to the lobby. The host's ends it for every machine
+ * that has not ended it yet, at the step the host is at */
+void ob_net_match_end(ob_net *n);
+uint32_t ob_net_match_id(ob_net *n);    /* the newest match (1, 2 ...; 0 none) */
+const char *ob_net_match_why(ob_net *n);    /* why this machine's last match ended ("" its game did, or none) */
+int ob_net_me(ob_net *n);               /* this machine's number (the host 0) */
+unsigned ob_net_members(ob_net *n);     /* the machines in the room (bit k: machine k) */
+int ob_net_here_of(ob_net *n, int machine);     /* the players at a machine (as it said when it joined) */
+int ob_net_ping_of(ob_net *n, int machine);     /* its round trip to the host, ms (-1: not known) */
+uint32_t ob_net_room_changes(ob_net *n);        /* counts each change of who is in the room */
+/* a message of type (0 .. OB_NET_MESSAGE_TYPES - 1) to a machine of the room (OB_NET_ALL: every other one);
+ * 0, or -1 (no such machine, too large, not in a room yet) */
+int ob_net_send(ob_net *n, int to, int type, const void *data, size_t size);
+/* the next message that came: 1 (its sender, type, bytes and size), 0 none, -1 when buf (cap bytes) is too
+ * small (*size says how large it is; it stays first) */
+int ob_net_recv(ob_net *n, int *from, int *type, void *buf, size_t cap, size_t *size);
 
 /* a bad network, for tests and trying the delay: every datagram this machine sends delayed by
  * delay_ms plus up to jitter_ms, loss_pct per cent lost and dup_pct per cent sent twice */
