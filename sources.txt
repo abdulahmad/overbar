@@ -20,3 +20,7 @@ src/chat.c
 src/room.c
 src/lane.c
 src/save.c
+src/fsdir.c
+src/files.c
+src/vdrive.c
+src/season.c

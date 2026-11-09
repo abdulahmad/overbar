@@ -1,0 +1,146 @@
+/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ * Copyright (c) 2026 abdulahmad
+ *
+ * The online season: the league copies of the machines of a room kept in step by the game's own export,
+ * import and merge, run by Overbar where the original asked for a floppy, so nobody sees a disk prompt.
+ * For every platform; 94 and 95 PC are the games that have it (the "master league": the master machine
+ * owns the league, each human team elsewhere has a copy).
+ *
+ * Sync (the room's host holds the master league): a guest that joins, or that changed its team, calls
+ * ob_season_sync. It says which league and teams it has, and the games it played on its copy away from
+ * the master (ob_season_played). The host checks the league and who owns each team (the first player to
+ * bring a team owns it), and the guest exports each of its teams (the game's export to a virtual drive,
+ * overbar/vdrive.h) and sends it (overbar/files.h). The host merges every team of that guest, then makes
+ * a fresh copy for each and sends it back, and the guest imports them. A game played away from the master
+ * is handed to the merge once: the host keeps the keys of those merged.
+ *
+ * A match away from the master (C vs D with the host away): the machine whose copy the match is played
+ * from sends that copy to the others as a mirror (ob_season_mirror_send); they play from the mirror and
+ * drop it after (keeping none of its writes); the starter marks the game played (ob_season_played), and
+ * its result reaches the master at the next sync.
+ *
+ * A team made human for a player on another machine (the original's "add a human team" and its floppy) is
+ * ob_season_give: the copy goes to that machine and its game imports it.
+ *
+ * The port's hooks are the game's own routines, with the virtual drive set on the folder given. Messages
+ * are of type OB_NET_TYPE_SEASON (ob_room_modules routes them, and the files'). Each machine keeps a small
+ * ledger in its work folder (owners and merged games on the master; games played away elsewhere). No SDL. */
+#ifndef OVERBAR_SEASON_H
+#define OVERBAR_SEASON_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include "overbar/files.h"
+#include "overbar/net.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define OB_SEASON_TEXT 31
+#define OB_SEASON_TEAMS 32              /* team numbers 0 .. 31 */
+#define OB_SEASON_PLAYED 64             /* games played away from the master and not merged yet, kept */
+#define OB_SEASON_MERGED 1024           /* keys of merged games the master keeps */
+#define OB_SEASON_PATH 260
+
+typedef struct ob_season_league {
+    char name[OB_SEASON_TEXT + 1];      /* the league's name */
+    char id[OB_SEASON_TEXT + 1];        /* what tells it from another league of the same name */
+    int master;                         /* this machine has the master copy */
+    int team[OB_SEASON_TEAMS];          /* (a copy) the human teams it is for */
+    int nteam;
+} ob_season_league;
+
+typedef struct ob_season_ops {
+    void *ud;
+    /* the league this machine plays now: 0, or -1 none */
+    int (*league)(void *ud, ob_season_league *l);
+    /* (a guest) the game's export of its team into dir: 0, or -1 */
+    int (*export_team)(void *ud, int team, const char *dir);
+    /* (the master) the game's merge of team's copy in dir. played: the games played on that copy away from the
+     * master that are not merged yet (the same keys come with each team of the copy): 0, or -1 */
+    int (*merge_team)(void *ud, int team, const char *dir, const uint32_t *played, int nplayed);
+    /* (the master) a fresh copy for team into dir (the game's copy for a human team): 0, or -1 */
+    int (*copy_team)(void *ud, int team, const char *dir);
+    /* (a guest) the game's import of the master's copy for team from dir: 0, or -1 */
+    int (*import_team)(void *ud, int team, const char *dir);
+    /* the folder of this machine's league, for a mirror: 0, or -1 */
+    int (*league_dir)(void *ud, char *dir, int size);
+} ob_season_ops;
+
+enum {                                  /* ob_season.state: a guest's sync */
+    OB_SEASON_IDLE, OB_SEASON_ASKED, OB_SEASON_SENDING, OB_SEASON_TAKING, OB_SEASON_SYNCED, OB_SEASON_FAILED
+};
+
+typedef struct ob_season_peer {         /* (the master) a guest's sync */
+    int state;                          /* 0 none, 1 its teams coming, 2 copies going back */
+    char name[OB_NET_NAME + 1];
+    int team[OB_SEASON_TEAMS], nteam;
+    unsigned came, went;                /* by team: its export came; its copy was taken */
+    uint32_t played[OB_SEASON_PLAYED];
+    int nplayed;
+} ob_season_peer;
+
+typedef struct ob_season {
+    ob_season_ops ops;
+    ob_files *files;
+    void (*send)(void *ud, int to, const void *data, size_t size);
+    void *send_ud;
+    char base[OB_SEASON_PATH];          /* the work folder: base/L<league>/..., base/mirror */
+    char me[OB_NET_NAME + 1];           /* this machine's player name */
+    /* a guest's sync */
+    int state;
+    int host;                           /* the machine it syncs with */
+    int team[OB_SEASON_TEAMS], nteam;   /* the teams the master took */
+    unsigned taken;                     /* by team: its copy imported */
+    int sent_played;                    /* how many of played[] went with the sync */
+    /* the ledger of this machine's league */
+    ob_season_league league;
+    char owner[OB_SEASON_TEAMS][OB_NET_NAME + 1];   /* (the master) who owns each team ("" nobody yet) */
+    uint32_t merged[OB_SEASON_MERGED];  /* (the master) keys of games merged from copies */
+    int nmerged;
+    uint32_t played[OB_SEASON_PLAYED];  /* (a copy) games played on it away from the master, not merged yet */
+    int nplayed;
+    ob_season_peer peer[OB_NET_MAX_MACHINES];
+    /* a match away from the master */
+    unsigned given;                     /* (a guest) by team: a first copy taken (ob_season_give) */
+    unsigned mirror_to, mirror_ok, mirror_bad;      /* (the starter) machines sent its copy, taken, failed */
+    int mirror_from;                    /* (the others) whose copy is in the mirror (-1 none) */
+    char why[160];                      /* the last failure ("" none) */
+} ob_season;
+
+/* base: Overbar's season folder (made if missing). files: the room's (its hooks become the season's). send:
+ * a message of type OB_NET_TYPE_SEASON to a machine. me: this machine's player name */
+void ob_season_init(ob_season *s, const ob_season_ops *ops, const char *base, const char *me, ob_files *files,
+                    void (*send)(void *ud, int to, const void *data, size_t size), void *ud);
+void ob_season_free(ob_season *s);
+/* (a guest) syncs its league with the master on machine host: 0, or -1 (no league, the master is here) */
+int ob_season_sync(ob_season *s, int host);
+/* a message of type OB_NET_TYPE_SEASON */
+void ob_season_message(ob_season *s, int from, const void *data, size_t size);
+void ob_season_machine_gone(ob_season *s, int machine);
+/* one line for the room page ("Syncing league with Ben"; "" nothing to say) */
+void ob_season_status(const ob_season *s, char *line, int size);
+/* syncs going on (the master: with any guest; a guest: its own) */
+int ob_season_busy(const ob_season *s);
+
+/* (the master) a team becomes human on a guest's machine: its first copy (the game's copy for a human team) goes
+ * to machine, whose player (name) owns the team from now on, and its game imports it (making the league there): 0, -1 */
+int ob_season_give(ob_season *s, int machine, const char *name, int team);
+
+/* a league game played on this copy away from the master (the starter of such a match), kept till merged */
+void ob_season_played(ob_season *s, uint32_t key);
+/* (the starter of a match away from the master) its league copy to the machines in mask: 0, or -1 */
+int ob_season_mirror_send(ob_season *s, unsigned machines);
+/* (the starter) 1 every machine has taken it, 0 not yet, -1 one failed */
+int ob_season_mirror_sent(const ob_season *s);
+/* (the others) the starter's copy is in dir (Overbar's mirror folder): 1, 0 not (yet) */
+int ob_season_mirror(const ob_season *s, char *dir, int size);
+/* (the others) after the match: the mirror goes, its writes with it */
+void ob_season_mirror_drop(ob_season *s);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

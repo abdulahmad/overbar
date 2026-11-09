@@ -28,6 +28,8 @@
 #include "overbar/room.h"
 #include "overbar/lane.h"
 #include "mdrt/menu.h"
+#include <stdint.h>
+#include "../src/fsdir.h"
 
 static int fails;
 #define CHECK(c, what) do { if (!(c)) { fails++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, what); } } while (0)
@@ -954,6 +956,73 @@ static void room_glue(void)
     free_all(3);
 }
 
+/* a folder through a real room (overbar/files.h over ob_room): Ben sends 3 files to the host, with loss */
+static ob_files GF[2];
+static int gf_done[2], gf_ok[2];
+static int gf_where(void *ud, int from, const char *tag, char *dir, int size)
+{
+    (void)ud; (void)from;
+    if (strcmp(tag, "league")) return 0;
+    snprintf(dir, (size_t)size, "build_test_net_files/in");
+    return 1;
+}
+static void gf_end(void *ud, int out, int peer, const char *tag, int ok, const char *why)
+{
+    int k = (int)(intptr_t)ud;
+    (void)out; (void)peer; (void)tag;
+    gf_done[k]++;
+    gf_ok[k] = ok;
+    if (!ok) printf("files: machine %d: %s\n", k, why);
+}
+static int gf_both(void) { return gf_done[0] && gf_done[1]; }
+
+static void room_files(int loss)
+{
+    char addr[32], path[64];
+    int port = BASE_PORT + 200 + loss, i, same = 1;
+    static uint8_t data[3][100000];
+    room_reset();
+    snprintf(addr, sizeof addr, "127.0.0.1:%d", port);
+    ob_fs_mkdir("build_test_net_files");
+    ob_fs_mkdir("build_test_net_files/src");
+    ob_fs_clear("build_test_net_files/in");
+    for (i = 0; i < 3; i++) {
+        int j;
+        for (j = 0; j < (int)sizeof data[i]; j++) data[i][j] = (uint8_t)(j * (i + 3) + loss);
+        snprintf(path, sizeof path, "build_test_net_files/src/T%d.DB", i);
+        ob_fs_write(path, data[i], sizeof data[i]);
+    }
+    M[0].n = make_room(0, port, NULL, 1, "Ann", &R[0]);
+    M[1].n = make_room(1, 0, addr, 1, "Ben", &R[1]);
+    M[2].n = NULL;
+    if (!M[0].n || !M[1].n || !lobby_all(2, 10)) { CHECK(0, "files: Ben in the room"); free_all(2); return; }
+    if (loss) { ob_net_simulate(M[0].n, 3, 6, loss, 2); ob_net_simulate(M[1].n, 3, 6, loss, 2); }
+    gf_done[0] = gf_done[1] = 0;
+    for (i = 0; i < 2; i++) {
+        ob_room_init(&GR[i], M[i].n, NULL, NULL);
+        ob_files_init(&GF[i], ob_room_files_send, M[i].n);
+        ob_files_hooks(&GF[i], gf_where, gf_end, (void *)(intptr_t)i);
+        ob_room_modules(&GR[i], &GF[i], NULL);
+    }
+    CHECK(ob_files_send(&GF[1], 0, "league", "build_test_net_files/src", OB_FILES_MIRROR) == 0, "files: Ben offers his folder");
+    CHECK(glue_until(2, gf_both, 20), "files: the transfer ends on both");
+    CHECK(gf_ok[0] && gf_ok[1], "files: ok on both");
+    for (i = 0; i < 3; i++) {
+        uint8_t *d;
+        size_t n;
+        snprintf(path, sizeof path, "build_test_net_files/in/T%d.DB", i);
+        if (ob_fs_read(path, &d, &n) || n != sizeof data[i] || memcmp(d, data[i], n)) same = 0;
+        free(d);
+    }
+    CHECK(same, "files: the host has the 3 files, the same");
+    printf("files through the room%s: 3 files of 100 kB, %s\n", loss ? " (loss)" : "", same ? "the same" : "NOT the same");
+    for (i = 0; i < 2; i++) ob_files_free(&GF[i]);
+    free_all(2);
+    ob_fs_clear("build_test_net_files/in");
+    ob_fs_clear("build_test_net_files/src");
+    ob_fs_clear("build_test_net_files");
+}
+
 /* the menu lane over a real match with rollback: Ben pauses, types in the menu, resumes; Ann's pause
  * while Ben holds it is dropped; Ann pauses later and the game's own Resume ends it. Every machine sees
  * the same pause and keys on the same steps. */
@@ -1089,6 +1158,8 @@ int main(void)
         rooms(0);
         rooms(5);
         room_glue();
+        room_files(0);
+        room_files(5);
         lane_net(0);
         lane_net(5);
         recover();
@@ -1112,6 +1183,8 @@ int main(void)
     rooms(0);
     rooms(5);
     room_glue();
+    room_files(0);
+    room_files(5);
     lane_net(0);
     lane_net(5);
     recover();

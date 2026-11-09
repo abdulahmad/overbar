@@ -104,6 +104,23 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
   removed once the result is in the league (`ob_saves_done`). The game's part: `ob_saves_event` / `ob_saves_clock` in
   the simulation, `ob_saves_poll` on the host outside it.
 
+## The online season (online play phase 5, 2026-11-09)
+
+- `include/overbar/vdrive.h` (DOS): virtual drives. A drive letter is a folder of the player's, so the game's floppy is
+  always in the drive; the port's DOS layer asks `ob_vdrive_path` for each name the game opens (parts matched ignoring
+  case) and `ob_vdrive_diskfree` for the drive's space, and answers the game's disk prompts itself.
+- `include/overbar/files.h`: a folder sent across the room's message lane (`OB_NET_TYPE_FILES`). Only the files the
+  receiver lacks are sent, so a folder sent again after a drop sends what had not come; the files go into place together
+  once every hash checks; `OB_FILES_MIRROR` makes the target exactly the folder sent.
+- `include/overbar/season.h` (`OB_NET_TYPE_SEASON`): the league copies kept in step by the game's own export, merge, copy
+  and import (the port's hooks, each with a virtual drive set on the folder given). A guest's `ob_season_sync`: its teams'
+  exports go to the host, which merges them all, then sends a fresh copy of each back to be imported. The first player to
+  bring a team owns it. `ob_season_give` is the host making a team human for a player elsewhere (the first copy).
+  A match away from the master (C vs D, the host away): the starter's copy goes to the others as a mirror
+  (`ob_season_mirror_send`), they play from it and drop it; `ob_season_played` keeps the game's key on the starter's copy
+  until a sync merges it, and the master hands each such game to the merge once (its ledger keeps the keys merged).
+  `ob_room_modules` routes both modules' messages; the room page shows a line about a sync.
+
 ## Rules
 
 - No port includes `<SDL.h>` except through its own non-Overbar needs (PulseMan core stays untouched).
