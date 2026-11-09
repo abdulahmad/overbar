@@ -372,6 +372,7 @@ int ob_host_save_ini(const ob_host *h)
     fprintf(f, "online_name=%s\nonline_role=%s\nonline_address=%s\nonline_port=%d\nonline_delay=%d\nonline_here=%d\nonline_players=%d\n",
             h->online.name, net_role_name[h->online.role % 3], h->online.addr, h->online.port, h->online.delay,
             h->online.here, h->online.all);
+    ob_game_write_ini(h, f);
     fclose(f);
     return 1;
 }
@@ -410,6 +411,7 @@ int ob_host_load_ini(ob_host *h, const char *path)
         else if (!strcmp(k, "online_delay")) h->online.delay = atoi(v) < 0 ? 0 : atoi(v) > 10 ? 10 : atoi(v);
         else if (!strcmp(k, "online_here")) h->online.here = atoi(v) < 1 ? 1 : atoi(v);
         else if (!strcmp(k, "online_players")) h->online.all = atoi(v) < 2 ? 2 : atoi(v);
+        else if (ob_game_read_ini(h, k, v)) {}
         else if (!strncmp(k, "lores_", 6)) apply_look_key(&h->lores, k + 6, v);
         else if (!strncmp(k, "hires_", 6)) apply_look_key(&h->hires, k + 6, v);
     }
@@ -459,6 +461,7 @@ void ob_mister_pick(ob_host *h, ob_class cls, int kind, const char *rel)
 int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
 {
     ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
+    if (ob_game_apply(h, id, value)) { h->live_preview = 1; return 1; }
     switch (id) {
     case OB_ID_REFRESH:
         h->refresh = (ob_refresh)value;

@@ -329,6 +329,7 @@ int ob_main_items(const ob_host *h, ob_item *out, int cap)
     if (h->has_sound) add_action(out, &n, cap, OB_ID_SOUND, "Sound", NULL);
     add_action(out, &n, cap, OB_ID_INPUT, "Input", NULL);
     add_action(out, &n, cap, OB_ID_CAPTURE, "Capture", NULL);
+    if (h->game_ready) add_action(out, &n, cap, OB_ID_GAME, ob_game_title(h), NULL);
     add_action(out, &n, cap, OB_ID_ONLINE, "Online Play",
                h->online_ready ? NULL : "not in this build");
     for (i = 0; i < h->naddons; i++)
@@ -503,6 +504,10 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
             return n;
         }
         n = online_items(h, out, n, cap);
+        add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
+        return n;
+    case OB_PAGE_GAME:
+        n = ob_game_items(h, out, cap - 1);
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
     case OB_PAGE_KEYS:

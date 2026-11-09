@@ -73,6 +73,7 @@ static int page_of(int id)
     case OB_ID_CAPTURE: return OB_PAGE_CAPTURE;
     case OB_ID_ONLINE: return OB_PAGE_ONLINE;
     case OB_ID_KEYS: return OB_PAGE_KEYS;
+    case OB_ID_GAME: return OB_PAGE_GAME;
     case OB_ID_SCALE_HI: return OB_PAGE_SCALE_HI;
     case OB_ID_SCALE_LO: return OB_PAGE_SCALE_LO;
     case OB_ID_MODE_MENU_HI: return OB_PAGE_MODE_HI;
@@ -220,7 +221,7 @@ static void apply_marks(void)
     static const int pages[] = {
         OB_PAGE_VIDEO, OB_PAGE_SCALE_HI, OB_PAGE_SCALE_LO, OB_PAGE_MODE_HI, OB_PAGE_MODE_LO,
         OB_PAGE_OPTS_HI, OB_PAGE_OPTS_LO, OB_PAGE_SOUND, OB_PAGE_INPUT,
-        OB_PAGE_CAPTURE, OB_PAGE_KEYS
+        OB_PAGE_CAPTURE, OB_PAGE_KEYS, OB_PAGE_GAME
     };
     ob_item items[OB_ITEMS_MAX];
     int p, n, i, c;

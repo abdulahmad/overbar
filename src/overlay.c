@@ -20,6 +20,7 @@ static const char *page_title(const ob_host *h, int page)
     case OB_PAGE_CAPTURE: return "Capture";
     case OB_PAGE_ONLINE: return "Online Play";
     case OB_PAGE_KEYS: return "Keys";
+    case OB_PAGE_GAME: return ob_game_title(h);
     case OB_PAGE_SCALE_HI: return "Scaling (Hi-Res)";
     case OB_PAGE_SCALE_LO: return h->has_hires ? "Scaling (Lo-Res)" : "Scaling";
     case OB_PAGE_MODE_HI:
@@ -190,6 +191,7 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
     case OB_ID_CAPTURE: go_page(h, OB_PAGE_CAPTURE); return 1;
     case OB_ID_ONLINE: go_page(h, OB_PAGE_ONLINE); return 1;
     case OB_ID_KEYS: go_page(h, OB_PAGE_KEYS); return 1;
+    case OB_ID_GAME: go_page(h, OB_PAGE_GAME); return 1;
     case OB_ID_NET_NAME:
     case OB_ID_NET_ADDR:
     case OB_ID_NET_PORT: {
