@@ -649,8 +649,10 @@ static void overlay_draw(const SDL_Rect *dst)
 {
     int mw, mh, t = (int)(dst->h * 0.8 / (P.cur_h > 0 ? P.cur_h : P.hk.src_h) + 0.5);
     if (t < 1) t = 1;
+    if (ob_plat_osk_is_open()) t *= 2;                 /* the keyboard is drawn at twice the size of the overlay's text */
     mw = dst->w / t;
     mh = dst->h / t;
+    while (ob_plat_osk_is_open() && t > 1 && (mw < 208 || mh < 90)) { t--; mw = dst->w / t; mh = dst->h / t; }   /* (the keyboard's size in these pixels) */
     while ((mw > OVER_W || mh > OVER_H) && t < 64) { t++; mw = dst->w / t; mh = dst->h / t; }
     for (int i = 0; i < mw * mh; i++) P.over_px[i] = 0x00040404u;
     ob_overlay_draw(P.host, P.over_px, mw, mh, mw);

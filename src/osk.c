@@ -101,20 +101,31 @@ static void fill(uint32_t *px, int w, int h, int pitch, int x, int y, int rw, in
 
 void ob_osk_draw(const ob_osk *k, uint32_t *px, int w, int h, int pitch)
 {
-    int r, c, x0, y0, tw = COLS * KW + 8, th = ROWS * KH + 8;
+    int r, c, x0, y0, tw = COLS * KW + 8, th = ROWS * KH + 8 + 12;      /* 12 rows of pixels above the keys: the caps indicator */
     if (!k->open || w < tw || h < th) return;
     x0 = (w - tw) / 2;
     y0 = h - th - 4;
     fill(px, w, h, pitch, x0, y0, tw, th, 0xF0101830u);
+    {   /* what the next letter will be: CAPS lit while shift is on, lower case letters otherwise (shift is for one letter) */
+        const char *m = k->shift ? "CAPS" : "abc";
+        fill(px, w, h, pitch, x0 + 4, y0 + 3, 36, 10, k->shift ? 0xFF50A050u : 0xFF303860u);
+        mdrt_menu_text(px, w, h, pitch, x0 + 4 + (36 - (int)strlen(m) * 6) / 2, y0 + 4, m, 0xFFFFFFFFu);
+    }
     for (r = 0; r < ROWS; r++)
         for (c = 0; c < COLS; c += (r == 4 ? 2 : 1)) {
             int kw = (r == 4 ? 2 : 1) * KW - 2;
             int on = r == k->row && c == k->col;
-            const char *s = ob_osk_label(c, r);
-            int sx = x0 + 4 + c * KW + (kw - (int)strlen(s) * 6) / 2, sy = y0 + 4 + r * KH + (KH - 2 - 8) / 2;
-            fill(px, w, h, pitch, x0 + 4 + c * KW, y0 + 4 + r * KH, kw, KH - 2, on ? 0xFFE0E060u : 0xFF303860u);
+            const char *s0 = ob_osk_label(c, r);
+            char lab[16];
+            int sx, sy, y = y0 + 4 + 12 + r * KH;
+            strncpy(lab, s0, sizeof lab - 1);
+            lab[sizeof lab - 1] = 0;
+            if (!k->shift && r >= 1 && r <= 3 && lab[0] >= 'A' && lab[0] <= 'Z') lab[0] = (char)(lab[0] + 32);
+            sx = x0 + 4 + c * KW + (kw - (int)strlen(lab) * 6) / 2;
+            sy = y + (KH - 2 - 8) / 2;
+            fill(px, w, h, pitch, x0 + 4 + c * KW, y, kw, KH - 2, on ? 0xFFE0E060u : 0xFF303860u);
             if (r == 4 && bottom_kind[bottom(c)] == K_SHIFT && k->shift && !on)
-                fill(px, w, h, pitch, x0 + 4 + c * KW, y0 + 4 + r * KH, kw, KH - 2, 0xFF508050u);
-            mdrt_menu_text(px, w, h, pitch, sx, sy, s, on ? 0xFF000000u : 0xFFFFFFFFu);
+                fill(px, w, h, pitch, x0 + 4 + c * KW, y, kw, KH - 2, 0xFF508050u);
+            mdrt_menu_text(px, w, h, pitch, sx, sy, lab, on ? 0xFF000000u : 0xFFFFFFFFu);
         }
 }
