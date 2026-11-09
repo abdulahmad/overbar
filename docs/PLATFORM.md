@@ -78,6 +78,17 @@ messages and says who joined or left; `ob_room_lines` / `ob_room_draw` is the ro
 In the layer, `ob_plat_room(sides, chat)` routes the keys and controllers and draws both; `ob_plat_sides_devices` adds the
 keyboard and the controllers plugged in (and the layer adds and removes them as they come and go).
 
+## Pause and menus online (online play phase 3, 2026-11-09)
+
+The menu lane (`include/overbar/lane.h`, `src/lane.c`): in a room's match each machine has two more of ob_net's pads
+(`OB_LANE_FIRST` + 2 x its number; ob_net has 16 pads since protocol 4, seats use 0 .. 7) and sends its menu input in
+them every step: one key, the mouse, a pause request. `ob_lane_owners` adds them to the match's owner table.
+`ob_lane_step` runs in the simulation on every machine: the first pause request holds the menu, only the holder's keys and
+mouse reach the game until it resumes (its pause request again, or the game's own Resume, `ob_lane_resume`), and others'
+requests are dropped. `ob_lane_sim` is part of the game's state. The port's part: where its input layer reads keys and
+the mouse (read the lane's instead while paused), when its pause menu opens and closes, and the line editor's fence
+(`ob_lane_holder_may` with the holder's teams from the seat table).
+
 ## Rules
 
 - No port includes `<SDL.h>` except through its own non-Overbar needs (PulseMan core stays untouched).

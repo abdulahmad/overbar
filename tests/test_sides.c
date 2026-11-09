@@ -2,9 +2,10 @@
  * Copyright (c) 2026 abdulahmad
  *
  * The select-sides screen (local, and a host with two guests whose messages go through a queue
- * here), the hotkeys filter, and chat. The room glue over real sockets is in test_net. */
+ * here), the hotkeys filter, chat, and the menu lane (pause and menus in the step). The room glue over real sockets is in test_net. */
 #include "overbar/sides.h"
 #include "overbar/chat.h"
+#include "overbar/lane.h"
 #include "mdrt/menu.h"
 
 #include <stdio.h>
@@ -274,11 +275,87 @@ static void chat(void)
     }
 }
 
+/* ---- the menu lane ---- */
+
+static void lane(void)
+{
+    ob_lane_in a, b;
+    ob_lane_sim s, t;
+    ob_lane_word w;
+    uint16_t all[OB_NET_MAX_PADS], wa[2], wb[2], again[2];
+    int8_t owner[OB_NET_MAX_PADS];
+    int f, i;
+    uint32_t step;
+    memset(owner, -1, sizeof owner);
+    owner[0] = 0; owner[1] = 1;
+    ob_lane_owners(owner, 5);                          /* machines 0 and 2 */
+    CHECK(owner[0] == 0 && owner[8] == 0 && owner[9] == 0 && owner[10] == -1 && owner[12] == 2 && owner[13] == 2 && owner[15] == -1,
+          "the lane's pads: two a machine past the seats");
+    ob_lane_in_init(&a);
+    ob_lane_in_mouse(&a, 639, 479, 3);
+    ob_lane_in_key(&a, 0x1C, 1);
+    ob_lane_in_pack(&a, 0, wa);
+    ob_lane_unpack(wa, &w);
+    CHECK(w.key == 0x1C && w.down && w.key_flip && !w.pause_flip && w.x == 639 && w.y == 479 && w.buttons == 3, "a word packs and unpacks");
+    ob_lane_in_key(&a, 0x1C, 0);
+    ob_lane_in_pack(&a, 0, again);
+    CHECK(again[0] == wa[0] && again[1] == wa[1] && a.n == 1, "a step packed again (a replay): the same words, nothing lost");
+    ob_lane_in_mouse(&a, 5000, -3, 1);
+    ob_lane_in_pack(&a, 1, wa);
+    ob_lane_unpack(wa, &w);
+    CHECK(w.key == 0x1C && !w.down && !w.key_flip && w.x == 1023 && w.y == 0 && w.buttons == 1, "the release; the mouse kept in range");
+
+    /* two machines: b pauses, types, a's pause is dropped, b resumes; two sims see the same */
+    ob_lane_in_init(&a);
+    ob_lane_in_init(&b);
+    ob_lane_sim_init(&s);
+    ob_lane_sim_init(&t);
+    for (step = 0; step < 60; step++) {
+        int fs, ft, keys = 0;
+        if (step == 10) ob_lane_in_pause(&b);
+        if (step == 12) { ob_lane_in_key(&b, 0x48, 1); ob_lane_in_key(&b, 0x48, 0); ob_lane_in_key(&a, 0x50, 1); }
+        if (step == 14) ob_lane_in_pause(&a);
+        if (step == 20) ob_lane_in_pause(&b);
+        if (step == 30) ob_lane_in_pause(&a);
+        if (step == 40) ob_lane_in_key(&a, 0x01, 1);
+        memset(all, 0, sizeof all);
+        ob_lane_in_pack(&a, step, wa);
+        ob_lane_in_pack(&b, step, wb);
+        memcpy(all + 8, wa, sizeof wa);
+        memcpy(all + 10, wb, sizeof wb);
+        fs = ob_lane_step(&s, all, 3, step);
+        ft = ob_lane_step(&t, all, 3, step);
+        CHECK(fs == ft && !memcmp(&s, &t, sizeof s), "every machine's lane alike");
+        if (step == 10) CHECK((fs & OB_LANE_PAUSED) && s.holder == 1 && s.paused_at == 11, "b paused at its step");
+        if (step == 12 || step == 13) { CHECK((fs & OB_LANE_KEY) && s.key == 0x48 && s.down == (step == 12), "b's keys reach the game"); keys++; }
+        if (step == 14) CHECK(s.holder == 1 && !(fs & OB_LANE_KEY), "a's pause and key are dropped while b holds it");
+        if (step == 20) CHECK((fs & OB_LANE_RESUMED) && s.holder == -1, "b resumes");
+        if (step == 30) CHECK((fs & OB_LANE_PAUSED) && s.holder == 0, "then a pauses");
+        if (step == 40) {
+            CHECK((fs & OB_LANE_KEY) && s.key == 0x01, "a's key");
+            ob_lane_resume(&s); ob_lane_resume(&t);    /* the game's own Resume */
+        }
+        if (step > 40) CHECK(s.holder == -1 && !fs, "resumed by the game; nothing after");
+        (void)keys;
+    }
+    /* a repeated guess (rollback) of the last words does nothing */
+    ob_lane_sim_init(&s);
+    ob_lane_in_init(&b);
+    ob_lane_in_pause(&b);
+    ob_lane_in_pack(&b, 0, wb);
+    memset(all, 0, sizeof all);
+    memcpy(all + 10, wb, sizeof wb);
+    for (f = 0, i = 0; i < 5; i++) f |= ob_lane_step(&s, all, 2, (uint32_t)i) & OB_LANE_RESUMED;
+    CHECK(s.holder == 1 && !f, "the same words again: no second pause");
+    CHECK(ob_lane_holder_may(&s, 2, 1) && !ob_lane_holder_may(&s, 2, 0), "the holder edits only its team's lines");
+}
+
 int main(void)
 {
     local();
     online();
     chat();
+    lane();
     if (fails) { printf("%d sides/chat check(s) failed\n", fails); return 1; }
     printf("sides and chat ok\n");
     return 0;
