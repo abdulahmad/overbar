@@ -5,9 +5,10 @@
  * (overbar/vdrive.h), over messages passed in memory between three machines. A toy league: a folder
  * with LEAGUE.ID and a file for each team, T<n>.DB, a line for each game it played ("<key> <other>");
  * the master also counts each team's games in COUNT.DB. Teams: A 0, B 1 (the host's), C 2 (Cal on
- * machine 1), D 3 (Dee on machine 2). The season: A vs B on the host; C vs D with the host away (from
- * Cal's copy, Dee from a mirror); then both sync, Cal's first sync broken off after the merge. Every
- * game must be in the master once and each copy the same as the master after. */
+ * machine 1), D 3 (Dee on machine 2). The season: A vs B on the host; C vs D with the host away (as the
+ * original does it with the opponent's floppy: both copies on each machine, each team's result into its own
+ * copy, the other's a mirror); then both sync, Cal's first sync broken off after the merge. Every game must
+ * be in the master once and each copy the same as the master after. */
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -151,6 +152,13 @@ static void count_add(const char *dir, int team)
     write_text(dir, "COUNT.DB", b);
 }
 static void tname(char *b, int t) { sprintf(b, "T%d.DB", t); }
+
+/* one team's half of a game, in league folder dir */
+static void half(const char *dir, unsigned key, int team, int other)
+{
+    char n[16], l[32];
+    tname(n, team); sprintf(l, "%u %d", key, other); append(dir, n, l);
+}
 
 /* a game played in league folder dir */
 static void play(const char *dir, unsigned key, int home, int away, int counted)
@@ -386,22 +394,33 @@ static void test_season(void)
     play(M[0].league, 1, 0, 1, 1);
     play(M[1].league, 2, 2, 4, 0);
 
-    /* C vs D with the host away: Cal hosts, his copy is the mirror for Dee */
+    /* C vs D with the host away: each sends the other its copy (the opponent's floppy) */
     leave(0);
     online[1] = online[2] = 1;
-    CHECK(ob_season_mirror_send(&M[1].s, 1u << 2) == 0, "season: Cal sends his copy as a mirror");
+    CHECK(ob_season_mirror_send(&M[1].s, 1u << 2) == 0 && ob_season_mirror_send(&M[2].s, 1u << 1) == 0,
+          "season: Cal and Dee send their copies as mirrors");
     pump();
-    CHECK(ob_season_mirror_sent(&M[1].s) == 1, "season: Dee took it");
+    CHECK(ob_season_mirror_sent(&M[1].s) == 1 && ob_season_mirror_sent(&M[2].s) == 1, "season: each took the other's");
     {
-        char dir[300];
-        CHECK(ob_season_mirror(&M[2].s, dir, sizeof dir) == 1 && same_league(dir, M[1].league), "season: Dee plays from Cal's copy");
-        play(M[1].league, 100, 2, 3, 0);             /* the starter's league gets the result */
-        play(dir, 100, 2, 3, 0);                     /* Dee's game writes into the mirror ... */
-        ob_season_mirror_drop(&M[2].s);              /* ... which goes */
-        CHECK(!ob_season_mirror(&M[2].s, dir, sizeof dir) && !ob_fs_is_dir(dir), "season: the mirror went");
-        CHECK(has_line(M[2].league, "T3.DB", "100 2") == 0, "season: Dee's own copy kept none of the mirror's writes");
+        char dc[300], dd[300];
+        CHECK(ob_season_mirror(&M[2].s, 1, dc, sizeof dc) == 1 && same_league(dc, M[1].league), "season: Dee has Cal's copy");
+        CHECK(ob_season_mirror(&M[1].s, 2, dd, sizeof dd) == 1 && same_league(dd, M[2].league), "season: Cal has Dee's copy");
+        CHECK(!ob_season_mirror(&M[1].s, 1, dc, sizeof dc), "season: no mirror of one's own copy");
+        ob_season_mirror(&M[2].s, 1, dc, sizeof dc);
+        half(M[1].league, 100, 2, 3);                /* Cal's game: C's half into his copy, D's into the mirror */
+        half(dd, 100, 3, 2);
+        half(dc, 100, 2, 3);                         /* Dee's, the same game: C's half into the mirror, D's into hers */
+        half(M[2].league, 100, 3, 2);
+        ob_season_mirror_drop(&M[1].s);
+        ob_season_mirror_drop(&M[2].s);
+        CHECK(!ob_season_mirror(&M[2].s, 1, dc, sizeof dc) && !ob_fs_is_dir(dc) && !ob_fs_is_dir(dd), "season: the mirrors went");
+        CHECK(has_line(M[2].league, "T2.DB", "100 3") == 0 && has_line(M[1].league, "T3.DB", "100 2") == 0,
+              "season: neither copy kept the mirror's writes");
+        CHECK(has_line(M[2].league, "T3.DB", "100 2") == 1 && has_line(M[1].league, "T2.DB", "100 3") == 1,
+              "season: the game is played on both copies (neither can play it again)");
     }
     ob_season_played(&M[1].s, 100);
+    ob_season_played(&M[2].s, 100);
 
     /* back with the host. Cal's first sync is broken off after the merge (his copy back never comes) */
     leave(1); leave(2);
@@ -419,7 +438,8 @@ static void test_season(void)
     CHECK(M[1].s.state == OB_SEASON_SYNCED && M[1].s.nplayed == 0, "season: Cal synced; game 100 merged");
     CHECK(merged_keys == 1, "season: game 100 not handed to the merge again");
     sync_one(2);
-    CHECK(M[2].s.state == OB_SEASON_SYNCED, "season: Dee synced");
+    CHECK(M[2].s.state == OB_SEASON_SYNCED && M[2].s.nplayed == 0, "season: Dee synced");
+    CHECK(merged_keys == 2, "season: game 100 handed once more, for D");
     ob_season_status(&M[2].s, line, sizeof line);
     CHECK(!strcmp(line, "League synced"), "season: Dee's line");
 
@@ -429,7 +449,11 @@ static void test_season(void)
     CHECK(has_line(M[0].league, "T2.DB", "100 3") == 1 && has_line(M[0].league, "T3.DB", "100 2") == 1, "season: C vs D once for each");
     CHECK(count_of(M[0].league, 0) == 1 && count_of(M[0].league, 1) == 1 && count_of(M[0].league, 2) == 2 && count_of(M[0].league, 3) == 1,
           "season: each game counted once");
+    CHECK(same_league(M[0].league, M[2].league), "season: Dee's copy is the master's");
+    sync_one(1);                                /* Cal's copy took D's half at his next sync (as with the original's update) */
+    CHECK(M[1].s.state == OB_SEASON_SYNCED && merged_keys == 2, "season: Cal synced again, nothing more merged");
     CHECK(same_league(M[0].league, M[1].league) && same_league(M[0].league, M[2].league), "season: both copies are the master's again");
+    CHECK(count_of(M[0].league, 2) == 2 && count_of(M[0].league, 3) == 1, "season: still each game once");
 
     /* Dee cannot bring Cal's team */
     M[2].teams[M[2].nteams++] = 2;
@@ -457,7 +481,7 @@ static void test_season(void)
         CHECK(was, "season: (after a restart) game 100 known as merged");
     }
     for (k = 0; k < NM; k++) { ob_season_free(&M[k].s); ob_files_free(&M[k].f); }
-    printf("season: first copies, A vs B, C vs D away (mirror), a sync broken off after the merge: each game once\n");
+    printf("season: first copies, A vs B, C vs D away (both copies), a sync broken off after the merge: each game once\n");
 }
 
 int main(void)

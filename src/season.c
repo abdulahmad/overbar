@@ -7,10 +7,10 @@
  *   2 WELCOME (the master) ok u8, why (length u8, bytes), the teams taken (count u8, each u8)
  *   3 SYNCED  (a guest) every copy imported
  *   4 FAIL    (the master) why (length u8, bytes)
- * Files: "x<team>" a guest's export, "m<team>" the master's copy back, "g<team>" a first copy, "L" a mirror.
+ * Files: "x<team>" a guest's export, "m<team>" the master's copy back, "g<team>" a first copy, "L" a mirror (a player's copy).
  * Folders under base: L<hash of the league>/ (season.txt, the ledger; x/t<team>, a guest's exports;
  * m/t<team>, copies taken; in/m<machine>-t<team>, exports come to the master; out/m<machine>-t<team>, copies
- * for them), new/t<team> (a first copy), and mirror/. */
+ * for them), new/t<team> (a first copy), and mirror/m<machine>. */
 #include "overbar/season.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -92,7 +92,7 @@ static void save_ledger(ob_season *s)
     if (make(s, NULL, NULL, d, sizeof d) || !(t = (char *)malloc(cap))) return;
     n += (size_t)snprintf(t + n, cap - n, "OBSEASON 1\nleague %s\nid %s\n", s->league.name, s->league.id);
     for (i = 0; i < OB_SEASON_TEAMS; i++) if (s->owner[i][0]) n += (size_t)snprintf(t + n, cap - n, "owner %d %s\n", i, s->owner[i]);
-    for (i = 0; i < s->nmerged; i++) n += (size_t)snprintf(t + n, cap - n, "merged %lu\n", (unsigned long)s->merged[i]);
+    for (i = 0; i < s->nmerged; i++) n += (size_t)snprintf(t + n, cap - n, "merged %lu %d\n", (unsigned long)s->merged[i], s->merged_team[i]);
     for (i = 0; i < s->nplayed; i++) n += (size_t)snprintf(t + n, cap - n, "played %lu\n", (unsigned long)s->played[i]);
     snprintf(path, sizeof path, "%s/season.txt", d);
     if (ob_fs_write(path, t, n)) snprintf(s->why, sizeof s->why, "could not write the season's ledger");
@@ -128,25 +128,35 @@ static int load(ob_season *s)
         if (next) *next++ = 0;
         if (sscanf(line, "owner %d %24[^\n]", &team, name) == 2 && team >= 0 && team < OB_SEASON_TEAMS)
             snprintf(s->owner[team], sizeof s->owner[team], "%s", name);
-        else if (sscanf(line, "merged %lu", &v) == 1 && s->nmerged < OB_SEASON_MERGED) s->merged[s->nmerged++] = (uint32_t)v;
+        else if (sscanf(line, "merged %lu", &v) == 1 && s->nmerged < OB_SEASON_MERGED) {
+            if (sscanf(line, "merged %lu %d", &v, &team) != 2 || team < -1 || team >= OB_SEASON_TEAMS) team = -1;
+            s->merged[s->nmerged] = (uint32_t)v;
+            s->merged_team[s->nmerged++] = (signed char)team;
+        }
         else if (sscanf(line, "played %lu", &v) == 1 && s->nplayed < OB_SEASON_PLAYED) s->played[s->nplayed++] = (uint32_t)v;
     }
     free(data);
     return 0;
 }
 
-static int was_merged(const ob_season *s, uint32_t key)
+/* the game's result for team merged already (each player's copy brings its own team's) */
+static int was_merged(const ob_season *s, uint32_t key, int team)
 {
     int i;
-    for (i = 0; i < s->nmerged; i++) if (s->merged[i] == key) return 1;
+    for (i = 0; i < s->nmerged; i++) if (s->merged[i] == key && (s->merged_team[i] < 0 || s->merged_team[i] == team)) return 1;
     return 0;
 }
 
-static void add_merged(ob_season *s, uint32_t key)
+static void add_merged(ob_season *s, uint32_t key, int team)
 {
-    if (was_merged(s, key)) return;
-    if (s->nmerged == OB_SEASON_MERGED) { memmove(s->merged, s->merged + 1, (OB_SEASON_MERGED - 1) * sizeof s->merged[0]); s->nmerged--; }
-    s->merged[s->nmerged++] = key;
+    if (was_merged(s, key, team)) return;
+    if (s->nmerged == OB_SEASON_MERGED) {
+        memmove(s->merged, s->merged + 1, (OB_SEASON_MERGED - 1) * sizeof s->merged[0]);
+        memmove(s->merged_team, s->merged_team + 1, (OB_SEASON_MERGED - 1) * sizeof s->merged_team[0]);
+        s->nmerged--;
+    }
+    s->merged[s->nmerged] = key;
+    s->merged_team[s->nmerged++] = (signed char)team;
 }
 
 /* ---- set-up ---- */
@@ -164,7 +174,6 @@ void ob_season_init(ob_season *s, const ob_season_ops *ops, const char *base, co
     s->files = files;
     s->send = send;
     s->send_ud = ud;
-    s->mirror_from = -1;
     ob_fs_mkdir(s->base);
     if (files) ob_files_hooks(files, where, done, s);
 }
@@ -315,9 +324,9 @@ static void master_merge(ob_season *s, int m)
     ob_season_peer *p = &s->peer[m];
     uint32_t fresh[OB_SEASON_PLAYED];
     char dir[DIRLEN], tag[16];
-    int nfresh = 0, i;
-    for (i = 0; i < p->nplayed; i++) if (!was_merged(s, p->played[i])) fresh[nfresh++] = p->played[i];
+    int nfresh, i, j;
     for (i = 0; i < p->nteam; i++) {
+        for (nfresh = j = 0; j < p->nplayed; j++) if (!was_merged(s, p->played[j], p->team[i])) fresh[nfresh++] = p->played[j];
         peer_dir(s, "in", m, p->team[i], dir, sizeof dir);
         if (!s->ops.merge_team || s->ops.merge_team(s->ops.ud, p->team[i], dir, fresh, nfresh)) {
             snprintf(s->why, sizeof s->why, "the merge of %s's team failed", p->name);
@@ -326,7 +335,7 @@ static void master_merge(ob_season *s, int m)
             return;
         }
     }
-    for (i = 0; i < nfresh; i++) add_merged(s, fresh[i]);
+    for (i = 0; i < p->nteam; i++) for (j = 0; j < p->nplayed; j++) add_merged(s, p->played[j], p->team[i]);
     save_ledger(s);
     p->state = 2;
     for (i = 0; i < p->nteam; i++) {
@@ -350,8 +359,13 @@ static int where(void *ud, int from, const char *tag, char *dir, int size)
     ob_season *s = (ob_season *)ud;
     char d[DIRLEN];
     int team;
-    if (!strcmp(tag, "L")) {                        /* a mirror */
-        snprintf(dir, (size_t)size, "%s/mirror", s->base);
+    if (!strcmp(tag, "L")) {                        /* a mirror: a player's copy */
+        if (from < 0 || from >= OB_NET_MAX_MACHINES) return 0;
+        snprintf(d, sizeof d, "%s/mirror", s->base);
+        ob_fs_mkdir(d);
+        snprintf(d, sizeof d, "%s/mirror/m%d", s->base, from);
+        if ((int)strlen(d) >= size) return 0;
+        memcpy(dir, d, strlen(d) + 1);
         return 1;
     }
     if (from < 0 || from >= OB_NET_MAX_MACHINES || sscanf(tag + 1, "%d", &team) != 1 || team < 0 || team >= OB_SEASON_TEAMS) return 0;
@@ -386,7 +400,7 @@ static void done(void *ud, int out, int peer, const char *tag, int ok, const cha
     if (tag[0] && tag[1]) sscanf(tag + 1, "%d", &team);
     if (!strcmp(tag, "L")) {
         if (out && peer >= 0 && peer < OB_NET_MAX_MACHINES) { if (ok) s->mirror_ok |= 1u << peer; else s->mirror_bad |= 1u << peer; }
-        if (!out && ok) s->mirror_from = peer;
+        if (!out && ok && peer >= 0 && peer < OB_NET_MAX_MACHINES) s->mirror_have |= 1u << peer;
         return;
     }
     if (tag[0] == 'g') {
@@ -450,7 +464,7 @@ void ob_season_machine_gone(ob_season *s, int machine)
     memset(&s->peer[machine], 0, sizeof s->peer[machine]);
     if (machine == s->host && s->state != OB_SEASON_IDLE && s->state != OB_SEASON_SYNCED && s->state != OB_SEASON_FAILED)
         guest_failed(s, "the host left before the league was synced");
-    if (machine == s->mirror_from) s->mirror_from = -1;
+    s->mirror_have &= ~(1u << machine);
     s->mirror_to &= ~(1u << machine);
 }
 
@@ -525,17 +539,22 @@ int ob_season_mirror_sent(const ob_season *s)
     return (s->mirror_ok & s->mirror_to) == s->mirror_to;
 }
 
-int ob_season_mirror(const ob_season *s, char *dir, int size)
+int ob_season_mirror(const ob_season *s, int from, char *dir, int size)
 {
-    if (s->mirror_from < 0) return 0;
-    snprintf(dir, (size_t)size, "%s/mirror", s->base);
+    if (from < 0 || from >= OB_NET_MAX_MACHINES || !(s->mirror_have >> from & 1)) return 0;
+    snprintf(dir, (size_t)size, "%s/mirror/m%d", s->base, from);
     return 1;
 }
 
 void ob_season_mirror_drop(ob_season *s)
 {
     char dir[DIRLEN];
+    int k;
+    for (k = 0; k < OB_NET_MAX_MACHINES; k++) {
+        snprintf(dir, sizeof dir, "%s/mirror/m%d", s->base, k);
+        ob_fs_clear(dir);
+    }
     snprintf(dir, sizeof dir, "%s/mirror", s->base);
     ob_fs_clear(dir);
-    s->mirror_from = -1;
+    s->mirror_have = 0;
 }
