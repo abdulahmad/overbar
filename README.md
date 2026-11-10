@@ -28,8 +28,11 @@
 | --- | --- |
 | `` ` `` or **F11** | Open or close the menu |
 | **F12** | Show or hide the stats (frame rate and timing) |
+| **F9** | Open or close the on-screen keyboard |
 | Controller **Back** | Open the menu |
 | **Esc** | Back out of a menu page (in the game, it does whatever the game uses it for) |
+
+When a game is waiting for text, the on-screen keyboard opens by itself only if the last input was a controller. After a mouse or a keyboard, it stays closed until you press F9.
 
 ### Shared league (Season)
 

@@ -107,6 +107,53 @@ static int test_room_keys(void)
     return 0;
 }
 
+static void mouse_click(void)
+{
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_MOUSEBUTTONDOWN;
+    e.button.button = SDL_BUTTON_LEFT;
+    SDL_PushEvent(&e);
+    ob_plat_pump();
+}
+
+static void pad_press(void)
+{
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_CONTROLLERBUTTONDOWN;
+    e.cbutton.button = SDL_CONTROLLER_BUTTON_A;
+    SDL_PushEvent(&e);
+    ob_plat_pump();
+}
+
+/* auto-open only after a controller; F9 always toggles */
+static int test_osk_auto(void)
+{
+    CHECK(!ob_plat_osk_is_open());
+    ob_plat_osk_open();
+    CHECK(!ob_plat_osk_is_open());                         /* last input was a key (room / overlay), not a pad */
+    tap(SDL_SCANCODE_F9);
+    CHECK(ob_plat_osk_is_open());                           /* F9 opens by hand */
+    tap(SDL_SCANCODE_F9);
+    CHECK(!ob_plat_osk_is_open());
+    mouse_click();
+    ob_plat_osk_open();
+    CHECK(!ob_plat_osk_is_open());                         /* last input was the mouse */
+    pad_press();
+    ob_plat_osk_open();
+    CHECK(ob_plat_osk_is_open());                           /* last input was a controller */
+    ob_plat_osk_close();
+    CHECK(!ob_plat_osk_is_open());
+    tap(SDL_SCANCODE_A);
+    ob_plat_osk_open();
+    CHECK(!ob_plat_osk_is_open());                         /* last input was a key again */
+    tap(SDL_SCANCODE_F9);
+    CHECK(ob_plat_osk_is_open());                           /* F9 still opens after a key */
+    ob_plat_osk_close();
+    return 0;
+}
+
 int main(void)
 {
     if (test_osk()) return 1;
@@ -137,6 +184,7 @@ int main(void)
     CHECK(changed_calls >= 1);
     ob_plat_present();
     if (test_room_keys()) return 1;
+    if (test_osk_auto()) return 1;
     ob_plat_close();
     CHECK(!ob_plat_window());
     printf("test_plat ok\n");

@@ -25,7 +25,7 @@ It describes how the work is set up and checked, not where any one piece of work
 | No line-ending rewrites | Don't commit a file whose only change is its line endings |
 | Game code doesn't move | Overbar work changes host shells only. Game code (`src/`, `game/`) and frame hashes stay the same |
 | Library stays generic | Overbar's modules (overlay, net, season, vdrive, files) are for any game on any platform, or many games on one platform. A title's folders, names, export, and merge live in that port |
-| Keys stay | `` ` `` and F11 open the overlay, F12 shows the stats, Alt+Enter toggles fullscreen |
+| Keys stay | `` ` `` and F11 open the overlay, F12 shows the stats, F9 the on-screen keyboard, Alt+Enter toggles fullscreen |
 | Builds work as checked out | `-Werror` is for CI only. Don't fix pre-existing warnings or the known ucrt64 failures as part of other work |
 | Credit | Overbar is a derivative of 1nputs' PulseMan. A derivative of Overbar carries the credit block in the README |
 

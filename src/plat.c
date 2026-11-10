@@ -42,6 +42,8 @@ static struct {
 } P = { .text_on = -1, .cursor_hidden = -1 };
 static ob_sides *R_sides;                    /* the select-sides screen and chat (ob_plat_room) */
 static ob_chat *R_chat;
+enum { IN_NONE = 0, IN_KEY, IN_MOUSE, IN_PAD };
+static int last_in;                           /* last real input: a key, the mouse, or a pad (host keys do not count) */
 
 SDL_Window *ob_plat_window(void) { return P.win; }
 SDL_Renderer *ob_plat_renderer(void) { return P.ren; }
@@ -204,12 +206,14 @@ void ob_plat_close(void)
     memset(&P, 0, sizeof P);
     P.text_on = -1;
     P.cursor_hidden = -1;
+    last_in = IN_NONE;
 }
 
 /* ---- text input, the cursor, the overlay's keys ---- */
 
 static ob_osk osk;
 static int osk_ready;
+
 static void osk_key(int sc, int down, void *ud)
 {
     (void)ud;
@@ -217,10 +221,67 @@ static void osk_key(int sc, int down, void *ud)
     if (P.hk.key) P.hk.key(sc, down);
 }
 static void osk_init_once(void) { if (!osk_ready) { ob_osk_init(&osk, osk_key, NULL); osk_ready = 1; } }
-void ob_plat_osk_open(void) { osk_init_once(); ob_osk_open(&osk); }
+
+/* F9: open or close, whether or not a pad was last. Overlay and the keyboard are not open together. */
+static void osk_show(int on)
+{
+    osk_init_once();
+    if (on) {
+        if (P.host && P.host->overlay_open) ob_overlay_close(P.host);
+        ob_osk_open(&osk);
+    } else ob_osk_close(&osk);
+}
+static void osk_toggle(void) { osk_init_once(); osk_show(!osk.open); }
+
+/* the port calls this when the game waits for text (a line editor). It pops only after a controller. */
+void ob_plat_osk_open(void)
+{
+    osk_init_once();
+    if (last_in != IN_PAD) return;
+    if (P.host && P.host->overlay_open) return;
+    ob_osk_open(&osk);
+}
 void ob_plat_osk_close(void) { osk_init_once(); ob_osk_close(&osk); }
 int ob_plat_osk_is_open(void) { return osk_ready && osk.open; }
 void ob_plat_osk_draw(uint32_t *px, int w, int h, int pitch) { if (osk_ready) ob_osk_draw(&osk, px, w, h, pitch); }
+
+static void note_input(const SDL_Event *e)
+{
+    int v;
+    switch (e->type) {
+    case SDL_KEYDOWN:
+        if (e->key.repeat) return;
+        if (ob_map_key(e->key.keysym.scancode) != OB_HOSTKEY_NONE) return;  /* F9 / F11 / F12 / ` */
+        last_in = IN_KEY;
+        return;
+    case SDL_MOUSEMOTION:
+        if (e->motion.xrel || e->motion.yrel) last_in = IN_MOUSE;
+        return;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEWHEEL:
+        last_in = IN_MOUSE;
+        return;
+    case SDL_CONTROLLERBUTTONDOWN:
+        last_in = IN_PAD;
+        return;
+    case SDL_CONTROLLERAXISMOTION:
+        v = e->caxis.value;
+        if (v > 16384 || v < -16384) last_in = IN_PAD;
+        return;
+    case SDL_JOYBUTTONDOWN:
+        last_in = IN_PAD;
+        return;
+    case SDL_JOYHATMOTION:
+        if (e->jhat.value != SDL_HAT_CENTERED) last_in = IN_PAD;
+        return;
+    case SDL_JOYAXISMOTION:
+        v = e->jaxis.value;
+        if (v > 16384 || v < -16384) last_in = IN_PAD;
+        return;
+    default:
+        return;
+    }
+}
 
 /* the keyboard takes the d-pad, A / Enter and B / Esc while it is open (its own copy of the event: 1 when used) */
 static int osk_event(const SDL_Event *e)
@@ -368,7 +429,11 @@ static void overlay_handle(int mdrt_input)
 static void pad_back(void)
 {
     if (P.host->overlay_open) ob_overlay_close(P.host);
-    else ob_overlay_open(P.host);
+    else {
+        osk_init_once();
+        ob_osk_close(&osk);
+        ob_overlay_open(P.host);
+    }
 }
 
 static void overlay_mouse(int wx, int wy, int what)
@@ -393,7 +458,7 @@ static int event_used(const SDL_Event *e, int captured)
     case SDL_QUIT: case SDL_TEXTINPUT: case SDL_SYSWMEVENT: return 1;
     case SDL_KEYDOWN: case SDL_KEYUP: {
         int k = e->key.keysym.scancode;
-        return open || k == SDL_SCANCODE_GRAVE || k == SDL_SCANCODE_F11 || k == SDL_SCANCODE_F12;
+        return open || k == SDL_SCANCODE_GRAVE || k == SDL_SCANCODE_F9 || k == SDL_SCANCODE_F11 || k == SDL_SCANCODE_F12;
     }
     case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL: return P.host->overlay_open && !P.hk.window_only;
     case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: return open && !P.hk.no_pads;
@@ -514,6 +579,7 @@ void ob_plat_pump(void)
     cursor_update();
     if (getenv("OVERBAR_TEST_KEYS")) test_keys();
     while (SDL_PollEvent(&e)) {
+        note_input(&e);
         if (P.hk.event && P.hk.event(&e)) continue;
         if (osk_event(&e)) continue;
         if (room_event(&e)) continue;
@@ -533,7 +599,10 @@ void ob_plat_pump(void)
             if (P.host->overlay_open && ob_overlay_editing(P.host)) ob_overlay_text(P.host, e.text.text);
         } else if (e.type == SDL_KEYDOWN && P.host->overlay_open && ob_overlay_editing(P.host)) {
             SDL_Scancode k = e.key.keysym.scancode;
-            if (k == SDL_SCANCODE_V && (SDL_GetModState() & (KMOD_CTRL | KMOD_GUI))) {
+            if (!e.key.repeat && ob_map_key(k) == OB_HOSTKEY_OSK) {
+                osk_toggle();
+                after_change();
+            } else if (k == SDL_SCANCODE_V && (SDL_GetModState() & (KMOD_CTRL | KMOD_GUI))) {
                 char *clip = SDL_GetClipboardText();
                 if (clip) { ob_overlay_text(P.host, clip); SDL_free(clip); }
             } else {
@@ -544,9 +613,13 @@ void ob_plat_pump(void)
             int sc = e.key.keysym.scancode;
             if (captured) { if (P.hk.raw_key) P.hk.raw_key(sc); }
             else if (ob_overlay_toggle_key(P.host, sc) || ob_stats_toggle_key(P.host, sc)) {
+                if (P.host->overlay_open) { osk_init_once(); ob_osk_close(&osk); }
                 after_change();
                 P.fps_frames = P.fps_all = 0;
                 P.fps_since = SDL_GetTicks();
+            } else if (ob_map_key(sc) == OB_HOSTKEY_OSK) {
+                osk_toggle();
+                after_change();
             } else if (P.host->overlay_open) {
                 int in = overlay_key_to_input(sc);
                 if (in >= 0) overlay_handle(in);
