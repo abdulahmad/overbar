@@ -23,7 +23,14 @@
  * (ob_season_played). Its result reaches the master at each one's next sync, one team from each copy.
 
  * A team made human for a player on another machine (the original's "add a human team" and its floppy) is
- * ob_season_give: the copy goes to that machine and its game imports it.
+ * ob_season_give: the copy goes to that machine and its game imports it. The host can do it all, or a player
+ * in the room picks a team for themself (ob_season_claim): the host's game adds the human team (add_human)
+ * and gives its first copy. ob_season_teams asks the host who has which team, for a picking screen.
+ *
+ * A team as a file (the original's floppy, for a player away from the room): ob_season_pack writes a team's
+ * export (with the games played away) into one file; the host takes it (ob_season_take_pack: the merge, as a
+ * sync does it) and writes a fresh copy into a file back, which the player imports (ob_season_import_pack).
+ * A first copy can go the same way (ob_season_pack_copy on the host).
  *
  * The port's hooks are the game's own routines, with the virtual drive set on the folder given. Messages
  * are of type OB_NET_TYPE_SEASON (ob_room_modules routes them, and the files'). Each machine keeps a small
@@ -69,7 +76,12 @@ typedef struct ob_season_ops {
     int (*import_team)(void *ud, int team, const char *dir);
     /* the folder of this machine's league, for a mirror: 0, or -1 */
     int (*league_dir)(void *ud, char *dir, int size);
+    /* (the master) the game's "add a human team" for team, for the player name (no questions on the host's
+     * screen): 0, or -1 (NULL: players cannot pick their teams; the host adds them) */
+    int (*add_human)(void *ud, int team, const char *name);
 } ob_season_ops;
+
+enum { OB_SEASON_FREE, OB_SEASON_HOSTS, OB_SEASON_OWNED };    /* ob_season.roster_kind: a team ... */
 
 enum {                                  /* ob_season.state: a guest's sync */
     OB_SEASON_IDLE, OB_SEASON_ASKED, OB_SEASON_SENDING, OB_SEASON_TAKING, OB_SEASON_SYNCED, OB_SEASON_FAILED
@@ -103,6 +115,7 @@ typedef struct ob_season {
     uint32_t merged[OB_SEASON_MERGED];  /* (the master) keys of games merged from copies ... */
     signed char merged_team[OB_SEASON_MERGED];  /* ... and for which team (-1: any, an older ledger) */
     int nmerged;
+    uint32_t took[OB_SEASON_TEAMS];     /* (the master) by team: the hash of the last team's file taken (0 none) */
     uint32_t played[OB_SEASON_PLAYED];  /* (a copy) games played on it away from the master, not merged yet */
     int nplayed;
     ob_season_peer peer[OB_NET_MAX_MACHINES];
@@ -110,6 +123,12 @@ typedef struct ob_season {
     unsigned given;                     /* (a guest) by team: a first copy taken (ob_season_give) */
     unsigned mirror_to, mirror_ok, mirror_bad;      /* (a player of the match) machines sent its copy, taken, failed */
     unsigned mirror_have;               /* by machine: its copy is here as a mirror */
+    /* (a guest) picking a team */
+    int claim;                          /* the team asked for (-1 none); OB_SEASON_TEAMS + team: given */
+    int roster_have;                    /* the host's list came */
+    char roster_league[OB_SEASON_TEXT + 1];         /* the host's league */
+    int roster_kind[OB_SEASON_TEAMS];   /* OB_SEASON_FREE (a computer team), _HOSTS (human on the host), _OWNED */
+    char roster[OB_SEASON_TEAMS][OB_NET_NAME + 1];  /* (_OWNED) its player */
     char why[160];                      /* the last failure ("" none) */
 } ob_season;
 
@@ -131,6 +150,22 @@ int ob_season_busy(const ob_season *s);
 /* (the master) a team becomes human on a guest's machine: its first copy (the game's copy for a human team) goes
  * to machine, whose player (name) owns the team from now on, and its game imports it (making the league there): 0, -1 */
 int ob_season_give(ob_season *s, int machine, const char *name, int team);
+
+/* (a guest) asks the host on machine host who has which team (roster_have, roster_kind[], roster[] when it comes) */
+int ob_season_teams(ob_season *s, int host);
+/* (a guest) asks the host for team as this player's: the host's game makes it human and its first copy comes and
+ * is imported (claim becomes OB_SEASON_TEAMS + team; on a refusal claim is -1 and why says so): 0, or -1 */
+int ob_season_claim(ob_season *s, int host, int team);
+
+/* (a guest) team's export, with the games played away, into the file path: 0, or -1 */
+int ob_season_pack(ob_season *s, int team, const char *path);
+/* (the master) a player's file (ob_season_pack): merged as a sync does it, and a fresh copy for the team into the
+ * file back: 0, or -1 (why says why: another league, a team that is someone else's, a damaged file) */
+int ob_season_take_pack(ob_season *s, const char *path, const char *back);
+/* (the master) team's first copy, for player name, into the file path (ob_season_give without the room): 0, -1 */
+int ob_season_pack_copy(ob_season *s, const char *name, int team, const char *path);
+/* (a guest) the host's file (ob_season_take_pack's back, or ob_season_pack_copy): imported: 0, or -1 */
+int ob_season_import_pack(ob_season *s, const char *path);
 
 /* a league game played on this copy away from the master (each player of such a match), kept till merged */
 void ob_season_played(ob_season *s, uint32_t key);
