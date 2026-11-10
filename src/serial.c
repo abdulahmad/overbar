@@ -125,6 +125,12 @@ static void command(ob_serial *p, const char *line)
     const char *s = line;
     int ok = 1;
     while (*s == ' ') s++;
+    {                                   /* a Hayes modem's line starts at its AT: what came before (a +++ sent while
+                                           offline, line noise) is not part of it */
+        const char *at = s;
+        while (at[0] && !(upper(at[0]) == 'A' && upper(at[1]) == 'T')) at++;
+        if (at[0]) s = at;
+    }
     if (upper(s[0]) != 'A' || upper(s[1]) != 'T') { if (*s) result(p, 4, "ERROR"); return; }
     s += 2;
     while (*s && ok) {

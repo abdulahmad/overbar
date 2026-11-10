@@ -133,6 +133,16 @@ static void modem(void)
     dsays(&D[0], "ATE1\rATQ0\rATX4\r");
     pump();
     CHECK(heard(&D[0], "ATE1\r") && heard(&D[0], "\r\nOK\r\n"), "modem: commands echoed and answered OK");
+    forget(&D[0]);
+    dsays(&D[0], "+++");                       /* (96's sub_17AC7: +++ while offline, then AT on the same line) */
+    wait_ms(200);
+    dsays(&D[0], "AT\r");
+    pump();
+    CHECK(heard(&D[0], "\r\nOK\r\n") && !heard(&D[0], "ERROR"), "modem: +++ while offline, then AT: OK");
+    forget(&D[0]);
+    dsays(&D[0], "AT &F&KN0S37=9\r");
+    pump();
+    CHECK(heard(&D[0], "\r\nOK\r\n"), "modem: 96's init string: OK");
     dsays(&D[1], "ATZ\rATS0=1\r");
     pump();
     forget(&D[0]); forget(&D[1]);
