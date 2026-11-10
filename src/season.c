@@ -483,6 +483,11 @@ static void got_claim(ob_season *s, int from, rd *r)
     if (r->bad || from < 0 || from >= OB_NET_MAX_MACHINES) return;
     if (t >= OB_SEASON_TEAMS || !name[0]) { refuse(s, from, t, "no such team"); return; }
     if (load(s) || !s->league.master) { refuse(s, from, t, "the host has no master league"); return; }
+    /* a team the host set up for a player away belongs to that player, not to whoever picked it last: when
+       that player picks it again (a copy lost, a new machine) they get a fresh copy */
+    if (s->owner[t][0] && set_up_for(s, t) && !ob_fs_stricmp(set_up_for(s, t), name) &&
+        team_index(s->league.team, s->league.nteam, t) < 0)
+        s->owner[t][0] = 0;
     if (s->owner[t][0] && ob_fs_stricmp(s->owner[t], name)) {
         snprintf(why, sizeof why, "that team is %s's", s->owner[t]);
         refuse(s, from, t, why);

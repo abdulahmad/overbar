@@ -169,7 +169,11 @@ static void roster_items(const ob_host *h, ob_item *out, int *n, int cap)
             if (order[k] == OB_SEASON_FREE && (!h->season_team_name || !h->season_team_name(h->season_name_ud, i)))
                 continue;
             team_who(h, i, s->roster[i], lab, (int)sizeof lab);
-            if (order[k] == OB_SEASON_WAITING) add_action(out, n, cap, OB_ID_SEASON_TEAM + i, lab, NULL);
+            if (s->claim == OB_SEASON_TEAMS + i && order[k] != OB_SEASON_HOSTS)
+                add_text(out, n, cap, OB_ID_SEASON_NOTE, lab, "yours");
+            else if (order[k] == OB_SEASON_WAITING ||
+                     (order[k] == OB_SEASON_OWNED && s->me[0] && !ob_fs_stricmp(s->roster[i], s->me)))
+                add_action(out, n, cap, OB_ID_SEASON_TEAM + i, lab, NULL);
             else if (order[k] == OB_SEASON_FREE) add_action(out, n, cap, OB_ID_SEASON_TEAM + i, lab, "new player");
             else add_text(out, n, cap, OB_ID_SEASON_NOTE, lab,
                           order[k] == OB_SEASON_HOSTS ? "the host's" :
