@@ -7,6 +7,13 @@
  *   2 WELCOME (the master) ok u8, why (length u8, bytes), the teams taken (count u8, each u8)
  *   3 SYNCED  (a guest) every copy imported
  *   4 FAIL    (the master) why (length u8, bytes)
+ *   5 CLAIM   (a guest) its name, the team u8
+ *   6 REFUSED (the master) the team u8, why
+ *   7 TEAMS   (a guest) nothing: who has which team?
+ *   8 ROSTER  (the master) the league's name, count u8, each: team u8, kind u8, the player's name
+ * A team's file (ob_season_pack and the others): text lines "OBTEAM 1", "league <name>", "id <id>", "team <n>",
+ * "player <name>", "kind export|copy|first", "played <key>" / "merged <key>", then "file <name> <size>" and the
+ * bytes and a newline, for each file; "end".
  * Files: "x<team>" a guest's export, "m<team>" the master's copy back, "g<team>" a first copy, "L" a mirror (a player's copy).
  * Folders under base: L<hash of the league>/ (season.txt, the ledger; x/t<team>, a guest's exports;
  * m/t<team>, copies taken; in/m<machine>-t<team>, exports come to the master; out/m<machine>-t<team>, copies
@@ -17,7 +24,7 @@
 #include <string.h>
 #include "fsdir.h"
 
-enum { HELLO = 1, WELCOME, SYNCED, FAIL };
+enum { HELLO = 1, WELCOME, SYNCED, FAIL, CLAIM, REFUSED, TEAMS, ROSTER };
 
 #define DIRLEN (OB_SEASON_PATH + 48)
 
@@ -92,6 +99,7 @@ static void save_ledger(ob_season *s)
     if (make(s, NULL, NULL, d, sizeof d) || !(t = (char *)malloc(cap))) return;
     n += (size_t)snprintf(t + n, cap - n, "OBSEASON 1\nleague %s\nid %s\n", s->league.name, s->league.id);
     for (i = 0; i < OB_SEASON_TEAMS; i++) if (s->owner[i][0]) n += (size_t)snprintf(t + n, cap - n, "owner %d %s\n", i, s->owner[i]);
+    for (i = 0; i < OB_SEASON_TEAMS; i++) if (s->took[i]) n += (size_t)snprintf(t + n, cap - n, "took %d %lu\n", i, (unsigned long)s->took[i]);
     for (i = 0; i < s->nmerged; i++) n += (size_t)snprintf(t + n, cap - n, "merged %lu %d\n", (unsigned long)s->merged[i], s->merged_team[i]);
     for (i = 0; i < s->nplayed; i++) n += (size_t)snprintf(t + n, cap - n, "played %lu\n", (unsigned long)s->played[i]);
     snprintf(path, sizeof path, "%s/season.txt", d);
@@ -114,6 +122,7 @@ static int load(ob_season *s)
     s->league = l;
     memset(s->owner, 0, sizeof s->owner);
     s->nmerged = s->nplayed = 0;
+    memset(s->took, 0, sizeof s->took);
     league_dir(s, d, sizeof d);
     snprintf(path, sizeof path, "%s/season.txt", d);
     if (ob_fs_read(path, &data, &size)) return 0;
@@ -128,6 +137,7 @@ static int load(ob_season *s)
         if (next) *next++ = 0;
         if (sscanf(line, "owner %d %24[^\n]", &team, name) == 2 && team >= 0 && team < OB_SEASON_TEAMS)
             snprintf(s->owner[team], sizeof s->owner[team], "%s", name);
+        else if (sscanf(line, "took %d %lu", &team, &v) == 2 && team >= 0 && team < OB_SEASON_TEAMS) s->took[team] = (uint32_t)v;
         else if (sscanf(line, "merged %lu", &v) == 1 && s->nmerged < OB_SEASON_MERGED) {
             if (sscanf(line, "merged %lu %d", &v, &team) != 2 || team < -1 || team >= OB_SEASON_TEAMS) team = -1;
             s->merged[s->nmerged] = (uint32_t)v;
@@ -174,6 +184,7 @@ void ob_season_init(ob_season *s, const ob_season_ops *ops, const char *base, co
     s->files = files;
     s->send = send;
     s->send_ud = ud;
+    s->claim = -1;
     ob_fs_mkdir(s->base);
     if (files) ob_files_hooks(files, where, done, s);
 }
@@ -408,6 +419,7 @@ static void done(void *ud, int out, int peer, const char *tag, int ok, const cha
         snprintf(dir, sizeof dir, "%s/new/t%d", s->base, team);
         if (!s->ops.import_team || s->ops.import_team(s->ops.ud, team, dir)) { snprintf(s->why, sizeof s->why, "the game's import of a first copy failed"); return; }
         s->given |= 1u << team;
+        if (s->claim == team) s->claim = OB_SEASON_TEAMS + team;
         ob_fs_clear(dir);
         return;
     }
@@ -438,6 +450,362 @@ static void done(void *ud, int out, int peer, const char *tag, int ok, const cha
     }
 }
 
+/* ---- picking a team ---- */
+
+static void refuse(ob_season *s, int to, int team, const char *why)
+{
+    wr w;
+    w.n = 0;
+    put8(&w, REFUSED);
+    put8(&w, (unsigned)team);
+    putstr(&w, why);
+    emit(s, to, &w);
+}
+
+static void got_claim(ob_season *s, int from, rd *r)
+{
+    char name[OB_NET_NAME + 1], why[96];
+    int t;
+    getstr(r, name, sizeof name);
+    t = (int)get8(r);
+    if (r->bad || from < 0 || from >= OB_NET_MAX_MACHINES) return;
+    if (t >= OB_SEASON_TEAMS || !name[0]) { refuse(s, from, t, "no such team"); return; }
+    if (load(s) || !s->league.master) { refuse(s, from, t, "the host has no master league"); return; }
+    if (s->owner[t][0] && ob_fs_stricmp(s->owner[t], name)) {
+        snprintf(why, sizeof why, "that team is %s's", s->owner[t]);
+        refuse(s, from, t, why);
+        return;
+    }
+    if (!s->owner[t][0]) {
+        if (team_index(s->league.team, s->league.nteam, t) >= 0) { refuse(s, from, t, "that team is the host's"); return; }
+        if (!s->ops.add_human) { refuse(s, from, t, "the host adds the human teams"); return; }
+        if (s->ops.add_human(s->ops.ud, t, name)) { refuse(s, from, t, "the host's game could not add that team"); return; }
+    }
+    if (ob_season_give(s, from, name, t)) refuse(s, from, t, "the host could not make a copy");
+}
+
+static void got_teams(ob_season *s, int from)
+{
+    wr w;
+    int t, n = 0;
+    size_t at;
+    if (from < 0 || from >= OB_NET_MAX_MACHINES || load(s) || !s->league.master) return;
+    w.n = 0;
+    put8(&w, ROSTER);
+    putstr(&w, s->league.name);
+    at = w.n;
+    put8(&w, 0);
+    for (t = 0; t < OB_SEASON_TEAMS; t++) {
+        int kind = s->owner[t][0] ? OB_SEASON_OWNED : team_index(s->league.team, s->league.nteam, t) >= 0 ? OB_SEASON_HOSTS : -1;
+        if (kind < 0) continue;
+        put8(&w, (unsigned)t);
+        put8(&w, (unsigned)kind);
+        putstr(&w, kind == OB_SEASON_OWNED ? s->owner[t] : "");
+        n++;
+    }
+    w.b[at] = (uint8_t)n;
+    emit(s, from, &w);
+}
+
+static void got_roster(ob_season *s, int from, rd *r)
+{
+    char lname[OB_SEASON_TEXT + 1];
+    int kind[OB_SEASON_TEAMS];
+    char who[OB_SEASON_TEAMS][OB_NET_NAME + 1];
+    int n, i;
+    if (from != s->host) return;
+    memset(who, 0, sizeof who);
+    for (i = 0; i < OB_SEASON_TEAMS; i++) kind[i] = OB_SEASON_FREE;
+    getstr(r, lname, sizeof lname);
+    n = (int)get8(r);
+    for (i = 0; i < n; i++) {
+        int t = (int)get8(r), k = (int)get8(r);
+        char nm[OB_NET_NAME + 1];
+        getstr(r, nm, sizeof nm);
+        if (t < OB_SEASON_TEAMS && (k == OB_SEASON_HOSTS || k == OB_SEASON_OWNED)) { kind[t] = k; memcpy(who[t], nm, sizeof nm); }
+    }
+    if (r->bad) return;
+    memcpy(s->roster_kind, kind, sizeof kind);
+    memcpy(s->roster, who, sizeof who);
+    memcpy(s->roster_league, lname, sizeof lname);
+    s->roster_have = 1;
+}
+
+int ob_season_teams(ob_season *s, int host)
+{
+    wr w;
+    if (host < 0 || host >= OB_NET_MAX_MACHINES) return -1;
+    s->host = host;
+    s->roster_have = 0;
+    w.n = 0;
+    put8(&w, TEAMS);
+    emit(s, host, &w);
+    return 0;
+}
+
+int ob_season_claim(ob_season *s, int host, int team)
+{
+    wr w;
+    if (host < 0 || host >= OB_NET_MAX_MACHINES || team < 0 || team >= OB_SEASON_TEAMS || !s->me[0]) return -1;
+    s->host = host;
+    s->claim = team;
+    s->why[0] = 0;
+    w.n = 0;
+    put8(&w, CLAIM);
+    putstr(&w, s->me);
+    put8(&w, (unsigned)team);
+    emit(s, host, &w);
+    return 0;
+}
+
+/* ---- a team as a file ---- */
+
+typedef struct buf { char *p; size_t n, cap; int bad; } buf;
+static void bput(buf *b, const void *d, size_t n)
+{
+    if (b->bad) return;
+    if (b->n + n > b->cap) {
+        size_t c = b->cap ? b->cap : 4096;
+        char *q;
+        while (c < b->n + n) c *= 2;
+        if (!(q = (char *)realloc(b->p, c))) { b->bad = 1; return; }
+        b->p = q;
+        b->cap = c;
+    }
+    memcpy(b->p + b->n, d, n);
+    b->n += n;
+}
+static void bline(buf *b, const char *key, const char *v)
+{
+    bput(b, key, strlen(key));
+    bput(b, " ", 1);
+    bput(b, v, strlen(v));
+    bput(b, "\n", 1);
+}
+
+/* the file: a header and dir's files */
+static int pack_write(const ob_season *s, const char *path, int team, const char *player, const char *kind,
+                      const char *keyword, const uint32_t *keys, int nkeys, const char *dir)
+{
+    static char files[256][OB_FS_NAME];
+    char num[32], fp[DIRLEN + OB_FS_NAME + 2];
+    buf b;
+    int n, i, err;
+    memset(&b, 0, sizeof b);
+    bput(&b, "OBTEAM 1\n", 9);
+    bline(&b, "league", s->league.name);
+    bline(&b, "id", s->league.id);
+    snprintf(num, sizeof num, "%d", team);
+    bline(&b, "team", num);
+    bline(&b, "player", player);
+    bline(&b, "kind", kind);
+    for (i = 0; i < nkeys; i++) { snprintf(num, sizeof num, "%lu", (unsigned long)keys[i]); bline(&b, keyword, num); }
+    n = ob_fs_list(dir, files, 256);
+    if (n < 0) { free(b.p); return -1; }
+    for (i = 0; i < n; i++) {
+        uint8_t *data;
+        size_t size;
+        char head[OB_FS_NAME + 32];
+        ob_fs_join(fp, sizeof fp, dir, files[i]);
+        if (ob_fs_read(fp, &data, &size)) { free(b.p); return -1; }
+        snprintf(head, sizeof head, "file %.63s %lu\n", files[i], (unsigned long)size);
+        bput(&b, head, strlen(head));
+        bput(&b, data, size);
+        bput(&b, "\n", 1);
+        free(data);
+    }
+    bput(&b, "end\n", 4);
+    err = b.bad ? -1 : ob_fs_write(path, b.p, b.n);
+    free(b.p);
+    return err;
+}
+
+static void cut(char *out, size_t cap, const char *in)
+{
+    size_t n = strlen(in);
+    if (n >= cap) n = cap - 1;
+    memcpy(out, in, n);
+    out[n] = 0;
+}
+
+typedef struct pack {
+    char league[OB_SEASON_TEXT + 1], id[OB_SEASON_TEXT + 1], player[OB_NET_NAME + 1], kind[16];
+    int team;
+    uint32_t keys[OB_SEASON_PLAYED];
+    int nkeys;
+} pack;
+
+/* reads path's header into pk and, with dir, its files into dir (made, emptied first): 0, or -1 */
+static int pack_read(const char *path, pack *pk, const char *keyword, const char *dir)
+{
+    uint8_t *data;
+    size_t size, at = 0;
+    int ended = 0, first = 1;
+    memset(pk, 0, sizeof *pk);
+    pk->team = -1;
+    if (ob_fs_read(path, &data, &size)) return -1;
+    if (dir) { ob_fs_clear(dir); ob_fs_mkdir(dir); }
+    while (at < size && !ended) {
+        char line[OB_FS_NAME + 96], *nl = (char *)memchr(data + at, '\n', size - at);
+        size_t len = nl ? (size_t)(nl - (char *)data) - at : size - at;
+        unsigned long v, fsize;
+        char name[OB_FS_NAME];
+        if (!nl || len >= sizeof line) break;
+        memcpy(line, data + at, len);
+        line[len] = 0;
+        at += len + 1;
+        if (first) { if (strcmp(line, "OBTEAM 1")) break; first = 0; continue; }
+        if (!strncmp(line, "league ", 7)) cut(pk->league, sizeof pk->league, line + 7);
+        else if (!strncmp(line, "id ", 3)) cut(pk->id, sizeof pk->id, line + 3);
+        else if (!strncmp(line, "player ", 7)) cut(pk->player, sizeof pk->player, line + 7);
+        else if (!strncmp(line, "kind ", 5)) cut(pk->kind, sizeof pk->kind, line + 5);
+        else if (sscanf(line, "team %d", &pk->team) == 1) {}
+        else if (!strncmp(line, keyword, strlen(keyword)) && line[strlen(keyword)] == ' ' &&
+                 sscanf(line + strlen(keyword) + 1, "%lu", &v) == 1) { if (pk->nkeys < OB_SEASON_PLAYED) pk->keys[pk->nkeys++] = (uint32_t)v; }
+        else if (sscanf(line, "file %63s %lu", name, &fsize) == 2) {
+            char fp[DIRLEN + OB_FS_NAME + 2];
+            if (fsize > size - at || strchr(name, '/') || strchr(name, '\\') || name[0] == '.') break;
+            if (dir) { ob_fs_join(fp, sizeof fp, dir, name); if (ob_fs_write(fp, data + at, (size_t)fsize)) break; }
+            at += (size_t)fsize + 1;
+        } else if (!strcmp(line, "end")) ended = 1;
+    }
+    free(data);
+    if (!ended || pk->team < 0 || pk->team >= OB_SEASON_TEAMS || !pk->league[0]) return -1;
+    return 0;
+}
+
+int ob_season_pack(ob_season *s, int team, const char *path)
+{
+    char dir[DIRLEN], leaf[16];
+    if (load(s) || s->league.master) { snprintf(s->why, sizeof s->why, "no league copy here"); return -1; }
+    if (team < 0 || team >= OB_SEASON_TEAMS || team_index(s->league.team, s->league.nteam, team) < 0) {
+        snprintf(s->why, sizeof s->why, "that team is not one of this copy's");
+        return -1;
+    }
+    snprintf(leaf, sizeof leaf, "t%d", team);
+    if (make(s, "x", leaf, dir, sizeof dir)) return -1;
+    ob_fs_clear(dir);
+    ob_fs_mkdir(dir);
+    if (!s->ops.export_team || s->ops.export_team(s->ops.ud, team, dir)) { snprintf(s->why, sizeof s->why, "the game's export failed"); return -1; }
+    if (pack_write(s, path, team, s->me, "export", "played", s->played, s->nplayed, dir)) {
+        snprintf(s->why, sizeof s->why, "could not write the team's file");
+        return -1;
+    }
+    return 0;
+}
+
+/* (the master) team's fresh copy for player into the file path */
+static int copy_out(ob_season *s, int team, const char *player, const char *kind, const uint32_t *keys, int nkeys, const char *path)
+{
+    char dir[DIRLEN], leaf[24];
+    snprintf(leaf, sizeof leaf, "f-t%d", team);
+    if (make(s, "out", leaf, dir, sizeof dir)) return -1;
+    ob_fs_clear(dir);
+    ob_fs_mkdir(dir);
+    if (!s->ops.copy_team || s->ops.copy_team(s->ops.ud, team, dir) ||
+        pack_write(s, path, team, player, kind, "merged", keys, nkeys, dir)) {
+        snprintf(s->why, sizeof s->why, "the host could not make a copy");
+        return -1;
+    }
+    ob_fs_clear(dir);
+    return 0;
+}
+
+int ob_season_take_pack(ob_season *s, const char *path, const char *back)
+{
+    pack pk;
+    char dir[DIRLEN], leaf[24];
+    uint32_t fresh[OB_SEASON_PLAYED];
+    int nfresh = 0, i;
+    if (load(s) || !s->league.master) { snprintf(s->why, sizeof s->why, "no master league here"); return -1; }
+    snprintf(leaf, sizeof leaf, "f-t-in");
+    if (make(s, "in", leaf, dir, sizeof dir)) return -1;
+    if (pack_read(path, &pk, "played", dir) || strcmp(pk.kind, "export")) {
+        snprintf(s->why, sizeof s->why, "not a team's file, or a damaged one");
+        ob_fs_clear(dir);
+        return -1;
+    }
+    if (strcmp(pk.league, s->league.name) || strcmp(pk.id, s->league.id)) {
+        snprintf(s->why, sizeof s->why, "that team's league is %s, not this one", pk.league);
+        ob_fs_clear(dir);
+        return -1;
+    }
+    if (!pk.player[0] || (s->owner[pk.team][0] && ob_fs_stricmp(s->owner[pk.team], pk.player))) {
+        snprintf(s->why, sizeof s->why, "that team is %s's", s->owner[pk.team][0] ? s->owner[pk.team] : "nobody");
+        ob_fs_clear(dir);
+        return -1;
+    }
+    {                                           /* the same file again: its copy back, no merge (it would count twice) */
+        uint8_t *data;
+        size_t size;
+        uint32_t h = 1;
+        if (!ob_fs_read(path, &data, &size)) { h = (uint32_t)ob_fs_hash(data, size) | 1u; free(data); }
+        if (s->took[pk.team] == h) { ob_fs_clear(dir); return copy_out(s, pk.team, pk.player, "copy", pk.keys, pk.nkeys, back); }
+        s->took[pk.team] = h;
+    }
+    for (i = 0; i < pk.nkeys; i++) if (!was_merged(s, pk.keys[i], pk.team)) fresh[nfresh++] = pk.keys[i];
+    if (!s->ops.merge_team || s->ops.merge_team(s->ops.ud, pk.team, dir, fresh, nfresh)) {
+        snprintf(s->why, sizeof s->why, "the merge of %s's team failed", pk.player);
+        s->took[pk.team] = 0;
+        ob_fs_clear(dir);
+        return -1;
+    }
+    ob_fs_clear(dir);
+    if (!s->owner[pk.team][0]) snprintf(s->owner[pk.team], sizeof s->owner[pk.team], "%s", pk.player);
+    for (i = 0; i < pk.nkeys; i++) add_merged(s, pk.keys[i], pk.team);
+    save_ledger(s);
+    return copy_out(s, pk.team, pk.player, "copy", pk.keys, pk.nkeys, back);
+}
+
+int ob_season_pack_copy(ob_season *s, const char *name, int team, const char *path)
+{
+    if (team < 0 || team >= OB_SEASON_TEAMS || !name || !name[0] || load(s) || !s->league.master) return -1;
+    if (s->owner[team][0] && ob_fs_stricmp(s->owner[team], name)) { snprintf(s->why, sizeof s->why, "that team is %s's", s->owner[team]); return -1; }
+    snprintf(s->owner[team], sizeof s->owner[team], "%s", name);
+    save_ledger(s);
+    return copy_out(s, team, name, "first", NULL, 0, path);
+}
+
+int ob_season_import_pack(ob_season *s, const char *path)
+{
+    pack pk;
+    char dir[DIRLEN];
+    int first, i, j, k;
+    snprintf(dir, sizeof dir, "%s/new", s->base);
+    ob_fs_mkdir(dir);
+    snprintf(dir, sizeof dir, "%s/new/file", s->base);
+    if (pack_read(path, &pk, "merged", dir) || (strcmp(pk.kind, "copy") && strcmp(pk.kind, "first"))) {
+        snprintf(s->why, sizeof s->why, "not a copy from the host, or a damaged one");
+        ob_fs_clear(dir);
+        return -1;
+    }
+    first = !strcmp(pk.kind, "first");
+    if (!first && (load(s) || strcmp(pk.league, s->league.name) || strcmp(pk.id, s->league.id))) {
+        snprintf(s->why, sizeof s->why, "that copy is of %s, not this league", pk.league);
+        ob_fs_clear(dir);
+        return -1;
+    }
+    if (!s->ops.import_team || s->ops.import_team(s->ops.ud, pk.team, dir)) {
+        snprintf(s->why, sizeof s->why, "the game's import failed");
+        ob_fs_clear(dir);
+        return -1;
+    }
+    ob_fs_clear(dir);
+    if (first) { s->given |= 1u << pk.team; load(s); return 0; }
+    /* the games the host merged go from the ledger (a copy for more teams keeps them till a sync: the host
+     * takes each team's half once) */
+    if (s->league.nteam > 1) return 0;
+    for (i = k = 0; i < s->nplayed; i++) {
+        int gone = 0;
+        for (j = 0; j < pk.nkeys; j++) gone |= s->played[i] == pk.keys[j];
+        if (!gone) s->played[k++] = s->played[i];
+    }
+    s->nplayed = k;
+    s->sent_played = 0;
+    save_ledger(s);
+    return 0;
+}
+
 void ob_season_message(ob_season *s, int from, const void *data, size_t size)
 {
     rd r;
@@ -448,6 +816,16 @@ void ob_season_message(ob_season *s, int from, const void *data, size_t size)
     case HELLO: got_hello(s, from, &r); break;
     case WELCOME: got_welcome(s, from, &r); break;
     case SYNCED: if (from >= 0 && from < OB_NET_MAX_MACHINES) s->peer[from].state = 0; break;
+    case CLAIM: got_claim(s, from, &r); break;
+    case REFUSED: {
+        char why[80];
+        int t = (int)get8(&r);
+        getstr(&r, why, sizeof why);
+        if (from == s->host && t == s->claim) { s->claim = -1; snprintf(s->why, sizeof s->why, "%s", why); }
+        break;
+    }
+    case TEAMS: got_teams(s, from); break;
+    case ROSTER: got_roster(s, from, &r); break;
     case FAIL: {
         char why[80];
         getstr(&r, why, sizeof why);

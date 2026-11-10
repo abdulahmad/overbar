@@ -232,6 +232,8 @@ static int t_merge(void *ud, int team, const char *dir, const uint32_t *played, 
     }
     return 0;
 }
+static unsigned added;                  /* teams the host's game made human for a player */
+static int t_add(void *ud, int team, const char *name) { (void)ud; (void)name; added |= 1u << team; return 0; }
 static int t_dir(void *ud, char *dir, int size) { snprintf(dir, (size_t)size, "%s", ((mach *)ud)->league); return 0; }
 
 static void open_machine(int k, const char *name)
@@ -244,7 +246,7 @@ static void open_machine(int k, const char *name)
     snprintf(base, sizeof base, ROOT "/m%d/season", k);
     memset(&ops, 0, sizeof ops);
     ops.ud = m; ops.league = t_league; ops.export_team = t_export; ops.merge_team = t_merge;
-    ops.copy_team = t_copy; ops.import_team = t_import; ops.league_dir = t_dir;
+    ops.copy_team = t_copy; ops.import_team = t_import; ops.league_dir = t_dir; ops.add_human = t_add;
     ob_files_init(&m->f, files_send, m);
     ob_season_init(&m->s, &ops, base, name, &m->f, season_send, m);
 }
@@ -484,6 +486,71 @@ static void test_season(void)
     printf("season: first copies, A vs B, C vs D away (both copies), a sync broken off after the merge: each game once\n");
 }
 
+/* players pick their teams in the room; a team as a file for a player away from it */
+static void test_pick_and_pack(void)
+{
+    char back[200];
+    int k;
+    ob_fs_mkdir(ROOT);
+    added = 0;
+    merges = merged_keys = 0;
+    for (k = 0; k < NM; k++) { char d[64]; online[k] = 1; memset(&M[k], 0, sizeof M[k]); snprintf(d, sizeof d, ROOT "/m%d", k); ob_fs_mkdir(d); }
+    open_machine(0, "Ann");
+    open_machine(1, "Cal");
+    open_machine(2, "Dee");
+    ob_fs_mkdir(ROOT "/m0/league");
+    write_text(M[0].league, "LEAGUE.ID", "Hockey 4711");
+    for (k = 0; k < NTEAMS; k++) { char n[16]; tname(n, k); write_text(M[0].league, n, ""); }
+    M[0].teams[0] = 0; M[0].nteams = 1;
+
+    /* Cal picks C in the room */
+    CHECK(ob_season_teams(&M[1].s, 0) == 0, "pick: Cal asks who has which team");
+    pump();
+    CHECK(M[1].s.roster_have && !strcmp(M[1].s.roster_league, "Hockey") && M[1].s.roster_kind[0] == OB_SEASON_HOSTS &&
+          M[1].s.roster_kind[2] == OB_SEASON_FREE, "pick: A is the host's, C is free");
+    CHECK(ob_season_claim(&M[1].s, 0, 2) == 0, "pick: Cal asks for C");
+    pump();
+    CHECK(added == 1u << 2 && M[1].s.claim == OB_SEASON_TEAMS + 2 && M[1].s.given == 1u << 2, "pick: the host's game made C human, Cal has his copy");
+    CHECK(same_league(M[0].league, M[1].league), "pick: Cal's copy is the master's");
+    ob_season_claim(&M[1].s, 0, 0);
+    pump();
+    CHECK(M[1].s.claim == -1 && strstr(M[1].s.why, "host's") != NULL, "pick: the host's own team is refused");
+    ob_season_claim(&M[2].s, 0, 2);
+    pump();
+    CHECK(M[2].s.claim == -1 && strstr(M[2].s.why, "Cal's") != NULL, "pick: Dee cannot have Cal's team");
+    ob_season_teams(&M[2].s, 0);
+    pump();
+    CHECK(M[2].s.roster_kind[2] == OB_SEASON_OWNED && !strcmp(M[2].s.roster[2], "Cal"), "pick: the list says C is Cal's");
+
+    /* Dee away from the room: D's first copy as a file, her games, her team as a file, a copy back */
+    leave(2);
+    CHECK(ob_season_pack_copy(&M[0].s, "Dee", 3, ROOT "/first.obt") == 0, "pack: the host writes D's first copy for Dee");
+    CHECK(ob_season_import_pack(&M[2].s, ROOT "/first.obt") == 0 && M[2].s.given == 1u << 3 && same_league(M[0].league, M[2].league),
+          "pack: Dee imports it");
+    CHECK(ob_season_pack(&M[2].s, 2, ROOT "/x.obt") == -1, "pack: Dee cannot write Cal's team");
+    play(M[2].league, 7, 3, 5, 0);
+    ob_season_played(&M[2].s, 7);
+    CHECK(ob_season_pack(&M[2].s, 3, ROOT "/dee.obt") == 0, "pack: Dee writes D as a file");
+    snprintf(back, sizeof back, ROOT "/dee-back.obt");
+    CHECK(ob_season_take_pack(&M[0].s, ROOT "/dee.obt", back) == 0 && merged_keys == 1, "pack: the host takes it (game 7 merged once)");
+    CHECK(has_line(M[0].league, "T3.DB", "7 5") == 1 && count_of(M[0].league, 3) == 1, "pack: D's game is in the master once");
+    k = merges;
+    CHECK(ob_season_take_pack(&M[0].s, ROOT "/dee.obt", back) == 0 && merges == k && count_of(M[0].league, 3) == 1,
+          "pack: the same file again is not merged again (its copy back only)");
+    CHECK(ob_season_import_pack(&M[2].s, back) == 0 && M[2].s.nplayed == 0 && same_league(M[0].league, M[2].league),
+          "pack: Dee imports the copy back; game 7 is off her ledger");
+    CHECK(ob_season_take_pack(&M[0].s, back, ROOT "/y.obt") == -1, "pack: a copy is not an export");
+    CHECK(ob_season_import_pack(&M[2].s, ROOT "/dee.obt") == -1, "pack: an export is not a copy");
+    write_text(ROOT, "bad.obt", "OBTEAM 1\nleague Hockey\nteam 3\nfile T3.DB 9999\nxx");
+    CHECK(ob_season_take_pack(&M[0].s, ROOT "/bad.obt", ROOT "/y.obt") == -1, "pack: a damaged file is refused");
+    write_text(M[2].league, "LEAGUE.ID", "Other 1");
+    ob_season_pack(&M[2].s, 3, ROOT "/other.obt");
+    CHECK(ob_season_take_pack(&M[0].s, ROOT "/other.obt", ROOT "/y.obt") == -1 && strstr(M[0].s.why, "Other") != NULL,
+          "pack: another league is refused");
+    for (k = 0; k < NM; k++) { ob_season_free(&M[k].s); ob_files_free(&M[k].f); }
+    printf("pick: a player picks a free team in the room; pack: a team as a file there and back, once\n");
+}
+
 int main(void)
 {
     wipe();
@@ -491,6 +558,8 @@ int main(void)
     test_files();
     wipe();
     test_season();
+    wipe();
+    test_pick_and_pack();
     wipe();
     if (fails) { printf("%d failed\n", fails); return 1; }
     printf("season, files and drives ok\n");
