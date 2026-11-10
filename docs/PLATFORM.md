@@ -116,9 +116,14 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
   and import (the port's hooks, each with a virtual drive set on the folder given). A guest's `ob_season_sync`: its teams'
   exports go to the host, which merges them all, then sends a fresh copy of each back to be imported. The first player to
   bring a team owns it. `ob_season_give` is the host making a team human for a player elsewhere (the first copy).
-  A match away from the master (C vs D, the host away): the starter's copy goes to the others as a mirror
-  (`ob_season_mirror_send`), they play from it and drop it; `ob_season_played` keeps the game's key on the starter's copy
-  until a sync merges it, and the master hands each such game to the merge once (its ledger keeps the keys merged).
+  A match away from the master (C vs D, the host away) follows the original's rule for a game between two human teams
+  (94/95 PC's PlayLeagueGame asks for the opponent's floppy and password, and writes the game into both copies, each
+  team's stats into its own; MergeLeagueFiles then takes each team from its own copy): each player's copy goes to the
+  other machines as a mirror (`ob_season_mirror_send`, `ob_season_mirror(s, from, ...)`), every machine plays from the
+  same two copies (its own where it has one; the port points the game's league and its floppy at them) and drops the
+  mirrors after. Both copies then hold the game as played, so neither player can play it a second time. Each player
+  marks it (`ob_season_played`) until a sync merges it; the master hands each game to the merge once per team (its
+  ledger keeps game and team merged), so a sync broken off after the merge never counts a game twice.
   `ob_room_modules` routes both modules' messages; the room page shows a line about a sync.
 
 ## Modem and cable play carried by the room (online play phase 6, 2026-11-09)

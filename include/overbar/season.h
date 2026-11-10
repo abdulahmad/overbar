@@ -14,11 +14,14 @@
  * a fresh copy for each and sends it back, and the guest imports them. A game played away from the master
  * is handed to the merge once: the host keeps the keys of those merged.
  *
- * A match away from the master (C vs D with the host away): the machine whose copy the match is played
- * from sends that copy to the others as a mirror (ob_season_mirror_send); they play from the mirror and
- * drop it after (keeping none of its writes); the starter marks the game played (ob_season_played), and
- * its result reaches the master at the next sync.
- *
+ * A match away from the master (C vs D with the host away) follows the original's rule for two human teams:
+ * the game needs both teams' copies (the opponent's floppy), and it writes the result into both, each team's
+ * stats into its own copy. So each player of the match sends its copy to the other machines as a mirror
+ * (ob_season_mirror_send); every machine plays from the same two copies (its own where it has one, the
+ * mirror of the other), and drops the mirrors after, keeping none of their writes. Both players' copies then
+ * have the game played (their calendars show it), so neither can play it again, and each marks it
+ * (ob_season_played). Its result reaches the master at each one's next sync, one team from each copy.
+
  * A team made human for a player on another machine (the original's "add a human team" and its floppy) is
  * ob_season_give: the copy goes to that machine and its game imports it.
  *
@@ -58,7 +61,7 @@ typedef struct ob_season_ops {
     /* (a guest) the game's export of its team into dir: 0, or -1 */
     int (*export_team)(void *ud, int team, const char *dir);
     /* (the master) the game's merge of team's copy in dir. played: the games played on that copy away from the
-     * master that are not merged yet (the same keys come with each team of the copy): 0, or -1 */
+     * master whose result for this team is not merged yet (a key is handed once for each team): 0, or -1 */
     int (*merge_team)(void *ud, int team, const char *dir, const uint32_t *played, int nplayed);
     /* (the master) a fresh copy for team into dir (the game's copy for a human team): 0, or -1 */
     int (*copy_team)(void *ud, int team, const char *dir);
@@ -97,15 +100,16 @@ typedef struct ob_season {
     /* the ledger of this machine's league */
     ob_season_league league;
     char owner[OB_SEASON_TEAMS][OB_NET_NAME + 1];   /* (the master) who owns each team ("" nobody yet) */
-    uint32_t merged[OB_SEASON_MERGED];  /* (the master) keys of games merged from copies */
+    uint32_t merged[OB_SEASON_MERGED];  /* (the master) keys of games merged from copies ... */
+    signed char merged_team[OB_SEASON_MERGED];  /* ... and for which team (-1: any, an older ledger) */
     int nmerged;
     uint32_t played[OB_SEASON_PLAYED];  /* (a copy) games played on it away from the master, not merged yet */
     int nplayed;
     ob_season_peer peer[OB_NET_MAX_MACHINES];
     /* a match away from the master */
     unsigned given;                     /* (a guest) by team: a first copy taken (ob_season_give) */
-    unsigned mirror_to, mirror_ok, mirror_bad;      /* (the starter) machines sent its copy, taken, failed */
-    int mirror_from;                    /* (the others) whose copy is in the mirror (-1 none) */
+    unsigned mirror_to, mirror_ok, mirror_bad;      /* (a player of the match) machines sent its copy, taken, failed */
+    unsigned mirror_have;               /* by machine: its copy is here as a mirror */
     char why[160];                      /* the last failure ("" none) */
 } ob_season;
 
@@ -128,15 +132,15 @@ int ob_season_busy(const ob_season *s);
  * to machine, whose player (name) owns the team from now on, and its game imports it (making the league there): 0, -1 */
 int ob_season_give(ob_season *s, int machine, const char *name, int team);
 
-/* a league game played on this copy away from the master (the starter of such a match), kept till merged */
+/* a league game played on this copy away from the master (each player of such a match), kept till merged */
 void ob_season_played(ob_season *s, uint32_t key);
-/* (the starter of a match away from the master) its league copy to the machines in mask: 0, or -1 */
+/* (each player of a match away from the master) its league copy to the machines in mask: 0, or -1 */
 int ob_season_mirror_send(ob_season *s, unsigned machines);
-/* (the starter) 1 every machine has taken it, 0 not yet, -1 one failed */
+/* (a player) 1 every machine has taken its copy, 0 not yet, -1 one failed */
 int ob_season_mirror_sent(const ob_season *s);
-/* (the others) the starter's copy is in dir (Overbar's mirror folder): 1, 0 not (yet) */
-int ob_season_mirror(const ob_season *s, char *dir, int size);
-/* (the others) after the match: the mirror goes, its writes with it */
+/* machine from's copy is in dir (a folder under Overbar's mirror folder): 1, 0 not (yet) */
+int ob_season_mirror(const ob_season *s, int from, char *dir, int size);
+/* after the match: every mirror goes, its writes with it */
 void ob_season_mirror_drop(ob_season *s);
 
 #ifdef __cplusplus
