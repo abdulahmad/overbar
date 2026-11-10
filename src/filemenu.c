@@ -43,6 +43,21 @@ void ob_capture_apply(const ob_host *h, int id)
 
 #include "bar_backend.h"
 
+/* A running hash of what build_bar puts in the bar (labels, commands, greyed, checked). When a rebuild comes out the same the old bar
+ * stays: swapping a Windows menu bar for an identical one resizes the client area for a moment, and the picture jumped on every key
+ * of the overlay (plat.c syncs the bar after each one). */
+static unsigned g_sig, g_sig_cur;
+static void sig_mix(const char *s, int a, int b)
+{
+    unsigned h = g_sig_cur * 16777619u ^ (unsigned)a * 31u ^ (unsigned)b * 7919u;
+    for (; s && *s; s++) h = (h ^ (unsigned char)*s) * 16777619u;
+    g_sig_cur = h * 16777619u + 1u;
+}
+#define bar_item(m, l, c, d, k) (sig_mix((l), (c), (d) * 2 + (k)), bar_item(m, l, c, d, k))
+#define bar_sub(m, l, s) (sig_mix((l), -1, 0), bar_sub(m, l, s))
+#define bar_sep(m) (sig_mix("-", -2, 0), bar_sep(m))
+#define bar_check_pos(m, p) (sig_mix("*", (p), 3), bar_check_pos(m, p))
+
 #define NCMDS 8192
 #define NMF 4096
 
@@ -256,18 +271,16 @@ static void apply_marks(void)
     }
 }
 
-static void build_bar(void)
+/* 1 when the bar is new and present_bar must install it, 0 when it came out the same and the old one stays */
+static int build_bar(void)
 {
     ob_item main_items[OB_ITEMS_MAX];
     int n, i;
-    if (!g_have_window || !g_host) return;
+    void *old = g_bar;
+    if (!g_have_window || !g_host) return 0;
     ncmds = 0;
     nmfiles = 0;
-    if (g_bar) {
-        bar_install(NULL);
-        bar_destroy(g_bar);
-        g_bar = NULL;
-    }
+    g_sig_cur = 0;
     g_bar = bar_root();
     if (ob_season_ready(g_host)) {
         void *file = bar_popup();
@@ -310,7 +323,19 @@ static void build_bar(void)
             bar_item(g_bar, it->label ? it->label : "", add_cmd(it->id, 0, OB_CLASS_LORES), 0, 0);
         }
     }
+    if (old && g_sig_cur == g_sig) {
+        bar_destroy(g_bar);                 /* same bar: keep the installed one (the numbering of cmds is the same too) */
+        g_bar = old;
+        apply_marks();
+        return 0;
+    }
+    g_sig = g_sig_cur;
+    if (old) {
+        bar_install(NULL);
+        bar_destroy(old);
+    }
     apply_marks();
+    return 1;
 }
 
 static void present_bar(void)
@@ -418,12 +443,12 @@ void ob_filemenu_tracking(int what)
         if (g_shell.hold) g_shell.hold(1);
         if (what == 2 && g_host) {
             pull_shared(g_host);
-            if (g_dirty) { g_dirty = 0; build_bar(); present_bar(); }
+            if (g_dirty) { g_dirty = 0; if (build_bar()) present_bar(); }
             else apply_marks();
         }
     } else {
         g_in_bar = 0;
-        if (g_dirty) { g_dirty = 0; build_bar(); present_bar(); }
+        if (g_dirty) { g_dirty = 0; if (build_bar()) present_bar(); }
     }
 }
 
@@ -467,8 +492,7 @@ void ob_filemenu_after_change(int id)
     }
     if (g_dirty) {
         g_dirty = 0;
-        build_bar();
-        present_bar();
+        if (build_bar()) present_bar();
     } else if (g_bar)
         apply_marks();
 }
@@ -478,8 +502,7 @@ void ob_filemenu_sync(const ob_host *h)
     g_host = (ob_host *)h;
     if (g_host) pull_shared(g_host);
     if (!g_have_window || !g_host) return;
-    build_bar();
-    present_bar();
+    if (build_bar()) present_bar();
 }
 
 void ob_filemenu_show(int on)
@@ -494,6 +517,10 @@ int ob_filemenu_client_size(int *w, int *h)
     return g_have_window ? bar_client_size(w, h) : 0;
 }
 
+#undef bar_item
+#undef bar_sub
+#undef bar_sep
+#undef bar_check_pos
 #if !defined(_WIN32) && !defined(__APPLE__)
 /* no native bar here: the overlay is the menu */
 void *bar_root(void) { return NULL; }
