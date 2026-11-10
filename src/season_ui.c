@@ -199,6 +199,12 @@ static void guest_items(const ob_host *h, ob_item *out, int *n, int cap)
         snprintf(asked, sizeof asked, "asked %u time%s%s", s->asked, s->asked == 1 ? "" : "s",
                  s->send_failed ? ", not sent: the room is not connected" : "");
         add_text(out, n, cap, OB_ID_SEASON_NOTE, "Asking the host for its league", asked);
+        if (s->send_failed && h->online_ops.status) {     /* why the room is not there (the Online page's line) */
+            char line[128];
+            line[0] = 0;
+            h->online_ops.status(line, (int)sizeof line);
+            if (line[0]) add_text(out, n, cap, OB_ID_SEASON_NOTE, "Online", line);
+        }
         return;
     }
     if (!s->roster_league[0]) {
