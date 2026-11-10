@@ -129,8 +129,10 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
   for that team, with no questions on the host's screen). A team as a file, for a player away from the room (the
   original's floppy, by mail): `ob_season_pack` (the export and the games played away), `ob_season_take_pack` on the
   host (merged once: the same file again only gets its copy back), `ob_season_import_pack` for the copy back, and
-  `ob_season_pack_copy` for a first copy. The room page and file pickers for these are the port's (laptop work).
-  `ob_room_modules` routes both modules' messages; the room page shows a line about a sync.
+  `ob_season_pack_copy` for a first copy. Overlay **Season** and the window **File** menu (ob_season_set) are the screens:
+  Sync league, Pick a team (ob_season_teams / ob_season_claim), Export / Import / Take a team file, Write a first copy.
+  Files are `.obt` in the teams folder the client names. `ob_room_modules` routes both modules' messages; the room page
+  shows a line about a sync.
 
 ## Modem and cable play carried by the room (online play phase 6, 2026-11-09)
 

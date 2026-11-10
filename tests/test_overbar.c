@@ -8,6 +8,7 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200112L
 #include "overbar/overbar.h"
+#include "overbar/season.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -730,6 +731,137 @@ static void test_game_page(void)
     remove(path);
 }
 
+/* ---- Season overlay and File menu ---- */
+#define SROOT "/tmp/overbar-test-season-ui"
+typedef struct { char league[200]; int teams[4], nteams, master; } s_mach;
+static int s_league(void *ud, ob_season_league *l)
+{
+    s_mach *m = ud;
+    int i;
+    snprintf(l->name, sizeof l->name, "%s", "Hockey");
+    snprintf(l->id, sizeof l->id, "%s", "id1");
+    l->master = m->master;
+    l->nteam = m->nteams;
+    for (i = 0; i < m->nteams; i++) l->team[i] = m->teams[i];
+    return 0;
+}
+static int s_copy_dir(const char *from, const char *to)
+{
+    char cmd[512];
+    make_dir(to);
+    snprintf(cmd, sizeof cmd, "cp -a '%s/.' '%s' 2>/dev/null || cp '%s'/* '%s'", from, to, from, to);
+    return system(cmd) == 0 ? 0 : -1;
+}
+static int s_export(void *ud, int team, const char *dir) { (void)team; return s_copy_dir(((s_mach *)ud)->league, dir); }
+static int s_copy(void *ud, int team, const char *dir) { (void)team; return s_copy_dir(((s_mach *)ud)->league, dir); }
+static int s_import(void *ud, int team, const char *dir)
+{
+    (void)team;
+    return s_copy_dir(dir, ((s_mach *)ud)->league);
+}
+static int s_merge(void *ud, int team, const char *dir, const uint32_t *played, int nplayed)
+{
+    (void)team; (void)played; (void)nplayed;
+    return s_copy_dir(dir, ((s_mach *)ud)->league);
+}
+static int s_dir(void *ud, char *dir, int size)
+{
+    snprintf(dir, (size_t)size, "%s", ((s_mach *)ud)->league);
+    return 0;
+}
+static const char *s_name(void *ud, int team)
+{
+    static const char *n[] = { "Anaheim", "Boston", "Calgary", "Detroit" };
+    (void)ud;
+    return team >= 0 && team < 4 ? n[team] : NULL;
+}
+
+static void test_season_page(void)
+{
+    ob_host h;
+    ob_season season;
+    ob_season_ops ops;
+    ob_item items[OB_ITEMS_MAX];
+    s_mach m;
+    int n, i, found = 0, file_item = 0, pick = 0;
+    FILE *f;
+    memset(&m, 0, sizeof m);
+    m.master = 0;
+    m.teams[0] = 2;
+    m.nteams = 1;
+    snprintf(m.league, sizeof m.league, "%s/league", SROOT);
+    make_dir(SROOT);
+    make_dir(m.league);
+    make_dir(SROOT "/teams");
+    f = fopen(SROOT "/league/T2.DB", "w");
+    if (f) { fputs("ok\n", f); fclose(f); }
+    memset(&ops, 0, sizeof ops);
+    ops.ud = &m;
+    ops.league = s_league;
+    ops.export_team = s_export;
+    ops.merge_team = s_merge;
+    ops.copy_team = s_copy;
+    ops.import_team = s_import;
+    ops.league_dir = s_dir;
+    ob_season_init(&season, &ops, SROOT "/work", "Cal", NULL, NULL, NULL);
+
+    ob_host_init(&h, OB_PORT_PC95, OB_PROFILE_DESKTOP);
+    ob_season_set(&h, &season, 0, SROOT "/teams");
+    ob_season_set_names(&h, s_name, NULL);
+    CHECK(ob_season_ready(&h));
+
+    n = ob_main_items(&h, items, OB_ITEMS_MAX);
+    for (i = 0; i < n; i++) if (items[i].id == OB_ID_SEASON) found = 1;
+    CHECK(found);
+
+    n = ob_filemenu_items(&h, items, OB_ITEMS_MAX);
+    found = 0;
+    for (i = 0; i < n; i++) if (items[i].id == OB_ID_SEASON) found = 1;
+    CHECK(found);
+
+    n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
+    for (i = 0; i < n; i++) {
+        if (items[i].id == OB_ID_SEASON_SYNC) found = 1;
+        if (items[i].id == OB_ID_SEASON_PICK) pick = 1;
+        if (items[i].id == OB_ID_SEASON_EXPORT) file_item = 1;
+        if (items[i].id == OB_ID_SEASON_FILE) CHECK(items[i].kind == MDRT_ITEM_FIELD);
+        if (items[i].id == OB_ID_BACK) found = 1;
+    }
+    CHECK(pick && file_item);
+    CHECK(ob_items_contain_label(items, n, "Calgary") || ob_items_contain(items, n, OB_ID_SEASON_NOTE));
+
+    snprintf(h.season_file, sizeof h.season_file, "%s", "cal.obt");
+    CHECK(ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SEASON_EXPORT, 0));
+    {
+        FILE *got = fopen(SROOT "/teams/cal.obt", "rb");
+        CHECK(got != NULL);
+        if (got) fclose(got);
+    }
+    CHECK(strstr(h.season_note, "Exported") != NULL);
+
+    n = ob_page_items(&h, OB_PAGE_SEASON_FILES, items, OB_ITEMS_MAX);
+    found = 0;
+    for (i = 0; i < n; i++) if (items[i].id == OB_ID_SEASON_PACK) found = 1;
+    CHECK(found);
+
+    ob_overlay_open(&h);
+    CHECK(h.overlay_page == OB_PAGE_MAIN);
+    ob_overlay_input(&h, MDRT_MENU_DOWN); /* skip Resume; not reliable — open the page */
+    ob_season_open(&h);
+    CHECK(h.overlay_open && h.overlay_page == OB_PAGE_SEASON);
+
+    m.master = 1;
+    m.teams[0] = 0;
+    m.nteams = 1;
+    n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_SEASON_TAKE));
+    CHECK(ob_items_contain(items, n, OB_ID_SEASON_COPY));
+    CHECK(!ob_items_contain(items, n, OB_ID_SEASON_EXPORT));
+
+    ob_host_free(&h);
+    ob_season_free(&season);
+}
+
 int main(void)
 {
     test_scaler_console();
@@ -745,6 +877,7 @@ int main(void)
     test_mister_presets();
     test_look_render();
     test_game_page();
+    test_season_page();
     if (fails) {
         fprintf(stderr, "%d check(s) failed\n", fails);
         return 1;

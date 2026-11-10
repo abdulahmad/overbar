@@ -31,6 +31,16 @@
 | Controller **Back** | Open the menu |
 | **Esc** | Back out of a menu page (in the game, it does whatever the game uses it for) |
 
+### 🏒 Season (PC league)
+
+NHL 94 and 95 PC keep a master league on the host and a copy on each human team's machine. **Season** on the overlay (and **File** on the window menu bar) is that floppy by mail:
+
+- **Sync league** — send this copy's teams to the host and take a fresh copy back
+- **Pick a team** — claim a free team in the room; the host makes it human
+- **Export team as a file** / **Import a team file** / **Take a team file** — a team as an `.obt` file in the `teams` folder, for a player who is not in the room. The host **Takes** an export and writes a copy back; a guest **Imports** that copy. **Write a first copy** is a new human team's first disk.
+
+The game's own export, import and merge stay in the port. Overbar only draws the screens and carries the files.
+
 ### 📺 A picture that's the right shape
 
 Old games didn't have square pixels, and a plain stretch to the window gets them wrong. Overbar draws each kind of picture the shape its own screen gave it:
@@ -223,6 +233,7 @@ The mouse works too: `ob_overlay_pointer` takes a position in the overlay buffer
 - **Windows menu bar:** `ob_filemenu_init(hwnd)`, then `ob_filemenu_show(ob_filemenu_wanted(windowed, fullscreen, handheld))`. Pass the window's messages (SDL's `SDL_SYSWMEVENT`) to `ob_filemenu_event`.
 - **Stats box:** `ob_stats_draw` draws three lines in a dark box, and `ob_stats_place` puts it in the top right corner.
 - **Two picture sizes:** a game with a hi-res menu and a lo-res game screen (like NHL 95 PC) keeps a separate look for each, in `host.hires` and `host.lores`.
+- **Season:** `ob_season_set(&host, &season, 0, "teams")` after `ob_season_init`. Overlay **Season** and the bar's **File** menu then Sync, Pick a team, and export/import `.obt` files. The port's `ob_season_ops` are the game's export, merge, copy and import.
 
 ### 7. ✅ Check it
 

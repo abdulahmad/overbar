@@ -462,6 +462,7 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
 {
     ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
     if (ob_game_apply(h, id, value)) { h->live_preview = 1; return 1; }
+    if (ob_season_apply(h, id, value)) { h->live_preview = 1; return 1; }
     switch (id) {
     case OB_ID_REFRESH:
         h->refresh = (ob_refresh)value;

@@ -15,6 +15,7 @@
  * client is asked to pause until the menu closes.
  */
 #include "overbar/overbar.h"
+#include "overbar/season.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -74,6 +75,7 @@ static int page_of(int id)
     case OB_ID_ONLINE: return OB_PAGE_ONLINE;
     case OB_ID_KEYS: return OB_PAGE_KEYS;
     case OB_ID_GAME: return OB_PAGE_GAME;
+    case OB_ID_SEASON: return OB_PAGE_SEASON;
     case OB_ID_SCALE_HI: return OB_PAGE_SCALE_HI;
     case OB_ID_SCALE_LO: return OB_PAGE_SCALE_LO;
     case OB_ID_MODE_MENU_HI: return OB_PAGE_MODE_HI;
@@ -221,7 +223,7 @@ static void apply_marks(void)
     static const int pages[] = {
         OB_PAGE_VIDEO, OB_PAGE_SCALE_HI, OB_PAGE_SCALE_LO, OB_PAGE_MODE_HI, OB_PAGE_MODE_LO,
         OB_PAGE_OPTS_HI, OB_PAGE_OPTS_LO, OB_PAGE_SOUND, OB_PAGE_INPUT,
-        OB_PAGE_CAPTURE, OB_PAGE_KEYS, OB_PAGE_GAME
+        OB_PAGE_CAPTURE, OB_PAGE_KEYS, OB_PAGE_GAME, OB_PAGE_SEASON
     };
     ob_item items[OB_ITEMS_MAX];
     int p, n, i, c;
@@ -267,6 +269,24 @@ static void build_bar(void)
         g_bar = NULL;
     }
     g_bar = bar_root();
+    if (ob_season_ready(g_host)) {
+        void *file = bar_popup();
+        ob_season_league l;
+        int master = 0;
+        memset(&l, 0, sizeof l);
+        if (g_host->season->ops.league && g_host->season->ops.league(g_host->season->ops.ud, &l) == 0)
+            master = l.master;
+        if (!master) {
+            bar_item(file, "Export team as a file", add_cmd(OB_ID_SEASON_EXPORT, 0, OB_CLASS_LORES), 0, 0);
+            bar_item(file, "Import a team file", add_cmd(OB_ID_SEASON_IMPORT, 0, OB_CLASS_LORES), 0, 0);
+        } else {
+            bar_item(file, "Take a team file", add_cmd(OB_ID_SEASON_TAKE, 0, OB_CLASS_LORES), 0, 0);
+            bar_item(file, "Write a first copy", add_cmd(OB_ID_SEASON_COPY, 0, OB_CLASS_LORES), 0, 0);
+        }
+        bar_sep(file);
+        bar_item(file, "Team files...", add_cmd(OB_ID_SEASON_FILES, 0, OB_CLASS_LORES), 0, 0);
+        bar_sub(g_bar, "File", file);
+    }
     n = ob_main_items(g_host, main_items, OB_ITEMS_MAX);
     for (i = 0; i < n; i++) {
         const ob_item *it = &main_items[i];
@@ -277,6 +297,9 @@ static void build_bar(void)
         if (page == OB_PAGE_ONLINE) {
             /* the Online page types into fields: the bar opens it in the overlay */
             bar_item(g_bar, "Online Play...", add_cmd(OB_ID_ONLINE, 0, OB_CLASS_LORES), !g_host->online_ready, 0);
+        } else if (page == OB_PAGE_SEASON) {
+            /* Season types a filename: the bar opens the overlay page; File holds the actions */
+            bar_item(g_bar, "Season...", add_cmd(OB_ID_SEASON, 0, OB_CLASS_LORES), 0, 0);
         } else if (page >= 0) {
             ob_item sub[OB_ITEMS_MAX];
             int ns = ob_page_items(g_host, page, sub, OB_ITEMS_MAX);
@@ -320,6 +343,15 @@ static void apply_cmd(int id, int value)
     }
     if (id == OB_ID_ONLINE) {
         ob_online_open(g_host);
+        if (g_shell.redraw) g_shell.redraw();
+        return;
+    }
+    if (id == OB_ID_SEASON || id == OB_ID_SEASON_PICK || id == OB_ID_SEASON_FILES) {
+        if (id == OB_ID_SEASON_PICK || id == OB_ID_SEASON_FILES) ob_season_apply(g_host, id, 0);
+        if (!g_host->overlay_open) ob_overlay_open(g_host);
+        g_host->overlay_page = id == OB_ID_SEASON_PICK ? OB_PAGE_SEASON_TEAMS
+            : id == OB_ID_SEASON_FILES ? OB_PAGE_SEASON_FILES : OB_PAGE_SEASON;
+        ob_overlay_build(g_host);
         if (g_shell.redraw) g_shell.redraw();
         return;
     }

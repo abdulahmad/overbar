@@ -25,5 +25,6 @@ src/fsdir.c
 src/files.c
 src/vdrive.c
 src/season.c
+src/season_ui.c
 src/serial.c
 src/game.c

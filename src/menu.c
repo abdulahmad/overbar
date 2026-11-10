@@ -332,6 +332,7 @@ int ob_main_items(const ob_host *h, ob_item *out, int cap)
     if (h->game_ready) add_action(out, &n, cap, OB_ID_GAME, ob_game_title(h), NULL);
     add_action(out, &n, cap, OB_ID_ONLINE, "Online Play",
                h->online_ready ? NULL : "not in this build");
+    if (ob_season_ready(h)) add_action(out, &n, cap, OB_ID_SEASON, "Season", NULL);
     for (i = 0; i < h->naddons; i++)
         add_action(out, &n, cap, h->addons[i].id, h->addons[i].label, NULL);
     add_action(out, &n, cap, OB_ID_QUIT, "Quit", NULL);
@@ -508,6 +509,23 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
         return n;
     case OB_PAGE_GAME:
         n = ob_game_items(h, out, cap - 1);
+        add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
+        return n;
+    case OB_PAGE_SEASON:
+        if (!ob_season_ready(h)) {
+            add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Season", "not in this build");
+            add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
+            return n;
+        }
+        n = ob_season_items(h, out, cap - 1);
+        add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
+        return n;
+    case OB_PAGE_SEASON_TEAMS:
+        n = ob_season_team_items(h, out, cap - 1);
+        add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
+        return n;
+    case OB_PAGE_SEASON_FILES:
+        n = ob_season_file_items(h, out, cap - 1);
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
     case OB_PAGE_KEYS:
