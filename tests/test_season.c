@@ -533,6 +533,11 @@ static void test_set_up_for_a_player(void)
     CHECK(M[2].s.claim == -1 && strstr(M[2].s.why, "Bob's") != NULL, "set up: Dee cannot have it");
     ob_season_roster(&M[0].s, kind, who);
     CHECK(kind[4] == OB_SEASON_OWNED && !strcmp(who[4], "Bob"), "set up: the host sees E - Bob picked");
+    M[1].s.claim = -1;
+    M[1].s.disk = 0;
+    ob_season_claim(&M[1].s, 0, 4);
+    pump();
+    CHECK(M[1].s.claim == OB_SEASON_TEAMS + 4 && (M[1].s.disk >> 4 & 1), "set up: Bob picks E again and gets a fresh disk");
     for (k = 0; k < NM; k++) { ob_season_free(&M[k].s); ob_files_free(&M[k].f); }
     memset(setup_for, 0, sizeof setup_for);
     printf("set up: the host sets a team up for Bob, Bob picks it and gets it as a disk\n");
