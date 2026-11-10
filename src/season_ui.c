@@ -142,9 +142,10 @@ void ob_season_tick(ob_host *h)
     s = h->season;
     on_page = h->overlay_open && (h->overlay_page == OB_PAGE_SEASON || h->overlay_page == OB_PAGE_SEASON_TEAMS);
     if (!on_page) { h->season_ticks = 0; return; }
-    if (++h->season_ticks >= 120) {     /* about two seconds: ask again (a league opened on the host) */
+    if (++h->season_ticks >= 120) {     /* about two seconds: ask again (a league opened on the host), redraw */
         h->season_ticks = 0;
         ask_host(h);
+        s->changes++;
     }
     if (s->changes != h->season_seen) {
         int sel = h->overlay.sel;
@@ -194,7 +195,10 @@ static void guest_items(const ob_host *h, ob_item *out, int *n, int cap)
     if (h->season_note[0]) add_text(out, n, cap, OB_ID_SEASON_NOTE, h->season_note, NULL);
     else if (s->why[0] && s->claim < 0) add_text(out, n, cap, OB_ID_SEASON_NOTE, s->why, NULL);
     if (!s->roster_have) {
-        add_text(out, n, cap, OB_ID_SEASON_NOTE, "Asking the host for its league", NULL);
+        char asked[64];
+        snprintf(asked, sizeof asked, "asked %u time%s%s", s->asked, s->asked == 1 ? "" : "s",
+                 s->send_failed ? ", not sent: the room is not connected" : "");
+        add_text(out, n, cap, OB_ID_SEASON_NOTE, "Asking the host for its league", asked);
         return;
     }
     if (!s->roster_league[0]) {
@@ -239,7 +243,12 @@ int ob_season_items(const ob_host *h, ob_item *out, int cap)
         add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League", have ? l.name : "none open");
         add_text(out, &n, cap, OB_ID_SEASON_NOTE,
                  have ? "No team is played on this computer in it" : "Make or open a league in the game", NULL);
-        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "To join a friend's league: Online Play, Connect", NULL);
+        if (in_session(h)) {
+            char said[48];
+            snprintf(said, sizeof said, "%u", s->answered);
+            add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League lists sent to players", said);
+        } else
+            add_text(out, &n, cap, OB_ID_SEASON_NOTE, "To join a friend's league: Online Play, Connect", NULL);
         return n;
     }
     add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League", l.name);
@@ -262,6 +271,11 @@ int ob_season_items(const ob_host *h, ob_item *out, int cap)
     }
     if (!shown) add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Players", "none set up yet");
     if (!in_session(h)) add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Players join with Online Play, Host", NULL);
+    else {
+        char said[48];
+        snprintf(said, sizeof said, "%u", s->answered);
+        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League lists sent to players", said);
+    }
     return n;
 }
 
