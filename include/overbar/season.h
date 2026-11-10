@@ -148,6 +148,7 @@ typedef struct ob_season {
     unsigned disk;                      /* (a guest, give_as_disk) by team: its first copy is here as a disk */
     int disk_team;                      /* the last team given as a disk (-1 none) */
     char why[160];                      /* the last failure ("" none) */
+    unsigned changes;                   /* bumped when the roster, a claim or a disk changes (screens redraw) */
 } ob_season;
 
 /* base: Overbar's season folder (made if missing). files: the room's (its hooks become the season's). send:
