@@ -9,6 +9,7 @@
  */
 #include "overbar/overbar.h"
 #include "overbar/season.h"
+#include "fsdir.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -101,13 +102,116 @@ void ob_season_set_names(ob_host *h, const char *(*team_name)(void *ud, int team
     h->season_name_ud = ud;
 }
 
+/* this machine joined someone's room: the host's league is what counts, not one left on this machine */
+static int in_session(const ob_host *h)
+{
+    char line[128];
+    return h->online_ops.status && h->online_ops.status(line, (int)sizeof line);
+}
+
+static int is_guest(const ob_host *h)
+{
+    return in_session(h) && h->online.role == 1;
+}
+
+static void ask_host(ob_host *h)
+{
+    if (h->season && is_guest(h)) ob_season_teams(h->season, h->season_host);
+}
+
 void ob_season_open(ob_host *h)
 {
     if (!h) return;
     if (!h->overlay_open) ob_overlay_open(h);
     h->overlay_page = OB_PAGE_SEASON;
     h->overlay.sel = 0;
+    ask_host(h);
     ob_overlay_build(h);
+}
+
+void ob_season_opened(ob_host *h)
+{
+    if (h) ask_host(h);
+}
+
+void ob_season_tick(ob_host *h)
+{
+    ob_season *s;
+    int on_page;
+    if (!h || !h->season) return;
+    s = h->season;
+    on_page = h->overlay_open && (h->overlay_page == OB_PAGE_SEASON || h->overlay_page == OB_PAGE_SEASON_TEAMS);
+    if (!on_page) { h->season_ticks = 0; return; }
+    if (++h->season_ticks >= 120) {     /* about two seconds: ask again (a league opened on the host) */
+        h->season_ticks = 0;
+        ask_host(h);
+    }
+    if (s->changes != h->season_seen) {
+        int sel = h->overlay.sel;
+        h->season_seen = s->changes;
+        ob_overlay_build(h);
+        if (sel < h->overlay.count) h->overlay.sel = sel;
+    }
+}
+
+/* the teams a guest can pick, from the host's list */
+static void roster_items(const ob_host *h, ob_item *out, int *n, int cap)
+{
+    ob_season *s = h->season;
+    char lab[96];
+    int i, k, listed = 0;
+    static const int order[] = { OB_SEASON_WAITING, OB_SEASON_FREE, OB_SEASON_OWNED, OB_SEASON_HOSTS };
+    for (k = 0; k < 4; k++)
+        for (i = 0; i < OB_SEASON_TEAMS && *n < cap - 2; i++) {
+            if (s->roster_kind[i] != order[k]) continue;
+            /* a name callback returning NULL: that slot is not a team to pick in this game */
+            if (order[k] == OB_SEASON_FREE && (!h->season_team_name || !h->season_team_name(h->season_name_ud, i)))
+                continue;
+            team_who(h, i, s->roster[i], lab, (int)sizeof lab);
+            if (order[k] == OB_SEASON_WAITING) add_action(out, n, cap, OB_ID_SEASON_TEAM + i, lab, NULL);
+            else if (order[k] == OB_SEASON_FREE) add_action(out, n, cap, OB_ID_SEASON_TEAM + i, lab, "new player");
+            else add_text(out, n, cap, OB_ID_SEASON_NOTE, lab, order[k] == OB_SEASON_HOSTS ? "the host's" : "taken");
+            listed++;
+        }
+    if (!listed) add_text(out, n, cap, OB_ID_SEASON_NOTE, "No teams set up for players yet", NULL);
+}
+
+static void guest_items(const ob_host *h, ob_item *out, int *n, int cap)
+{
+    ob_season *s = h->season;
+    ob_season_league l;
+    char lab[96];
+    int mine;
+    if (s->claim >= OB_SEASON_TEAMS) {
+        int t = s->claim - OB_SEASON_TEAMS;
+        team_label(h, t, lab, (int)sizeof lab);
+        add_text(out, n, cap, OB_ID_SEASON_NOTE, "Yours", lab);
+        if (s->disk >> t & 1)
+            add_text(out, n, cap, OB_ID_SEASON_NOTE,
+                     h->season_disk_hint ? h->season_disk_hint : "load it from the game's menus", NULL);
+    } else if (s->claim >= 0)
+        add_text(out, n, cap, OB_ID_SEASON_NOTE, "Asking the host for it", NULL);
+    if (h->season_note[0]) add_text(out, n, cap, OB_ID_SEASON_NOTE, h->season_note, NULL);
+    else if (s->why[0] && s->claim < 0) add_text(out, n, cap, OB_ID_SEASON_NOTE, s->why, NULL);
+    if (!s->roster_have) {
+        add_text(out, n, cap, OB_ID_SEASON_NOTE, "Asking the host for its league", NULL);
+        return;
+    }
+    if (!s->roster_league[0]) {
+        add_text(out, n, cap, OB_ID_SEASON_NOTE, "The host has no league open yet", NULL);
+        return;
+    }
+    add_text(out, n, cap, OB_ID_SEASON_NOTE, "Host's league", s->roster_league);
+    begin_group(out, n, cap);
+    roster_items(h, out, n, cap);
+    /* Sync only for this machine's copy of that same league */
+    memset(&l, 0, sizeof l);
+    mine = s->ops.league && s->ops.league(s->ops.ud, &l) == 0 && l.name[0] && !l.master &&
+           !ob_fs_stricmp(l.name, s->roster_league);
+    if (mine) {
+        begin_group(out, n, cap);
+        add_action(out, n, cap, OB_ID_SEASON_SYNC, "Sync league", NULL);
+    }
 }
 
 int ob_season_items(const ob_host *h, ob_item *out, int cap)
@@ -115,26 +219,33 @@ int ob_season_items(const ob_host *h, ob_item *out, int cap)
     ob_season *s;
     ob_season_league l;
     char line[160], lab[96];
-    int n = 0, master = 0, i, have, shown = 0;
+    int n = 0, i, have, shown = 0;
     if (!h || cap < 1) return 0;
     s = h->season;
     if (!s) {
         add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Season", "not in this build");
         return n;
     }
-    memset(&l, 0, sizeof l);
-    have = s->ops.league && s->ops.league(s->ops.ud, &l) == 0 && l.name[0];
-    if (have) {
-        master = l.master;
-        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League", l.name);
-        add_text(out, &n, cap, OB_ID_SEASON_NOTE, master ? "You run this league" : "Your copy", NULL);
-    } else
-        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League", "none yet");
     ob_season_status(s, line, (int)sizeof line);
     if (line[0]) add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Status", line);
+    if (is_guest(h)) {
+        guest_items(h, out, &n, cap);
+        return n;
+    }
+    memset(&l, 0, sizeof l);
+    have = s->ops.league && s->ops.league(s->ops.ud, &l) == 0 && l.name[0];
     if (h->season_note[0]) add_text(out, &n, cap, OB_ID_SEASON_NOTE, h->season_note, NULL);
+    if (!have || !l.master) {
+        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League", have ? l.name : "none open");
+        add_text(out, &n, cap, OB_ID_SEASON_NOTE,
+                 have ? "No team is played on this computer in it" : "Make or open a league in the game", NULL);
+        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "To join a friend's league: Online Play, Connect", NULL);
+        return n;
+    }
+    add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League", l.name);
+    add_text(out, &n, cap, OB_ID_SEASON_NOTE, "You run this league", NULL);
     begin_group(out, &n, cap);
-    if (master) {
+    {
         int kind[OB_SEASON_TEAMS];
         char who[OB_SEASON_TEAMS][OB_NET_NAME + 1];
         if (ob_season_roster(s, kind, who) == 0) {
@@ -148,56 +259,17 @@ int ob_season_items(const ob_host *h, ob_item *out, int cap)
                 shown++;
             }
         }
-        if (!shown) add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Players", "none set up yet");
-    } else {
-        int t = s->disk_team;
-        if (t >= 0 && (s->disk >> t & 1)) {
-            team_label(h, t, lab, (int)sizeof lab);
-            add_text(out, &n, cap, OB_ID_SEASON_NOTE, lab,
-                     h->season_disk_hint ? h->season_disk_hint : "yours: load it from the game's menus");
-        }
-        add_action(out, &n, cap, OB_ID_SEASON_PICK, "Pick a team", NULL);
-        if (have) add_action(out, &n, cap, OB_ID_SEASON_SYNC, "Sync league", NULL);
     }
+    if (!shown) add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Players", "none set up yet");
+    if (!in_session(h)) add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Players join with Online Play, Host", NULL);
     return n;
 }
 
 int ob_season_team_items(const ob_host *h, ob_item *out, int cap)
 {
-    ob_season *s;
-    char lab[96];
-    int n = 0, i, k, listed = 0;
-    static const int order[] = { OB_SEASON_WAITING, OB_SEASON_FREE, OB_SEASON_OWNED, OB_SEASON_HOSTS };
+    int n = 0;
     if (!h || !h->season || cap < 1) return 0;
-    s = h->season;
-    if (s->claim >= OB_SEASON_TEAMS) {
-        team_label(h, s->claim - OB_SEASON_TEAMS, lab, (int)sizeof lab);
-        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Yours", lab);
-        if (s->disk >> (s->claim - OB_SEASON_TEAMS) & 1)
-            add_text(out, &n, cap, OB_ID_SEASON_NOTE,
-                     h->season_disk_hint ? h->season_disk_hint : "load it from the game's menus", NULL);
-    } else if (s->claim >= 0)
-        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Asking the host", NULL);
-    if (h->season_note[0]) add_text(out, &n, cap, OB_ID_SEASON_NOTE, h->season_note, NULL);
-    if (!s->roster_have) {
-        add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Teams", "asking the host");
-        return n;
-    }
-    add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League", s->roster_league[0] ? s->roster_league : "(none)");
-    begin_group(out, &n, cap);
-    for (k = 0; k < 4; k++)
-        for (i = 0; i < OB_SEASON_TEAMS && n < cap - 1; i++) {
-            if (s->roster_kind[i] != order[k]) continue;
-            /* a name callback returning NULL: that slot is not a team to pick in this game */
-            if (order[k] == OB_SEASON_FREE && (!h->season_team_name || !h->season_team_name(h->season_name_ud, i)))
-                continue;
-            team_who(h, i, s->roster[i], lab, (int)sizeof lab);
-            if (order[k] == OB_SEASON_WAITING) add_action(out, &n, cap, OB_ID_SEASON_TEAM + i, lab, NULL);
-            else if (order[k] == OB_SEASON_FREE) add_action(out, &n, cap, OB_ID_SEASON_TEAM + i, lab, "new player");
-            else add_text(out, &n, cap, OB_ID_SEASON_NOTE, lab, order[k] == OB_SEASON_HOSTS ? "the host's" : "taken");
-            listed++;
-        }
-    if (!listed) add_text(out, &n, cap, OB_ID_SEASON_NOTE, "No teams set up for players yet", NULL);
+    guest_items(h, out, &n, cap);
     return n;
 }
 
@@ -207,6 +279,7 @@ int ob_season_apply(ob_host *h, int id, int value)
     (void)value;
     if (!h || !h->season) return 0;
     s = h->season;
+    if (h->online.name[0]) snprintf(s->me, sizeof s->me, "%s", h->online.name);   /* the name typed now */
     if (id == OB_ID_SEASON_SYNC) {
         if (ob_season_sync(s, h->season_host) == 0) note(h, "Syncing league", NULL);
         else note(h, NULL, "Could not sync");
@@ -214,13 +287,14 @@ int ob_season_apply(ob_host *h, int id, int value)
     }
     if (id == OB_ID_SEASON_PICK) {
         if (ob_season_teams(s, h->season_host) == 0) h->season_note[0] = 0;
-        else note(h, NULL, "Could not ask who has which team");
+        else note(h, NULL, "Could not ask the host");
         return 1;
     }
     if (id >= OB_ID_SEASON_TEAM && id < OB_ID_SEASON_TEAM + OB_SEASON_TEAMS) {
         int team = id - OB_ID_SEASON_TEAM;
-        if (ob_season_claim(s, h->season_host, team) == 0) h->season_note[0] = 0;
-        else note(h, NULL, "Could not ask for that team");
+        h->season_note[0] = 0;
+        if (ob_season_claim(s, h->season_host, team)) note(h, NULL, "Could not ask for that team");
+        s->changes++;
         return 1;
     }
     return 0;

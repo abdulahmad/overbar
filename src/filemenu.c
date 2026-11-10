@@ -355,6 +355,7 @@ static void apply_cmd(int id, int value)
     }
     if (id == OB_ID_SEASON || id == OB_ID_SEASON_PICK) {
         if (id == OB_ID_SEASON_PICK) ob_season_apply(g_host, id, 0);
+        else ob_season_opened(g_host);
         if (!g_host->overlay_open) ob_overlay_open(g_host);
         g_host->overlay_page = id == OB_ID_SEASON_PICK ? OB_PAGE_SEASON_TEAMS : OB_PAGE_SEASON;
         ob_overlay_build(g_host);

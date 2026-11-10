@@ -335,6 +335,8 @@ typedef struct ob_host {
     int season_host;            /* the master machine a guest syncs with */
     const char *(*season_team_name)(void *ud, int team);    /* NULL: "Team N" */
     void *season_name_ud;
+    int season_ticks;           /* frames on a Season page (a guest asks the host again every ~2 s) */
+    unsigned season_seen;       /* the season's changes last drawn */
     const char *season_disk_hint;   /* (a guest) where the game loads a picked team (NULL: a plain line) */
     char season_note[160];      /* the last Sync / Pick a team line */
 } ob_host;
@@ -541,7 +543,9 @@ void ob_season_set(ob_host *h, struct ob_season *s, int host_machine, const char
  * Import Master League; the disk is in drive A:"); NULL: a plain line */
 void ob_season_set_hint(ob_host *h, const char *disk_hint);
 void ob_season_set_names(ob_host *h, const char *(*team_name)(void *ud, int team), void *ud);
-void ob_season_open(ob_host *h);                    /* the overlay, on the Season page (the bar's Season / File) */
+void ob_season_open(ob_host *h);                    /* the overlay, on the Season page (the bar's Season) */
+void ob_season_opened(ob_host *h);                  /* the page was opened: a guest asks the host for its league */
+void ob_season_tick(ob_host *h);                    /* each frame: redraw a Season page when the host's answer comes */
 int ob_season_ready(const ob_host *h);
 int ob_season_apply(ob_host *h, int id, int value); /* 1 if it was a Season row */
 int ob_season_items(const ob_host *h, ob_item *out, int cap);

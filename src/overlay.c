@@ -195,7 +195,7 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
     case OB_ID_ONLINE: go_page(h, OB_PAGE_ONLINE); return 1;
     case OB_ID_KEYS: go_page(h, OB_PAGE_KEYS); return 1;
     case OB_ID_GAME: go_page(h, OB_PAGE_GAME); return 1;
-    case OB_ID_SEASON: go_page(h, OB_PAGE_SEASON); return 1;
+    case OB_ID_SEASON: ob_season_opened(h); go_page(h, OB_PAGE_SEASON); return 1;
     case OB_ID_SEASON_PICK:
         ob_season_apply(h, id, 0);
         go_page(h, OB_PAGE_SEASON_TEAMS);

@@ -423,11 +423,13 @@ static void done(void *ud, int out, int peer, const char *tag, int ok, const cha
             s->disk |= 1u << team;
             s->disk_team = team;
             if (s->claim == team) s->claim = OB_SEASON_TEAMS + team;
+            s->changes++;
             return;
         }
         if (!s->ops.import_team || s->ops.import_team(s->ops.ud, team, dir)) { snprintf(s->why, sizeof s->why, "the game's import of a first copy failed"); return; }
         s->given |= 1u << team;
         if (s->claim == team) s->claim = OB_SEASON_TEAMS + team;
+        s->changes++;
         ob_fs_clear(dir);
         return;
     }
@@ -533,9 +535,15 @@ static void got_teams(ob_season *s, int from)
     int kind[OB_SEASON_TEAMS], t, n = 0;
     char who[OB_SEASON_TEAMS][OB_NET_NAME + 1];
     size_t at;
-    if (from < 0 || from >= OB_NET_MAX_MACHINES || ob_season_roster(s, kind, who)) return;
+    if (from < 0 || from >= OB_NET_MAX_MACHINES) return;
     w.n = 0;
     put8(&w, ROSTER);
+    if (ob_season_roster(s, kind, who)) {           /* no league open on the host: say so (an empty list) */
+        putstr(&w, "");
+        put8(&w, 0);
+        emit(s, from, &w);
+        return;
+    }
     putstr(&w, s->league.name);
     at = w.n;
     put8(&w, 0);
@@ -572,14 +580,14 @@ static void got_roster(ob_season *s, int from, rd *r)
     memcpy(s->roster, who, sizeof who);
     memcpy(s->roster_league, lname, sizeof lname);
     s->roster_have = 1;
+    s->changes++;
 }
 
 int ob_season_teams(ob_season *s, int host)
 {
     wr w;
     if (host < 0 || host >= OB_NET_MAX_MACHINES) return -1;
-    s->host = host;
-    s->roster_have = 0;
+    s->host = host;                     /* the last list stays shown until the new one comes */
     w.n = 0;
     put8(&w, TEAMS);
     emit(s, host, &w);
@@ -875,7 +883,7 @@ void ob_season_message(ob_season *s, int from, const void *data, size_t size)
         char why[80];
         int t = (int)get8(&r);
         getstr(&r, why, sizeof why);
-        if (from == s->host && t == s->claim) { s->claim = -1; snprintf(s->why, sizeof s->why, "%s", why); }
+        if (from == s->host && t == s->claim) { s->claim = -1; snprintf(s->why, sizeof s->why, "%s", why); s->changes++; }
         break;
     }
     case TEAMS: got_teams(s, from); break;

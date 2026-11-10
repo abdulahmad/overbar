@@ -781,6 +781,8 @@ static const char *s_name(void *ud, int team)
     return team >= 0 && team < 4 ? n[team] : NULL;
 }
 
+static int s_online(char *line, int size) { if (size > 0) line[0] = 0; return 1; }
+
 static void test_season_page(void)
 {
     ob_host h;
@@ -825,24 +827,40 @@ static void test_season_page(void)
     for (i = 0; i < n; i++) if (items[i].id == OB_ID_SEASON) found = 1;
     CHECK(found);
 
+    /* not in a room, a copy of some old league here: no picking, nothing to type, a pointer to Connect */
     n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
     for (i = 0; i < n; i++) {
-        if (items[i].id == OB_ID_SEASON_PICK) pick = 1;
+        if (items[i].id == OB_ID_SEASON_PICK || items[i].id == OB_ID_SEASON_SYNC) pick = 1;
         if (items[i].kind == MDRT_ITEM_FIELD) file_item = 1;        /* nothing to type */
         if (items[i].label && strstr(items[i].label, ".obt")) file_item = 1;
         if (strstr(items[i].detail, ".obt") || strstr(items[i].detail, "/")) file_item = 1;
     }
-    CHECK(pick && !file_item);
+    CHECK(!pick && !file_item);
+    CHECK(ob_items_contain_label(items, n, "To join a friend's league: Online Play, Connect"));
+
+    /* joined a room: the host's league, never the old one left on this machine */
+    h.online_ops.status = s_online;
+    h.online.role = 1;
+    n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain_label(items, n, "Asking the host for its league"));
+    for (i = 0; i < n; i++) CHECK(strcmp(items[i].detail, "League") != 0);
+    season.roster_have = 1;
+    n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain_label(items, n, "The host has no league open yet"));
 
     /* a guest's list: "Delta - Bob" to pick, the host's team shown, a computer team as a new player */
-    season.roster_have = 1;
     snprintf(season.roster_league, sizeof season.roster_league, "%s", "Cup");
     season.roster_kind[0] = OB_SEASON_HOSTS; snprintf(season.roster[0], sizeof season.roster[0], "%s", "Abdul");
     season.roster_kind[3] = OB_SEASON_WAITING; snprintf(season.roster[3], sizeof season.roster[3], "%s", "Bob");
-    n = ob_page_items(&h, OB_PAGE_SEASON_TEAMS, items, OB_ITEMS_MAX);
+    n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain_label(items, n, "Host's league"));
     CHECK(ob_items_contain_label(items, n, "Delta - Bob") && ob_items_contain(items, n, OB_ID_SEASON_TEAM + 3));
     CHECK(ob_items_contain_label(items, n, "Alpha - Abdul") && !ob_items_contain(items, n, OB_ID_SEASON_TEAM + 0));
     CHECK(ob_items_contain(items, n, OB_ID_SEASON_TEAM + 1));      /* Beta: free, a new player */
+    CHECK(!ob_items_contain(items, n, OB_ID_SEASON_SYNC));         /* this machine's League is not the host's Cup */
+    snprintf(season.roster_league, sizeof season.roster_league, "%s", "League");
+    n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_SEASON_SYNC));          /* a copy of the host's league: Sync */
 
     n = ob_filemenu_items(&h, items, OB_ITEMS_MAX);
     for (i = 0; i < n; i++) CHECK(!items[i].label || !strstr(items[i].label, "file"));
@@ -852,6 +870,7 @@ static void test_season_page(void)
     CHECK(h.overlay_open && h.overlay_page == OB_PAGE_SEASON);
 
     /* the master: who has which team, no actions about files */
+    h.online.role = 0;
     m.master = 1;
     m.teams[0] = 0;
     m.nteams = 1;
