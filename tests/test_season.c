@@ -6,7 +6,7 @@
  * with LEAGUE.ID and a file for each team, T<n>.DB, a line for each game it played ("<key> <other>");
  * the master also counts each team's games in COUNT.DB. Teams: A 0, B 1 (the host's), C 2 (Cal on
  * machine 1), D 3 (Dee on machine 2). The season: A vs B on the host; C vs D with the host away (as the
- * original does it with the opponent's floppy: both copies on each machine, each team's result into its own
+ * game needs both copies on each machine, each team's result into its own
  * copy, the other's a mirror); then both sync, Cal's first sync broken off after the merge. Every game must
  * be in the master once and each copy the same as the master after. */
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
@@ -380,7 +380,7 @@ static void test_season(void)
     open_machine(1, "Cal");
     open_machine(2, "Dee");
     ob_fs_mkdir(ROOT "/m0"); ob_fs_mkdir(ROOT "/m0/league");
-    write_text(M[0].league, "LEAGUE.ID", "Hockey 4711");
+    write_text(M[0].league, "LEAGUE.ID", "League 4711");
     for (k = 0; k < NTEAMS; k++) { char n[16]; tname(n, k); write_text(M[0].league, n, ""); }
     M[0].teams[0] = 0; M[0].teams[1] = 1; M[0].nteams = 2;
     ob_fs_mkdir(ROOT "/m1"); ob_fs_mkdir(ROOT "/m2");
@@ -396,7 +396,7 @@ static void test_season(void)
     play(M[0].league, 1, 0, 1, 1);
     play(M[1].league, 2, 2, 4, 0);
 
-    /* C vs D with the host away: each sends the other its copy (the opponent's floppy) */
+    /* C vs D with the host away: each sends the other its copy as a mirror */
     leave(0);
     online[1] = online[2] = 1;
     CHECK(ob_season_mirror_send(&M[1].s, 1u << 2) == 0 && ob_season_mirror_send(&M[2].s, 1u << 1) == 0,
@@ -469,7 +469,7 @@ static void test_season(void)
     CHECK(M[2].s.state == OB_SEASON_FAILED, "season: another league is refused");
     ob_season_status(&M[2].s, line, sizeof line);
     CHECK(strstr(line, "League not synced") != NULL, "season: and says so");
-    write_text(M[2].league, "LEAGUE.ID", "Hockey 4711");
+    write_text(M[2].league, "LEAGUE.ID", "League 4711");
 
     /* the ledger is kept: a new start of the host knows game 100 was merged and who owns C */
     ob_season_free(&M[0].s);
@@ -499,14 +499,14 @@ static void test_pick_and_pack(void)
     open_machine(1, "Cal");
     open_machine(2, "Dee");
     ob_fs_mkdir(ROOT "/m0/league");
-    write_text(M[0].league, "LEAGUE.ID", "Hockey 4711");
+    write_text(M[0].league, "LEAGUE.ID", "League 4711");
     for (k = 0; k < NTEAMS; k++) { char n[16]; tname(n, k); write_text(M[0].league, n, ""); }
     M[0].teams[0] = 0; M[0].nteams = 1;
 
     /* Cal picks C in the room */
     CHECK(ob_season_teams(&M[1].s, 0) == 0, "pick: Cal asks who has which team");
     pump();
-    CHECK(M[1].s.roster_have && !strcmp(M[1].s.roster_league, "Hockey") && M[1].s.roster_kind[0] == OB_SEASON_HOSTS &&
+    CHECK(M[1].s.roster_have && !strcmp(M[1].s.roster_league, "League") && M[1].s.roster_kind[0] == OB_SEASON_HOSTS &&
           M[1].s.roster_kind[2] == OB_SEASON_FREE, "pick: A is the host's, C is free");
     CHECK(ob_season_claim(&M[1].s, 0, 2) == 0, "pick: Cal asks for C");
     pump();
@@ -541,7 +541,7 @@ static void test_pick_and_pack(void)
           "pack: Dee imports the copy back; game 7 is off her ledger");
     CHECK(ob_season_take_pack(&M[0].s, back, ROOT "/y.obt") == -1, "pack: a copy is not an export");
     CHECK(ob_season_import_pack(&M[2].s, ROOT "/dee.obt") == -1, "pack: an export is not a copy");
-    write_text(ROOT, "bad.obt", "OBTEAM 1\nleague Hockey\nteam 3\nfile T3.DB 9999\nxx");
+    write_text(ROOT, "bad.obt", "OBTEAM 1\nleague League\nteam 3\nfile T3.DB 9999\nxx");
     CHECK(ob_season_take_pack(&M[0].s, ROOT "/bad.obt", ROOT "/y.obt") == -1, "pack: a damaged file is refused");
     write_text(M[2].league, "LEAGUE.ID", "Other 1");
     ob_season_pack(&M[2].s, 3, ROOT "/other.obt");

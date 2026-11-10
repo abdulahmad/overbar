@@ -106,33 +106,32 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
 
 ## The online season (online play phase 5, 2026-11-09)
 
-- `include/overbar/vdrive.h` (DOS): virtual drives. A drive letter is a folder of the player's, so the game's floppy is
-  always in the drive; the port's DOS layer asks `ob_vdrive_path` for each name the game opens (parts matched ignoring
-  case) and `ob_vdrive_diskfree` for the drive's space, and answers the game's disk prompts itself.
+- `include/overbar/vdrive.h` (DOS platform): virtual drives for any DOS game. A drive letter is a folder of the
+  player's, so a title that asks for a disk always finds it; the port's DOS layer asks `ob_vdrive_path` for each name
+  the game opens (parts matched ignoring case) and `ob_vdrive_diskfree` for the drive's space, and answers the game's
+  disk prompts itself.
 - `include/overbar/files.h`: a folder sent across the room's message lane (`OB_NET_TYPE_FILES`). Only the files the
   receiver lacks are sent, so a folder sent again after a drop sends what had not come; the files go into place together
   once every hash checks; `OB_FILES_MIRROR` makes the target exactly the folder sent.
-- `include/overbar/season.h` (`OB_NET_TYPE_SEASON`): the league copies kept in step by the game's own export, merge, copy
-  and import (the port's hooks, each with a virtual drive set on the folder given). A guest's `ob_season_sync`: its teams'
-  exports go to the host, which merges them all, then sends a fresh copy of each back to be imported. The first player to
-  bring a team owns it. `ob_season_give` is the host making a team human for a player elsewhere (the first copy).
-  A match away from the master (C vs D, the host away) follows the original's rule for a game between two human teams
-  (94/95 PC's PlayLeagueGame asks for the opponent's floppy and password, and writes the game into both copies, each
-  team's stats into its own; MergeLeagueFiles then takes each team from its own copy): each player's copy goes to the
-  other machines as a mirror (`ob_season_mirror_send`, `ob_season_mirror(s, from, ...)`), every machine plays from the
-  same two copies (its own where it has one; the port points the game's league and its floppy at them) and drops the
-  mirrors after. Both copies then hold the game as played, so neither player can play it a second time. Each player
-  marks it (`ob_season_played`) until a sync merges it; the master hands each game to the merge once per team (its
-  ledger keeps game and team merged), so a sync broken off after the merge never counts a game twice.
+- `include/overbar/season.h` (`OB_NET_TYPE_SEASON`): shared league or campaign for any game that keeps a master copy
+  and a copy per player. "Team" is the game's own unit. Copies stay in step by the port's export, merge, copy and
+  import hooks (a DOS port can set a virtual drive on the folder given). A guest's `ob_season_sync`: its teams'
+  exports go to the host, which merges them all, then sends a fresh copy of each back to be imported. The first player
+  to bring a team owns it. `ob_season_give` is the host making a unit this player's for someone elsewhere (the first
+  copy). A match away from the master (C vs D, the host away): the game needs both players' copies and writes the
+  result into both; each player's copy goes to the other machines as a mirror (`ob_season_mirror_send`,
+  `ob_season_mirror(s, from, ...)`), every machine plays from the same two copies (its own where it has one) and
+  drops the mirrors after. Both copies then hold the game as played, so neither player can play it a second time.
+  Each player marks it (`ob_season_played`) until a sync merges it; the master hands each game to the merge once per
+  team (its ledger keeps game and team merged), so a sync broken off after the merge never counts a game twice.
   Teams for players (2026-11-10): the host can add them all (`ob_season_give`), or a player in the room picks one
-  (`ob_season_teams` for who has which, `ob_season_claim`; the port's `add_human` hook is the game's "add a human team"
-  for that team, with no questions on the host's screen). A team as a file, for a player away from the room (the
-  original's floppy, by mail): `ob_season_pack` (the export and the games played away), `ob_season_take_pack` on the
-  host (merged once: the same file again only gets its copy back), `ob_season_import_pack` for the copy back, and
-  `ob_season_pack_copy` for a first copy. Overlay **Season** and the window **File** menu (ob_season_set) are the screens:
-  Sync league, Pick a team (ob_season_teams / ob_season_claim), Export / Import / Take a team file, Write a first copy.
-  Files are `.obt` in the teams folder the client names. `ob_room_modules` routes both modules' messages; the room page
-  shows a line about a sync.
+  (`ob_season_teams` for who has which, `ob_season_claim`; the port's `add_human` hook is that game's add-a-player,
+  with no questions on the host's screen). A team as a file, for a player away from the room: `ob_season_pack` (the
+  export and the games played away), `ob_season_take_pack` on the host (merged once: the same file again only gets
+  its copy back), `ob_season_import_pack` for the copy back, and `ob_season_pack_copy` for a first copy. Overlay
+  **Season** and the window **File** menu (`ob_season_set`) are the screens: Sync league, Pick a team, Export /
+  Import / Take a team file, Write a first copy. Files are `.obt` in the folder the client names. `ob_room_modules`
+  routes both modules' messages; the room page shows a line about a sync.
 
 ## Modem and cable play carried by the room (online play phase 6, 2026-11-09)
 

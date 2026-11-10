@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  * Copyright (c) 2026 abdulahmad
  *
- * Virtual drives for DOS games (the DOS platform): a drive letter (A:, B: ...) that is a folder of the
- * player's, so a game that asks for a floppy always finds the disk it wants there, and nobody is asked
- * to swap disks. The online season (overbar/season.h) puts each team's league copy in such a folder;
- * the port's DOS layer asks ob_vdrive_path for each file name the game opens and ob_vdrive_diskfree for
- * the drive's space, and answers the game's disk prompts itself. A name's parts are matched ignoring
- * case, as DOS does. No SDL. */
+ * Virtual drives for DOS games: a drive letter (A:, B: ...) that is a folder of the player's, so a
+ * game that asks for a disk always finds it there, and nobody is asked to swap. Any DOS title can
+ * use this; the online season (overbar/season.h) is one client (each player's copy in a folder).
+ * The port's DOS layer asks ob_vdrive_path for each file name the game opens and ob_vdrive_diskfree
+ * for the drive's space, and answers the game's disk prompts itself. A name's parts are matched
+ * ignoring case, as DOS does. No SDL. */
 #ifndef OVERBAR_VDRIVE_H
 #define OVERBAR_VDRIVE_H
 

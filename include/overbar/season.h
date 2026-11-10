@@ -1,40 +1,41 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  * Copyright (c) 2026 abdulahmad
  *
- * The online season: the league copies of the machines of a room kept in step by the game's own export,
- * import and merge, run by Overbar where the original asked for a floppy, so nobody sees a disk prompt.
- * For every platform; 94 and 95 PC are the games that have it (the "master league": the master machine
- * owns the league, each human team elsewhere has a copy).
+ * Shared league or campaign (the "online season"): copies kept in step by the *game's* export, import
+ * and merge. For any title, on any platform, that keeps a master copy on one machine and a copy per
+ * player. "Team" here is that game's own unit (a franchise, a save slot, a character). Overbar carries
+ * the files and the room; the port's hooks are the game's routines. A DOS port can point the game at a
+ * virtual drive (overbar/vdrive.h) so it never asks for a disk.
  *
- * Sync (the room's host holds the master league): a guest that joins, or that changed its team, calls
+ * Sync (the room's host holds the master): a guest that joins, or that changed its unit, calls
  * ob_season_sync. It says which league and teams it has, and the games it played on its copy away from
  * the master (ob_season_played). The host checks the league and who owns each team (the first player to
- * bring a team owns it), and the guest exports each of its teams (the game's export to a virtual drive,
- * overbar/vdrive.h) and sends it (overbar/files.h). The host merges every team of that guest, then makes
- * a fresh copy for each and sends it back, and the guest imports them. A game played away from the master
- * is handed to the merge once: the host keeps the keys of those merged.
+ * bring a team owns it), and the guest exports each of its teams (the game's export into a folder) and
+ * sends it (overbar/files.h). The host merges every team of that guest, then makes a fresh copy for each
+ * and sends it back, and the guest imports them. A game played away from the master is handed to the
+ * merge once: the host keeps the keys of those merged.
  *
- * A match away from the master (C vs D with the host away) follows the original's rule for two human teams:
- * the game needs both teams' copies (the opponent's floppy), and it writes the result into both, each team's
- * stats into its own copy. So each player of the match sends its copy to the other machines as a mirror
- * (ob_season_mirror_send); every machine plays from the same two copies (its own where it has one, the
- * mirror of the other), and drops the mirrors after, keeping none of their writes. Both players' copies then
- * have the game played (their calendars show it), so neither can play it again, and each marks it
- * (ob_season_played). Its result reaches the master at each one's next sync, one team from each copy.
-
- * A team made human for a player on another machine (the original's "add a human team" and its floppy) is
- * ob_season_give: the copy goes to that machine and its game imports it. The host can do it all, or a player
- * in the room picks a team for themself (ob_season_claim): the host's game adds the human team (add_human)
- * and gives its first copy. ob_season_teams asks the host who has which team, for a picking screen.
+ * A match away from the master (C vs D with the host away): the game needs both players' copies, and it
+ * writes the result into both, each side's stats into its own copy. So each player of the match sends
+ * its copy to the other machines as a mirror (ob_season_mirror_send); every machine plays from the same
+ * two copies (its own where it has one, the mirror of the other), and drops the mirrors after, keeping
+ * none of their writes. Both players' copies then have the game played, so neither can play it again,
+ * and each marks it (ob_season_played). Its result reaches the master at each one's next sync, one team
+ * from each copy.
  *
- * A team as a file (the original's floppy, for a player away from the room): ob_season_pack writes a team's
- * export (with the games played away) into one file; the host takes it (ob_season_take_pack: the merge, as a
- * sync does it) and writes a fresh copy into a file back, which the player imports (ob_season_import_pack).
- * A first copy can go the same way (ob_season_pack_copy on the host).
+ * A unit made this player's on another machine is ob_season_give: the copy goes to that machine and its
+ * game imports it. The host can do it all, or a player in the room picks one (ob_season_claim): the
+ * host's game adds them (add_human) and gives a first copy. ob_season_teams asks the host who has which
+ * team, for a picking screen.
  *
- * The port's hooks are the game's own routines, with the virtual drive set on the folder given. Messages
- * are of type OB_NET_TYPE_SEASON (ob_room_modules routes them, and the files'). Each machine keeps a small
- * ledger in its work folder (owners and merged games on the master; games played away elsewhere). No SDL. */
+ * A team as a file (a player away from the room): ob_season_pack writes a team's export (with the games
+ * played away) into one file; the host takes it (ob_season_take_pack: the merge, as a sync does it) and
+ * writes a fresh copy into a file back, which the player imports (ob_season_import_pack). A first copy
+ * can go the same way (ob_season_pack_copy on the host).
+ *
+ * Messages are of type OB_NET_TYPE_SEASON (ob_room_modules routes them, and the files'). Each machine
+ * keeps a small ledger in its work folder (owners and merged games on the master; games played away
+ * elsewhere). No SDL. */
 #ifndef OVERBAR_SEASON_H
 #define OVERBAR_SEASON_H
 
@@ -76,8 +77,8 @@ typedef struct ob_season_ops {
     int (*import_team)(void *ud, int team, const char *dir);
     /* the folder of this machine's league, for a mirror: 0, or -1 */
     int (*league_dir)(void *ud, char *dir, int size);
-    /* (the master) the game's "add a human team" for team, for the player name (no questions on the host's
-     * screen): 0, or -1 (NULL: players cannot pick their teams; the host adds them) */
+    /* (the master) make this slot this player's, for the player name (no questions on the host's
+     * screen): 0, or -1 (NULL: players cannot pick; the host adds them) */
     int (*add_human)(void *ud, int team, const char *name);
 } ob_season_ops;
 

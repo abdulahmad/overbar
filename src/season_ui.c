@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
  * Copyright (c) 2026 abdulahmad
  *
- * The Season page: overlay and File menu for the online season (overbar/season.h). Overbar draws
+ * The Season page: overlay and File menu for a shared league (overbar/season.h). Overbar draws
  * Sync, Pick a team, and a team as a file; the game's export, import and merge stay the client's
- * hooks. Files are .obt in the teams folder (the original's floppy, by mail).
+ * hooks. Files are .obt in the folder the client names. Any game with a master copy and per-player
+ * copies can attach this page.
  */
 #include "overbar/overbar.h"
 #include "overbar/season.h"
@@ -221,7 +222,10 @@ int ob_season_team_items(const ob_host *h, ob_item *out, int cap)
         add_text(out, &n, cap, OB_ID_SEASON_NOTE, "League",
                  s->roster_league[0] ? s->roster_league : "(none)");
         for (i = 0; i < OB_SEASON_TEAMS && n < cap - 1; i++) {
-            if (i >= 26 && s->roster_kind[i] == OB_SEASON_FREE) continue;
+            /* A name callback returning NULL means that slot is not a team in this game. */
+            if (s->roster_kind[i] == OB_SEASON_FREE && h->season_team_name
+                && !h->season_team_name(h->season_name_ud, i))
+                continue;
             team_label(h, i, lab, (int)sizeof lab);
             if (s->roster_kind[i] == OB_SEASON_FREE)
                 add_action(out, &n, cap, OB_ID_SEASON_TEAM + i, lab, "free");

@@ -538,10 +538,10 @@ size_t ob_game_pack(const ob_host *h, char *buf, size_t size);
 int ob_game_session_begin(ob_host *h, const void *data, size_t size);
 void ob_game_session_end(ob_host *h);
 
-/* The Season page (overlay and the File menu). The client owns the ob_season (its game hooks) and
- * attaches it here so Overbar can draw Sync, Pick a team, and a team as a file. host_machine is who
- * a guest syncs with (0 when the room's host holds the master league). dir is the folder of .obt
- * files; NULL keeps the working directory. */
+/* The Season page (overlay and the File menu). For any game with a master copy and per-player
+ * copies. The client owns the ob_season (its game hooks) and attaches it here so Overbar can draw
+ * Sync, Pick a team, and a team as a file. host_machine is who a guest syncs with (0 when the
+ * room's host holds the master). dir is the folder of .obt files; NULL keeps the working directory. */
 void ob_season_set(ob_host *h, struct ob_season *s, int host_machine, const char *dir);
 void ob_season_set_names(ob_host *h, const char *(*team_name)(void *ud, int team), void *ud);
 void ob_season_open(ob_host *h);                    /* the overlay, on the Season page (the bar's Season / File) */

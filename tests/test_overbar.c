@@ -664,7 +664,7 @@ static void test_game_page(void)
     FILE *f;
     remove(path);
     memset(&ops, 0, sizeof ops);
-    ops.title = "Hockey";
+    ops.title = "Game";
     ops.opts = g_opts;
     ops.nopts = 4;
     ops.changed = g_changed;
@@ -738,7 +738,7 @@ static int s_league(void *ud, ob_season_league *l)
 {
     s_mach *m = ud;
     int i;
-    snprintf(l->name, sizeof l->name, "%s", "Hockey");
+    snprintf(l->name, sizeof l->name, "%s", "League");
     snprintf(l->id, sizeof l->id, "%s", "id1");
     l->master = m->master;
     l->nteam = m->nteams;
@@ -771,7 +771,7 @@ static int s_dir(void *ud, char *dir, int size)
 }
 static const char *s_name(void *ud, int team)
 {
-    static const char *n[] = { "Anaheim", "Boston", "Calgary", "Detroit" };
+    static const char *n[] = { "Alpha", "Beta", "Gamma", "Delta" };
     (void)ud;
     return team >= 0 && team < 4 ? n[team] : NULL;
 }
@@ -805,7 +805,7 @@ static void test_season_page(void)
     ops.league_dir = s_dir;
     ob_season_init(&season, &ops, SROOT "/work", "Cal", NULL, NULL, NULL);
 
-    ob_host_init(&h, OB_PORT_PC95, OB_PROFILE_DESKTOP);
+    ob_host_init(&h, OB_PORT_GENERIC, OB_PROFILE_DESKTOP);
     ob_season_set(&h, &season, 0, SROOT "/teams");
     ob_season_set_names(&h, s_name, NULL);
     CHECK(ob_season_ready(&h));
@@ -828,7 +828,7 @@ static void test_season_page(void)
         if (items[i].id == OB_ID_BACK) found = 1;
     }
     CHECK(pick && file_item);
-    CHECK(ob_items_contain_label(items, n, "Calgary") || ob_items_contain(items, n, OB_ID_SEASON_NOTE));
+    CHECK(ob_items_contain_label(items, n, "Gamma") || ob_items_contain(items, n, OB_ID_SEASON_NOTE));
 
     snprintf(h.season_file, sizeof h.season_file, "%s", "cal.obt");
     CHECK(ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SEASON_EXPORT, 0));
