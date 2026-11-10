@@ -536,6 +536,8 @@ static void got_teams(ob_season *s, int from)
     char who[OB_SEASON_TEAMS][OB_NET_NAME + 1];
     size_t at;
     if (from < 0 || from >= OB_NET_MAX_MACHINES) return;
+    s->answered++;
+    s->changes++;
     w.n = 0;
     put8(&w, ROSTER);
     if (ob_season_roster(s, kind, who)) {           /* no league open on the host: say so (an empty list) */
@@ -588,6 +590,7 @@ int ob_season_teams(ob_season *s, int host)
     wr w;
     if (host < 0 || host >= OB_NET_MAX_MACHINES) return -1;
     s->host = host;                     /* the last list stays shown until the new one comes */
+    s->asked++;
     w.n = 0;
     put8(&w, TEAMS);
     emit(s, host, &w);

@@ -149,6 +149,8 @@ typedef struct ob_season {
     int disk_team;                      /* the last team given as a disk (-1 none) */
     char why[160];                      /* the last failure ("" none) */
     unsigned changes;                   /* bumped when the roster, a claim or a disk changes (screens redraw) */
+    unsigned asked, answered;           /* (a guest) league lists asked for; (the host) lists sent */
+    unsigned send_failed;               /* messages the client's send could not pass on (it counts them) */
 } ob_season;
 
 /* base: Overbar's season folder (made if missing). files: the room's (its hooks become the season's). send:
