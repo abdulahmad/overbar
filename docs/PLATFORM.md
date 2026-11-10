@@ -14,7 +14,7 @@ key/mouse routing, cursor hiding, text input, FPS, controller open/close and pad
 | Module | File | Owns |
 |---|---|---|
 | Window and present | `src/plat_window.c` | SDL_Init, window flags (fullscreen on handheld), SDL_Renderer on handhelds, OpenGL only where the port asks, vsync, fullscreen toggle, picture rect from `ob_view`, FPS/stats, the overlay and banner drawn over the frame |
-| Input | `src/plat_input.c` | the event pump, keyboard and controller open/close, hotkeys (`` ` ``, F11, F12, Alt+Enter, controller Back), overlay and file-menu routing, cursor hiding, text input, per-slot pad binding and the pad-setup screen, settings file |
+| Input | `src/plat_input.c` | the event pump, keyboard and controller open/close, hotkeys (`` ` ``, F11, F12, F9, Alt+Enter, controller Back), overlay and file-menu routing, cursor hiding, text input, per-slot pad binding and the pad-setup screen, settings file |
 | Audio | `src/plat_audio.c` | one SDL audio device, a sample ring the game pushes into (or a pull callback), resampling to the device rate, mute online |
 | Desktop menu bar | `src/bar.c` (model) + `bar_win.c`, `bar_mac.m` | the standard bar built once from `ob_host` as a neutral item tree (check marks, radio groups, actions). Windows: native HMENU. macOS: native NSMenu in the screen's menu bar. Linux has no standard native menu bar, so it gets none (the Overbar overlay menu is the way in there, as on handhelds). A port may replace items or the whole tree |
 | Loop | `src/plat_run.c` | optional: `ob_plat_run()` owns the main loop and calls the hooks; ports with their own loop (PC ports) call `ob_plat_pump()` and `ob_plat_present()` instead |
@@ -58,7 +58,8 @@ controller on a desktop. `src/osk.c` (model and drawing, no SDL; `ob_plat_osk_*`
 the d-pad, A types, B deletes, Start accepts. It does not know the game: it calls a hook `ob_plat_hooks.key(scancode, down)` (USB HID codes, Shift sent around a shifted letter)
 that the port turns into the game's own keyboard (the DOS keyboard interrupt for the PC ports). The port tells the layer when
 the game is waiting for text (`ob_plat_osk_open()` / `ob_plat_osk_close()`: for the PC ports found from the game's text-entry routines, to be
-located in each game's code); a player can also open it by hand from the overlay. The layer's overlay fields (the Online page)
+located in each game's code). Auto-open pops only if the last input was a controller; after a mouse or keyboard it stays
+closed. F9 opens or closes it by hand either way. A player can also open it from the overlay. The layer's overlay fields (the Online page)
 use the same keyboard on a handheld.
 
 ## Select sides, chat and the room (online play phase 2, 2026-11-09)

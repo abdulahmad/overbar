@@ -190,6 +190,7 @@ enum {
     OB_ID_SEASON_FILE,          /* the filename (a field); files live in the teams folder */
     OB_ID_SEASON_FILES,         /* open the list of .obt files */
     OB_ID_SEASON_NOTE,          /* a status or error line */
+    OB_ID_OSK,                  /* Keys page: F9 on-screen keyboard */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
     OB_ID_SEASON_PACK = 840,    /* + an index in the files list: import or take that file */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
@@ -202,6 +203,7 @@ enum {
 /* SDL2 scancodes so a client can pass e.key.keysym.scancode through. */
 enum {
     OB_SCANCODE_GRAVE = 53,
+    OB_SCANCODE_F9 = 66,
     OB_SCANCODE_F11 = 68,
     OB_SCANCODE_F12 = 69
 };
@@ -209,7 +211,8 @@ enum {
 typedef enum {
     OB_HOSTKEY_NONE = 0,
     OB_HOSTKEY_OVERLAY,         /* ` or F11; controller Back too */
-    OB_HOSTKEY_STATS            /* F12 */
+    OB_HOSTKEY_STATS,           /* F12 */
+    OB_HOSTKEY_OSK              /* F9: on-screen keyboard, by hand */
 } ob_hostkey;
 
 #define OB_ADDONS_MAX 16

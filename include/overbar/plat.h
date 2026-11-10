@@ -53,7 +53,9 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h);
 void ob_plat_close(void);
 
 void ob_plat_pump(void);                      /* the window's events: overlay keys, pads, mouse, text, the bar */
-/* The on-screen keyboard: the port opens it when the game waits for text (or a player asks for it). While it is open the layer takes the
+/* The on-screen keyboard. ob_plat_osk_open is the auto-open a port calls when the game waits for
+ * text (a line editor): it pops only if the last input was a controller. A mouse or keyboard last
+ * leaves it closed; F9 still opens or closes it by hand. While it is open the layer takes the
  * d-pad / arrows, A / Enter (type), B / Esc (delete) and sends the keys through hooks.key. Ports that draw themselves (window_only) call
  * ob_plat_osk_draw over their picture where they draw the overlay. */
 void ob_plat_osk_open(void);

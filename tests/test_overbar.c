@@ -289,12 +289,17 @@ static void test_ini_first_launch(void)
 static void test_keys(void)
 {
     ob_host h;
+    ob_item items[OB_ITEMS_MAX];
+    int n;
     ob_host_init(&h, OB_PORT_GENERIC, OB_PROFILE_DESKTOP);
     CHECK(ob_map_key(OB_SCANCODE_GRAVE) == OB_HOSTKEY_OVERLAY);
     CHECK(ob_map_key(OB_SCANCODE_F11) == OB_HOSTKEY_OVERLAY);
     CHECK(ob_map_key(OB_SCANCODE_F12) == OB_HOSTKEY_STATS);
+    CHECK(ob_map_key(OB_SCANCODE_F9) == OB_HOSTKEY_OSK);
     CHECK(ob_map_pad_back() == OB_HOSTKEY_OVERLAY);
     CHECK(ob_map_key(41) == OB_HOSTKEY_NONE);     /* Esc is not overlay */
+    n = ob_page_items(&h, OB_PAGE_KEYS, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_OSK));
     CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_GRAVE));
     CHECK(h.overlay_open);
     CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_F11));

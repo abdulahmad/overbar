@@ -531,6 +531,7 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
     case OB_PAGE_KEYS:
         add_text(out, &n, cap, OB_ID_KEYS, "Overlay", "` and F11");
         add_text(out, &n, cap, OB_ID_STATS, "Stats", "F12");
+        add_text(out, &n, cap, OB_ID_OSK, "On-screen keyboard", "F9");
         add_text(out, &n, cap, OB_ID_QUIT, "Esc", "game (not overlay)");
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
