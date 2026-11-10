@@ -999,7 +999,7 @@ uint32_t ob_net_room_changes(ob_net *n) { return n->changes; }
 
 int ob_net_send(ob_net *n, int to, int type, const void *data, size_t size)
 {
-    int k, sent = 0;
+    int k;
     if (!n->room || type < 0 || type > OB_NET_TYPE_LAST || size > OB_NET_MAX_MESSAGE || (size && !data)) return -1;
     if (n->phase != P_ROOM && n->phase != P_RUNNING) return -1;
     if (to != OB_NET_ALL && (to == n->me || !member(n, to))) return -1;
@@ -1007,7 +1007,6 @@ int ob_net_send(ob_net *n, int to, int type, const void *data, size_t size)
         for (k = 1; k < MACH; k++)
             if ((to == OB_NET_ALL || to == k) && member(n, k)) {
                 if (lane_message(n, k, 0, k, type, data, size)) return -1;
-                sent++;
             }
         return 0;
     }
