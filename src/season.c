@@ -185,6 +185,7 @@ void ob_season_init(ob_season *s, const ob_season_ops *ops, const char *base, co
     s->send = send;
     s->send_ud = ud;
     s->claim = -1;
+    s->disk_team = -1;
     ob_fs_mkdir(s->base);
     if (files) ob_files_hooks(files, where, done, s);
 }
@@ -417,6 +418,13 @@ static void done(void *ud, int out, int peer, const char *tag, int ok, const cha
     if (tag[0] == 'g') {
         if (out || !ok || team < 0 || team >= OB_SEASON_TEAMS) return;
         snprintf(dir, sizeof dir, "%s/new/t%d", s->base, team);
+        if (s->ops.give_as_disk) {                  /* the player's disk: the game's menus load it */
+            s->given |= 1u << team;
+            s->disk |= 1u << team;
+            s->disk_team = team;
+            if (s->claim == team) s->claim = OB_SEASON_TEAMS + team;
+            return;
+        }
         if (!s->ops.import_team || s->ops.import_team(s->ops.ud, team, dir)) { snprintf(s->why, sizeof s->why, "the game's import of a first copy failed"); return; }
         s->given |= 1u << team;
         if (s->claim == team) s->claim = OB_SEASON_TEAMS + team;
@@ -462,6 +470,8 @@ static void refuse(ob_season *s, int to, int team, const char *why)
     emit(s, to, &w);
 }
 
+static const char *set_up_for(ob_season *s, int t);
+
 static void got_claim(ob_season *s, int from, rd *r)
 {
     char name[OB_NET_NAME + 1], why[96];
@@ -478,29 +488,62 @@ static void got_claim(ob_season *s, int from, rd *r)
     }
     if (!s->owner[t][0]) {
         if (team_index(s->league.team, s->league.nteam, t) >= 0) { refuse(s, from, t, "that team is the host's"); return; }
+        if (set_up_for(s, t)) {                     /* set up for a player away: that copy, no question */
+            if (ob_season_give(s, from, name, t)) refuse(s, from, t, "the host could not make a copy");
+            return;
+        }
         if (!s->ops.add_human) { refuse(s, from, t, "the host adds the human teams"); return; }
         if (s->ops.add_human(s->ops.ud, t, name)) { refuse(s, from, t, "the host's game could not add that team"); return; }
     }
     if (ob_season_give(s, from, name, t)) refuse(s, from, t, "the host could not make a copy");
 }
 
+static const char *set_up_for(ob_season *s, int t)
+{
+    const char *p = s->ops.player ? s->ops.player(s->ops.ud, t) : NULL;
+    return p && p[0] ? p : NULL;
+}
+
+int ob_season_roster(ob_season *s, int kind[OB_SEASON_TEAMS], char who[OB_SEASON_TEAMS][OB_NET_NAME + 1])
+{
+    int t;
+    if (load(s) || !s->league.master) return -1;
+    for (t = 0; t < OB_SEASON_TEAMS; t++) {
+        const char *p = set_up_for(s, t);
+        who[t][0] = 0;
+        if (s->owner[t][0]) {
+            kind[t] = OB_SEASON_OWNED;
+            snprintf(who[t], OB_NET_NAME + 1, "%s", p ? p : s->owner[t]);
+        } else if (team_index(s->league.team, s->league.nteam, t) >= 0) {
+            kind[t] = OB_SEASON_HOSTS;
+            if (p) snprintf(who[t], OB_NET_NAME + 1, "%s", p);
+            else if (s->me[0]) snprintf(who[t], OB_NET_NAME + 1, "%s", s->me);
+        } else if (p) {
+            kind[t] = OB_SEASON_WAITING;
+            snprintf(who[t], OB_NET_NAME + 1, "%s", p);
+        } else
+            kind[t] = OB_SEASON_FREE;
+    }
+    return 0;
+}
+
 static void got_teams(ob_season *s, int from)
 {
     wr w;
-    int t, n = 0;
+    int kind[OB_SEASON_TEAMS], t, n = 0;
+    char who[OB_SEASON_TEAMS][OB_NET_NAME + 1];
     size_t at;
-    if (from < 0 || from >= OB_NET_MAX_MACHINES || load(s) || !s->league.master) return;
+    if (from < 0 || from >= OB_NET_MAX_MACHINES || ob_season_roster(s, kind, who)) return;
     w.n = 0;
     put8(&w, ROSTER);
     putstr(&w, s->league.name);
     at = w.n;
     put8(&w, 0);
     for (t = 0; t < OB_SEASON_TEAMS; t++) {
-        int kind = s->owner[t][0] ? OB_SEASON_OWNED : team_index(s->league.team, s->league.nteam, t) >= 0 ? OB_SEASON_HOSTS : -1;
-        if (kind < 0) continue;
+        if (kind[t] == OB_SEASON_FREE) continue;
         put8(&w, (unsigned)t);
-        put8(&w, (unsigned)kind);
-        putstr(&w, kind == OB_SEASON_OWNED ? s->owner[t] : "");
+        put8(&w, (unsigned)kind[t]);
+        putstr(&w, who[t]);
         n++;
     }
     w.b[at] = (uint8_t)n;
@@ -522,7 +565,7 @@ static void got_roster(ob_season *s, int from, rd *r)
         int t = (int)get8(r), k = (int)get8(r);
         char nm[OB_NET_NAME + 1];
         getstr(r, nm, sizeof nm);
-        if (t < OB_SEASON_TEAMS && (k == OB_SEASON_HOSTS || k == OB_SEASON_OWNED)) { kind[t] = k; memcpy(who[t], nm, sizeof nm); }
+        if (t < OB_SEASON_TEAMS && (k == OB_SEASON_HOSTS || k == OB_SEASON_OWNED || k == OB_SEASON_WAITING)) { kind[t] = k; memcpy(who[t], nm, sizeof nm); }
     }
     if (r->bad) return;
     memcpy(s->roster_kind, kind, sizeof kind);
@@ -541,6 +584,17 @@ int ob_season_teams(ob_season *s, int host)
     put8(&w, TEAMS);
     emit(s, host, &w);
     return 0;
+}
+
+int ob_season_disk(const ob_season *s, int team, char *dir, int size)
+{
+    char d[DIRLEN];
+    if (team < 0) team = s->disk_team;
+    if (team < 0 || team >= OB_SEASON_TEAMS || !(s->disk >> team & 1)) return -1;
+    snprintf(d, sizeof d, "%s/new/t%d", s->base, team);
+    if ((int)strlen(d) >= size) return -1;
+    memcpy(dir, d, strlen(d) + 1);
+    return team;
 }
 
 int ob_season_claim(ob_season *s, int host, int team)

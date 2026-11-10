@@ -113,9 +113,8 @@ enum {
     OB_PAGE_OPTS_LO,
     OB_PAGE_MISTER,             /* one directory of the MiSTer tree */
     OB_PAGE_GAME,               /* the client's own game options (ob_game_set_ops) */
-    OB_PAGE_SEASON,             /* online season: sync, pick a team, a team as a file */
-    OB_PAGE_SEASON_TEAMS,       /* who has which team; a guest claims a free one */
-    OB_PAGE_SEASON_FILES,       /* .obt files in the teams folder */
+    OB_PAGE_SEASON,             /* online season: who has which team, pick a team, sync */
+    OB_PAGE_SEASON_TEAMS,       /* a guest picks a team ("Edmonton - Bob") */
     OB_PAGE_COUNT
 };
 
@@ -183,16 +182,9 @@ enum {
     OB_ID_SEASON,               /* main page: the Season page (when the client attached one) */
     OB_ID_SEASON_SYNC,          /* a guest: sync this copy with the master */
     OB_ID_SEASON_PICK,          /* a guest: open the team list */
-    OB_ID_SEASON_EXPORT,        /* a guest: write this team's export as a file */
-    OB_ID_SEASON_IMPORT,        /* a guest: import the host's copy from a file */
-    OB_ID_SEASON_TAKE,          /* the master: take a player's file and write a copy back */
-    OB_ID_SEASON_COPY,          /* the master: a first copy as a file */
-    OB_ID_SEASON_FILE,          /* the filename (a field); files live in the teams folder */
-    OB_ID_SEASON_FILES,         /* open the list of .obt files */
     OB_ID_SEASON_NOTE,          /* a status or error line */
     OB_ID_OSK,                  /* Keys page: F9 on-screen keyboard */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
-    OB_ID_SEASON_PACK = 840,    /* + an index in the files list: import or take that file */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
     OB_ID_ADDON = 1000
 };
@@ -341,12 +333,10 @@ typedef struct ob_host {
     char game_stash[OB_GAME_OPTS_MAX][2][48];
     struct ob_season *season;   /* the Season page (NULL: hidden; the client's, Overbar does not own it) */
     int season_host;            /* the master machine a guest syncs with */
-    char season_dir[260];       /* folder of .obt files (made if missing); empty: the working directory */
-    char season_file[96];       /* the filename field (team.obt when empty) */
-    int season_team;            /* which of this copy's teams Export / first copy uses */
     const char *(*season_team_name)(void *ud, int team);    /* NULL: "Team N" */
     void *season_name_ud;
-    char season_note[160];      /* the last Export / Import / Take / Sync line */
+    const char *season_disk_hint;   /* (a guest) where the game loads a picked team (NULL: a plain line) */
+    char season_note[160];      /* the last Sync / Pick a team line */
 } ob_host;
 
 typedef struct ob_item {
@@ -541,18 +531,21 @@ size_t ob_game_pack(const ob_host *h, char *buf, size_t size);
 int ob_game_session_begin(ob_host *h, const void *data, size_t size);
 void ob_game_session_end(ob_host *h);
 
-/* The Season page (overlay and the File menu). For any game with a master copy and per-player
+/* The Season page (overlay and the menu bar). For any game with a master copy and per-player
  * copies. The client owns the ob_season (its game hooks) and attaches it here so Overbar can draw
- * Sync, Pick a team, and a team as a file. host_machine is who a guest syncs with (0 when the
- * room's host holds the master). dir is the folder of .obt files; NULL keeps the working directory. */
+ * who has which team ("Edmonton - Bob"), Pick a team and Sync. No file name is shown or typed:
+ * copies go through the room. host_machine is who a guest syncs with (0 when the room's host holds
+ * the master). dir is unused (kept for older clients). */
 void ob_season_set(ob_host *h, struct ob_season *s, int host_machine, const char *dir);
+/* (give_as_disk) the line a guest sees for a picked team, in the game's words ("In the game: Season,
+ * Import Master League; the disk is in drive A:"); NULL: a plain line */
+void ob_season_set_hint(ob_host *h, const char *disk_hint);
 void ob_season_set_names(ob_host *h, const char *(*team_name)(void *ud, int team), void *ud);
 void ob_season_open(ob_host *h);                    /* the overlay, on the Season page (the bar's Season / File) */
 int ob_season_ready(const ob_host *h);
 int ob_season_apply(ob_host *h, int id, int value); /* 1 if it was a Season row */
 int ob_season_items(const ob_host *h, ob_item *out, int cap);
 int ob_season_team_items(const ob_host *h, ob_item *out, int cap);
-int ob_season_file_items(const ob_host *h, ob_item *out, int cap);
 
 /* the Online page's numbers: their bottom, step and unit (1 for those ids) */
 int ob_online_number_range(int id, int *lo, int *step, const char **unit);

@@ -23,7 +23,6 @@ static const char *page_title(const ob_host *h, int page)
     case OB_PAGE_GAME: return ob_game_title(h);
     case OB_PAGE_SEASON: return "Season";
     case OB_PAGE_SEASON_TEAMS: return "Pick a team";
-    case OB_PAGE_SEASON_FILES: return "Team files";
     case OB_PAGE_SCALE_HI: return "Scaling (Hi-Res)";
     case OB_PAGE_SCALE_LO: return h->has_hires ? "Scaling (Lo-Res)" : "Scaling";
     case OB_PAGE_MODE_HI:
@@ -89,8 +88,6 @@ void ob_overlay_build(ob_host *h)
             static const char addr_chars[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.:-[]";
             add = it->id == OB_ID_NET_PORT ? mdrt_menu_add_field(m, it->id, it->label, it->detail, 5, "0123456789")
                 : it->id == OB_ID_NET_ADDR ? mdrt_menu_add_field(m, it->id, it->label, it->detail, 60, addr_chars)
-                : it->id == OB_ID_SEASON_FILE ? mdrt_menu_add_field(m, it->id, it->label, it->detail, 60,
-                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
                 : mdrt_menu_add_field(m, it->id, it->label, it->detail, OB_NET_NAME, name_chars);
             continue;
         }
@@ -129,7 +126,7 @@ static int parent_page(const ob_host *h, int page)
     if (page == OB_PAGE_MODE_LO || page == OB_PAGE_OPTS_LO) return OB_PAGE_SCALE_LO;
     if (page == OB_PAGE_MODE_HI || page == OB_PAGE_OPTS_HI) return OB_PAGE_SCALE_HI;
     if (page == OB_PAGE_SCALE_HI || page == OB_PAGE_SCALE_LO) return OB_PAGE_MAIN;
-    if (page == OB_PAGE_SEASON_TEAMS || page == OB_PAGE_SEASON_FILES) return OB_PAGE_SEASON;
+    if (page == OB_PAGE_SEASON_TEAMS) return OB_PAGE_SEASON;
     return OB_PAGE_MAIN;
 }
 
@@ -203,17 +200,6 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
         ob_season_apply(h, id, 0);
         go_page(h, OB_PAGE_SEASON_TEAMS);
         return 1;
-    case OB_ID_SEASON_FILES:
-        go_page(h, OB_PAGE_SEASON_FILES);
-        return 1;
-    case OB_ID_SEASON_FILE: {
-        mdrt_menu_item *it = mdrt_menu_find(&h->overlay, id);
-        const char *t = it ? it->detail : "";
-        snprintf(h->season_file, sizeof h->season_file, "%s", t[0] ? t : "team.obt");
-        ob_overlay_build(h);
-        mdrt_menu_select(&h->overlay, id);
-        return 1;
-    }
     case OB_ID_NET_NAME:
     case OB_ID_NET_ADDR:
     case OB_ID_NET_PORT: {

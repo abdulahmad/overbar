@@ -36,11 +36,11 @@ When a game is waiting for text, the on-screen keyboard opens by itself only if 
 
 ### Shared league (Season)
 
-A game that keeps a **master copy** of a league or campaign on one machine and a **copy on each player's machine** can attach Overbar's **Season** page (overlay and **File** on the window menu bar). Overbar draws the screens and carries the files; the port's hooks are that game's own export, merge, copy and import. Any DOS, console, or other title with that shape can use it.
+A game that keeps a **master copy** of a league or campaign on one machine and a **copy on each player's machine** can attach Overbar's **Season** page (overlay, and **Season...** on the window menu bar). Overbar draws the screens and carries the copies through the room; no file name is ever shown or typed. The port's hooks are that game's own export, merge, copy and import. Any DOS, console, or other title with that shape can use it.
 
 - **Sync league** — send this copy's teams to the host and take a fresh copy back
-- **Pick a team** — claim a free team in the room; the host makes it this player's
-- **Export team as a file** / **Import a team file** / **Take a team file** — a team as an `.obt` file, for a player who is not in the room. The host **Takes** an export and writes a copy back; a guest **Imports** that copy. **Write a first copy** is a new human team's first file.
+- **Pick a team** — the host sets players up in the game's own menus (say Edmonton for Bob, "played on another computer"); Bob joins, picks **Edmonton - Bob**, and the copy comes to him as his disk, which his game loads from its own menus
+- The host's page lists who has which team (**Edmonton - Bob: waiting for its player**, **picked**, **on this computer**)
 
 ### 📺 A picture that's the right shape
 
@@ -234,7 +234,7 @@ The mouse works too: `ob_overlay_pointer` takes a position in the overlay buffer
 - **Windows menu bar:** `ob_filemenu_init(hwnd)`, then `ob_filemenu_show(ob_filemenu_wanted(windowed, fullscreen, handheld))`. Pass the window's messages (SDL's `SDL_SYSWMEVENT`) to `ob_filemenu_event`.
 - **Stats box:** `ob_stats_draw` draws three lines in a dark box, and `ob_stats_place` puts it in the top right corner.
 - **Two picture sizes:** a game with a hi-res menu and a lo-res game screen keeps a separate look for each, in `host.hires` and `host.lores`.
-- **Season:** `ob_season_set(&host, &season, 0, "teams")` after `ob_season_init`. Overlay **Season** and the bar's **File** menu then Sync, Pick a team, and export/import `.obt` files. The port's `ob_season_ops` are the game's export, merge, copy and import.
+- **Season:** `ob_season_set(&host, &season, 0, NULL)` after `ob_season_init`. Overlay **Season** then shows who has which team, Pick a team and Sync. The port's `ob_season_ops` are the game's export, merge, copy and import; `player` names who a team was set up for, `give_as_disk` keeps a picked team as a disk (`ob_season_disk`) for the game's menus, and `ob_season_set_hint` says where in the game to load it.
 
 ### 7. ✅ Check it
 

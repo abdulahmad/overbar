@@ -127,12 +127,13 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
   team (its ledger keeps game and team merged), so a sync broken off after the merge never counts a game twice.
   Teams for players (2026-11-10): the host can add them all (`ob_season_give`), or a player in the room picks one
   (`ob_season_teams` for who has which, `ob_season_claim`; the port's `add_human` hook is that game's add-a-player,
-  with no questions on the host's screen). A team as a file, for a player away from the room: `ob_season_pack` (the
-  export and the games played away), `ob_season_take_pack` on the host (merged once: the same file again only gets
-  its copy back), `ob_season_import_pack` for the copy back, and `ob_season_pack_copy` for a first copy. Overlay
-  **Season** and the window **File** menu (`ob_season_set`) are the screens: Sync league, Pick a team, Export /
-  Import / Take a team file, Write a first copy. Files are `.obt` in the folder the client names. `ob_room_modules`
-  routes both modules' messages; the room page shows a line about a sync.
+  with no questions on the host's screen). A team the host's game set up for a player on another computer (the
+  original's export to floppy; the port's `player` hook names that player) shows to guests as "Edmonton - Bob";
+  picking it gives that copy with no question on the host, and with `give_as_disk` it waits on the guest as a disk
+  (`ob_season_disk`, the port mounts it as A:) that the game's own menus load (2026-11-10, Abdul: no file names, no
+  typing, nothing for the host to write by hand). Overlay **Season** (`ob_season_set`, `ob_season_set_hint`): the
+  host sees who has which team; a guest gets Pick a team and Sync league. `ob_season_pack` and friends still exist
+  in the API for a team carried outside the room, but no screen offers them. `ob_room_modules` routes both modules' messages; the room page shows a line about a sync.
 
 ## Modem and cable play carried by the room (online play phase 6, 2026-11-09)
 
