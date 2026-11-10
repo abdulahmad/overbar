@@ -790,6 +790,7 @@ static void test_season_page(void)
     s_mach m;
     int n, i, found = 0, file_item = 0, pick = 0;
     FILE *f;
+    (void)f;
     memset(&m, 0, sizeof m);
     m.master = 0;
     m.teams[0] = 2;
@@ -826,42 +827,38 @@ static void test_season_page(void)
 
     n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
     for (i = 0; i < n; i++) {
-        if (items[i].id == OB_ID_SEASON_SYNC) found = 1;
         if (items[i].id == OB_ID_SEASON_PICK) pick = 1;
-        if (items[i].id == OB_ID_SEASON_EXPORT) file_item = 1;
-        if (items[i].id == OB_ID_SEASON_FILE) CHECK(items[i].kind == MDRT_ITEM_FIELD);
-        if (items[i].id == OB_ID_BACK) found = 1;
+        if (items[i].kind == MDRT_ITEM_FIELD) file_item = 1;        /* nothing to type */
+        if (items[i].label && strstr(items[i].label, ".obt")) file_item = 1;
+        if (strstr(items[i].detail, ".obt") || strstr(items[i].detail, "/")) file_item = 1;
     }
-    CHECK(pick && file_item);
-    CHECK(ob_items_contain_label(items, n, "Gamma") || ob_items_contain(items, n, OB_ID_SEASON_NOTE));
+    CHECK(pick && !file_item);
 
-    snprintf(h.season_file, sizeof h.season_file, "%s", "cal.obt");
-    CHECK(ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SEASON_EXPORT, 0));
-    {
-        FILE *got = fopen(SROOT "/teams/cal.obt", "rb");
-        CHECK(got != NULL);
-        if (got) fclose(got);
-    }
-    CHECK(strstr(h.season_note, "Exported") != NULL);
+    /* a guest's list: "Delta - Bob" to pick, the host's team shown, a computer team as a new player */
+    season.roster_have = 1;
+    snprintf(season.roster_league, sizeof season.roster_league, "%s", "Cup");
+    season.roster_kind[0] = OB_SEASON_HOSTS; snprintf(season.roster[0], sizeof season.roster[0], "%s", "Abdul");
+    season.roster_kind[3] = OB_SEASON_WAITING; snprintf(season.roster[3], sizeof season.roster[3], "%s", "Bob");
+    n = ob_page_items(&h, OB_PAGE_SEASON_TEAMS, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain_label(items, n, "Delta - Bob") && ob_items_contain(items, n, OB_ID_SEASON_TEAM + 3));
+    CHECK(ob_items_contain_label(items, n, "Alpha - Abdul") && !ob_items_contain(items, n, OB_ID_SEASON_TEAM + 0));
+    CHECK(ob_items_contain(items, n, OB_ID_SEASON_TEAM + 1));      /* Beta: free, a new player */
 
-    n = ob_page_items(&h, OB_PAGE_SEASON_FILES, items, OB_ITEMS_MAX);
-    found = 0;
-    for (i = 0; i < n; i++) if (items[i].id == OB_ID_SEASON_PACK) found = 1;
-    CHECK(found);
+    n = ob_filemenu_items(&h, items, OB_ITEMS_MAX);
+    for (i = 0; i < n; i++) CHECK(!items[i].label || !strstr(items[i].label, "file"));
 
     ob_overlay_open(&h);
-    CHECK(h.overlay_page == OB_PAGE_MAIN);
-    ob_overlay_input(&h, MDRT_MENU_DOWN); /* skip Resume; not reliable — open the page */
     ob_season_open(&h);
     CHECK(h.overlay_open && h.overlay_page == OB_PAGE_SEASON);
 
+    /* the master: who has which team, no actions about files */
     m.master = 1;
     m.teams[0] = 0;
     m.nteams = 1;
     n = ob_page_items(&h, OB_PAGE_SEASON, items, OB_ITEMS_MAX);
-    CHECK(ob_items_contain(items, n, OB_ID_SEASON_TAKE));
-    CHECK(ob_items_contain(items, n, OB_ID_SEASON_COPY));
-    CHECK(!ob_items_contain(items, n, OB_ID_SEASON_EXPORT));
+    CHECK(ob_items_contain_label(items, n, "You run this league"));
+    CHECK(ob_items_contain_label(items, n, "Alpha - Cal"));
+    CHECK(!ob_items_contain(items, n, OB_ID_SEASON_PICK));
 
     ob_host_free(&h);
     ob_season_free(&season);

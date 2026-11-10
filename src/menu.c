@@ -524,10 +524,6 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
         n = ob_season_team_items(h, out, cap - 1);
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
-    case OB_PAGE_SEASON_FILES:
-        n = ob_season_file_items(h, out, cap - 1);
-        add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
-        return n;
     case OB_PAGE_KEYS:
         add_text(out, &n, cap, OB_ID_KEYS, "Overlay", "` and F11");
         add_text(out, &n, cap, OB_ID_STATS, "Stats", "F12");

@@ -234,6 +234,8 @@ static int t_merge(void *ud, int team, const char *dir, const uint32_t *played, 
 }
 static unsigned added;                  /* teams the host's game made human for a player */
 static int t_add(void *ud, int team, const char *name) { (void)ud; (void)name; added |= 1u << team; return 0; }
+static const char *setup_for[NTEAMS];   /* the host's game: a team set up for a player away */
+static const char *t_player(void *ud, int team) { (void)ud; return team >= 0 && team < NTEAMS ? setup_for[team] : NULL; }
 static int t_dir(void *ud, char *dir, int size) { snprintf(dir, (size_t)size, "%s", ((mach *)ud)->league); return 0; }
 
 static void open_machine(int k, const char *name)
@@ -487,6 +489,55 @@ static void test_season(void)
 }
 
 /* players pick their teams in the room; a team as a file for a player away from it */
+/* the host sets Bob up for E in its game; Bob picks "E - Bob" and gets the copy as a disk his game loads */
+static void test_set_up_for_a_player(void)
+{
+    char dir[200], who[OB_SEASON_TEAMS][OB_NET_NAME + 1];
+    int k, kind[OB_SEASON_TEAMS];
+    ob_fs_mkdir(ROOT);
+    added = 0;
+    memset(setup_for, 0, sizeof setup_for);
+    for (k = 0; k < NM; k++) { char d[64]; online[k] = 1; memset(&M[k], 0, sizeof M[k]); snprintf(d, sizeof d, ROOT "/m%d", k); ob_fs_mkdir(d); }
+    open_machine(0, "Abdul");
+    open_machine(1, "Bob");
+    open_machine(2, "Dee");
+    M[0].s.ops.player = t_player;
+    M[1].s.ops.give_as_disk = 1;
+    M[2].s.ops.give_as_disk = 1;
+    ob_fs_mkdir(ROOT "/m0/league");
+    write_text(M[0].league, "LEAGUE.ID", "League 4711");
+    for (k = 0; k < NTEAMS; k++) { char n[16]; tname(n, k); write_text(M[0].league, n, ""); }
+    M[0].teams[0] = 1; M[0].nteams = 1;
+    setup_for[4] = "Bob";
+
+    CHECK(ob_season_roster(&M[0].s, kind, who) == 0 && kind[1] == OB_SEASON_HOSTS && !strcmp(who[1], "Abdul") &&
+          kind[4] == OB_SEASON_WAITING && !strcmp(who[4], "Bob") && kind[2] == OB_SEASON_FREE,
+          "set up: the host sees B (his) and E waiting for Bob");
+    CHECK(ob_season_disk(&M[1].s, -1, dir, (int)sizeof dir) == -1, "set up: Bob has no disk yet");
+    ob_season_teams(&M[1].s, 0);
+    pump();
+    CHECK(M[1].s.roster_kind[4] == OB_SEASON_WAITING && !strcmp(M[1].s.roster[4], "Bob") &&
+          M[1].s.roster_kind[1] == OB_SEASON_HOSTS, "set up: Bob's list shows E - Bob to pick");
+    CHECK(ob_season_claim(&M[1].s, 0, 4) == 0, "set up: Bob picks E");
+    pump();
+    CHECK(added == 0, "set up: no add-a-player on the host (the game already set E up)");
+    CHECK(M[1].s.claim == OB_SEASON_TEAMS + 4 && (M[1].s.disk >> 4 & 1), "set up: E is Bob's, as a disk");
+    CHECK(ob_season_disk(&M[1].s, -1, dir, (int)sizeof dir) == 4 && same_league(M[0].league, dir),
+          "set up: the disk holds the host's copy");
+    CHECK(read_text(M[1].league, "T4.DB") == NULL, "set up: nothing imported behind the player's back");
+    ob_season_teams(&M[2].s, 0);
+    pump();
+    CHECK(M[2].s.roster_kind[4] == OB_SEASON_OWNED && !strcmp(M[2].s.roster[4], "Bob"), "set up: Dee sees E - Bob taken");
+    ob_season_claim(&M[2].s, 0, 4);
+    pump();
+    CHECK(M[2].s.claim == -1 && strstr(M[2].s.why, "Bob's") != NULL, "set up: Dee cannot have it");
+    ob_season_roster(&M[0].s, kind, who);
+    CHECK(kind[4] == OB_SEASON_OWNED && !strcmp(who[4], "Bob"), "set up: the host sees E - Bob picked");
+    for (k = 0; k < NM; k++) { ob_season_free(&M[k].s); ob_files_free(&M[k].f); }
+    memset(setup_for, 0, sizeof setup_for);
+    printf("set up: the host sets a team up for Bob, Bob picks it and gets it as a disk\n");
+}
+
 static void test_pick_and_pack(void)
 {
     char back[200];
@@ -560,6 +611,8 @@ int main(void)
     test_season();
     wipe();
     test_pick_and_pack();
+    wipe();
+    test_set_up_for_a_player();
     wipe();
     if (fails) { printf("%d failed\n", fails); return 1; }
     printf("season, files and drives ok\n");

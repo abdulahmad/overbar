@@ -26,7 +26,10 @@
  * A unit made this player's on another machine is ob_season_give: the copy goes to that machine and its
  * game imports it. The host can do it all, or a player in the room picks one (ob_season_claim): the
  * host's game adds them (add_human) and gives a first copy. ob_season_teams asks the host who has which
- * team, for a picking screen.
+ * team, for a picking screen. A team the host's game set up for a player on another computer (the original's
+ * export to floppy, ops.player) shows to guests as "Edmonton - Bob"; picking it gives that copy, and with
+ * ops.give_as_disk it waits on the guest as a disk (ob_season_disk) that the game's own menus load. No file name
+ * is ever shown or typed.
  *
  * A team as a file (a player away from the room): ob_season_pack writes a team's export (with the games
  * played away) into one file; the host takes it (ob_season_take_pack: the merge, as a sync does it) and
@@ -80,9 +83,21 @@ typedef struct ob_season_ops {
     /* (the master) make this slot this player's, for the player name (no questions on the host's
      * screen): 0, or -1 (NULL: players cannot pick; the host adds them) */
     int (*add_human)(void *ud, int team, const char *name);
+    /* (the master) the player this human team was set up for on another computer (the game's own "export to
+     * floppy" for that player): "Bob", or NULL (a computer team, or one played here). Such a team shows as
+     * "Edmonton - Bob" when a guest picks a team, and picking it gives that copy with no question on the host */
+    const char *(*player)(void *ud, int team);
+    /* (a guest) 1: a first copy is not imported but kept as this player's disk (ob_season_disk) for the game's own
+     * menus to load, as the original's floppy was; 0: imported by import_team */
+    int give_as_disk;
 } ob_season_ops;
 
-enum { OB_SEASON_FREE, OB_SEASON_HOSTS, OB_SEASON_OWNED };    /* ob_season.roster_kind: a team ... */
+enum {                                  /* ob_season.roster_kind: a team ... */
+    OB_SEASON_FREE,                     /* a computer team (picking it asks the host's game to add a player) */
+    OB_SEASON_HOSTS,                    /* human, played on the host */
+    OB_SEASON_OWNED,                    /* a player has it (roster[]: who) */
+    OB_SEASON_WAITING                   /* set up for a player who has not picked it yet (roster[]: that player) */
+};
 
 enum {                                  /* ob_season.state: a guest's sync */
     OB_SEASON_IDLE, OB_SEASON_ASKED, OB_SEASON_SENDING, OB_SEASON_TAKING, OB_SEASON_SYNCED, OB_SEASON_FAILED
@@ -128,8 +143,10 @@ typedef struct ob_season {
     int claim;                          /* the team asked for (-1 none); OB_SEASON_TEAMS + team: given */
     int roster_have;                    /* the host's list came */
     char roster_league[OB_SEASON_TEXT + 1];         /* the host's league */
-    int roster_kind[OB_SEASON_TEAMS];   /* OB_SEASON_FREE (a computer team), _HOSTS (human on the host), _OWNED */
-    char roster[OB_SEASON_TEAMS][OB_NET_NAME + 1];  /* (_OWNED) its player */
+    int roster_kind[OB_SEASON_TEAMS];   /* OB_SEASON_FREE, _HOSTS, _OWNED, _WAITING */
+    char roster[OB_SEASON_TEAMS][OB_NET_NAME + 1];  /* (_OWNED, _WAITING) its player */
+    unsigned disk;                      /* (a guest, give_as_disk) by team: its first copy is here as a disk */
+    int disk_team;                      /* the last team given as a disk (-1 none) */
     char why[160];                      /* the last failure ("" none) */
 } ob_season;
 
@@ -157,6 +174,11 @@ int ob_season_teams(ob_season *s, int host);
 /* (a guest) asks the host for team as this player's: the host's game makes it human and its first copy comes and
  * is imported (claim becomes OB_SEASON_TEAMS + team; on a refusal claim is -1 and why says so): 0, or -1 */
 int ob_season_claim(ob_season *s, int host, int team);
+
+/* (the master) who has which team, as a guest's roster has it: kind[] OB_SEASON_*, who[] the player: 0, or -1 */
+int ob_season_roster(ob_season *s, int kind[OB_SEASON_TEAMS], char who[OB_SEASON_TEAMS][OB_NET_NAME + 1]);
+/* (a guest, give_as_disk) the folder holding team's disk (team -1: the last given): the team, or -1 none */
+int ob_season_disk(const ob_season *s, int team, char *dir, int size);
 
 /* (a guest) team's export, with the games played away, into the file path: 0, or -1 */
 int ob_season_pack(ob_season *s, int team, const char *path);
