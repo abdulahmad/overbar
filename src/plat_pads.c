@@ -89,6 +89,12 @@ SDL_GameController *ob_pads_controller(int p)
     return p >= 0 && p < C.players && player_ctrl[p] ? ob_plat_controller(player_ctrl[p] - 1) : NULL;
 }
 
+int ob_pads_player(int slot)
+{
+    for (int p = 0; p < C.players; p++) if (player_ctrl[p] == slot + 1) return p + 1;
+    return 0;
+}
+
 static uint32_t ctrl_buttons(SDL_GameController *c)
 {
     static const SDL_GameControllerButton dpad[4] = { SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,

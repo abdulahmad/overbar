@@ -298,6 +298,16 @@ static void test_keys(void)
     CHECK(ob_map_key(OB_SCANCODE_F9) == OB_HOSTKEY_OSK);
     CHECK(ob_map_pad_back() == OB_HOSTKEY_OVERLAY);
     CHECK(ob_map_key(41) == OB_HOSTKEY_NONE);     /* Esc is not overlay */
+    ob_host_devices_clear(&h);
+    CHECK(ob_host_device_add(&h, "Keyboard", "Keyboard"));
+    CHECK(ob_host_device_add(&h, "Controller 1", "Pad - player 1"));
+    n = ob_page_items(&h, OB_PAGE_INPUT, items, OB_ITEMS_MAX);
+    CHECK(ob_items_contain(items, n, OB_ID_DEVICE) && ob_items_contain(items, n, OB_ID_CONTROLLERS));
+    ob_host_devices_clear(&h);
+    for (int i = 0; i < OB_DEVICES_MAX + 3; i++) ob_host_device_add(&h, "Controller", "x");
+    n = ob_page_items(&h, OB_PAGE_INPUT, items, OB_ITEMS_MAX);
+    CHECK(h.device_n == OB_DEVICES_MAX && ob_items_contain(items, n, OB_ID_BACK));
+    ob_host_devices_clear(&h);
     n = ob_page_items(&h, OB_PAGE_KEYS, items, OB_ITEMS_MAX);
     CHECK(ob_items_contain(items, n, OB_ID_OSK));
     CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_GRAVE));

@@ -82,6 +82,7 @@ int ob_plat_window_size(int *w, int *h);      /* the area the picture is placed 
 
 /* controllers */
 SDL_GameController *ob_plat_controller(int slot);       /* NULL: none there */
+void ob_plat_devices_refresh(void);                     /* rebuild the Input page's device list (done by the layer itself when one comes or goes) */
 int ob_plat_controller_slot(SDL_JoystickID id);         /* -1: none */
 #endif /* OVERBAR_SDL */
 

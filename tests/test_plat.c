@@ -181,6 +181,7 @@ int main(void)
     SDL_PushEvent(&e);
     ob_plat_pump();
     CHECK(!host.overlay_open);                              /* the overlay key again closes it */
+    CHECK(host.device_n >= 1 && !strcmp(host.device_kind[0], "Keyboard"));   /* a key was seen, so the Input page lists it */
     CHECK(changed_calls >= 1);
     ob_plat_present();
     if (test_room_keys()) return 1;

@@ -8,6 +8,7 @@
 #include "overbar/osk.h"
 #include "overbar/sides.h"
 #include "overbar/chat.h"
+#include "overbar/plat_pads.h"
 
 #ifdef OVERBAR_SDL
 #include <stdio.h>
@@ -79,6 +80,8 @@ int ob_plat_init(ob_profile *profile)
     return 1;
 }
 
+void ob_plat_devices_refresh(void);
+
 static void ctrl_added(int index)
 {
     SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(index);
@@ -89,8 +92,40 @@ static void ctrl_added(int index)
             P.ctrl[i] = SDL_GameControllerOpen(index);
             if (R_sides && P.ctrl[i]) ob_sides_add(R_sides, 1 + i, SDL_GameControllerName(P.ctrl[i]));
             if (P.hk.controller) P.hk.controller(i, 1);
+            ob_plat_devices_refresh();
             break;
         }
+}
+
+/* The Input page's device list: the keyboard and mouse (a desktop always has them; SDL2 cannot ask, so on Linux and
+ * handhelds they appear once the first key or mouse event comes) and every controller SDL can map, with the player it
+ * plays, if any. Rebuilt when one comes or goes, and when the page is opened. */
+static int seen_key, seen_mouse, dev_dirty = 1;   /* dirty: refresh on the next pump (the port sets its pads up after open) */
+
+static int desktop(void)
+{
+    const char *p = SDL_GetPlatform();
+    return !strcmp(p, "Windows") || !strcmp(p, "Mac OS X");
+}
+
+void ob_plat_devices_refresh(void)
+{
+    char name[64];
+    if (!P.host) return;
+    ob_host_devices_clear(P.host);
+    if (desktop() || seen_key) ob_host_device_add(P.host, "Keyboard", "Keyboard");
+    if (desktop() || seen_mouse) ob_host_device_add(P.host, "Mouse", "Mouse");
+    for (int i = 0; !P.hk.no_pads && i < OB_PLAT_SLOTS; i++) {
+        char kind[24];
+        int pl;
+        if (!P.ctrl[i]) continue;
+        pl = ob_pads_player(i);
+        snprintf(kind, sizeof kind, "Controller %d", i + 1);
+        if (pl) snprintf(name, sizeof name, "%.30s - player %d", SDL_GameControllerName(P.ctrl[i]) ? SDL_GameControllerName(P.ctrl[i]) : "", pl);
+        else snprintf(name, sizeof name, "%.40s", SDL_GameControllerName(P.ctrl[i]) ? SDL_GameControllerName(P.ctrl[i]) : "");
+        ob_host_device_add(P.host, kind, name);
+    }
+    if (P.host->overlay_open && P.host->overlay_page == OB_PAGE_INPUT) ob_overlay_build(P.host);
 }
 
 static void ctrl_removed(SDL_JoystickID id)
@@ -102,6 +137,7 @@ static void ctrl_removed(SDL_JoystickID id)
     P.stick_dir[s] = 0;
     if (R_sides) ob_sides_remove(R_sides, 1 + s);
     if (P.hk.controller) P.hk.controller(s, 0);
+    ob_plat_devices_refresh();
 }
 
 static void bar_for_window(void)
@@ -250,15 +286,18 @@ static void note_input(const SDL_Event *e)
     int v;
     switch (e->type) {
     case SDL_KEYDOWN:
+        if (!seen_key) { seen_key = 1; dev_dirty = 1; }
         if (e->key.repeat) return;
         if (ob_map_key(e->key.keysym.scancode) != OB_HOSTKEY_NONE) return;  /* F9 / F11 / F12 / ` */
         last_in = IN_KEY;
         return;
     case SDL_MOUSEMOTION:
+        if (!seen_mouse) { seen_mouse = 1; dev_dirty = 1; }
         if (e->motion.xrel || e->motion.yrel) last_in = IN_MOUSE;
         return;
     case SDL_MOUSEBUTTONDOWN:
     case SDL_MOUSEWHEEL:
+        if (!seen_mouse) { seen_mouse = 1; dev_dirty = 1; }
         last_in = IN_MOUSE;
         return;
     case SDL_CONTROLLERBUTTONDOWN:
@@ -577,6 +616,7 @@ void ob_plat_pump(void)
     SDL_Event e;
     int captured, pass;
     cursor_update();
+    if (dev_dirty) { dev_dirty = 0; ob_plat_devices_refresh(); }
     if (getenv("OVERBAR_TEST_KEYS")) test_keys();
     while (SDL_PollEvent(&e)) {
         note_input(&e);

@@ -485,6 +485,8 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
     case OB_PAGE_INPUT:
+        for (int i = 0; i < h->device_n; i++) add_text(out, &n, cap - 2, OB_ID_DEVICE, h->device_kind[i], h->device_name[i]);
+        if (h->device_n) begin_group(out, &n, cap);
         add_action(out, &n, cap, OB_ID_CONTROLLERS, "Controllers", NULL);
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
@@ -902,4 +904,15 @@ void ob_mister_tables_get(const ob_look *look, ob_mister_tables *t)
     t->gamma = m_gamma;
     t->masks = m_masks;
     t->nmasks = m_nmasks;
+}
+
+void ob_host_devices_clear(ob_host *h) { h->device_n = 0; }
+
+int ob_host_device_add(ob_host *h, const char *kind, const char *name)
+{
+    if (h->device_n >= OB_DEVICES_MAX) return 0;
+    snprintf(h->device_kind[h->device_n], sizeof h->device_kind[0], "%s", kind);
+    snprintf(h->device_name[h->device_n], sizeof h->device_name[0], "%s", name && *name ? name : "(unnamed)");
+    h->device_n++;
+    return 1;
 }
