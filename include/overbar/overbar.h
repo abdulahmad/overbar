@@ -185,6 +185,7 @@ enum {
     OB_ID_SEASON_PICK,          /* a guest: open the team list */
     OB_ID_SEASON_NOTE,          /* a status or error line */
     OB_ID_OSK,                  /* Keys page: F9 on-screen keyboard */
+    OB_ID_FRAME_RATE,           /* Video page: how often the game draws (when the client gave choices) */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
     OB_ID_ADDON = 1000
@@ -300,6 +301,11 @@ typedef struct ob_host {
     int volume, mute;
     int blend;                  /* 0 off, 1 dither, 2 soft (PulseMan) */
     int pointer;                /* 0 auto, 1 show, 2 hide */
+    /* Frame rate (Video page, after Refresh): how often the game itself draws, for games whose camera or animation moves a step
+     * per drawn frame. The client gives the choices (ob_frame_rate_choices) and reads frame_rate; no choices: no row. */
+    const char *const *frame_choices;
+    int nframe_choices;
+    int frame_rate;
     int fm_core, fm_chip;
     int replay_secs_index;      /* 0 off, 1 10s, 2 20s, 3 30s, 4 60s */
     int gif_scale;              /* 0 1x, 1 2x, 2 3x */
@@ -419,6 +425,8 @@ int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int
                    int out_w, int out_h, uint32_t **dst, int *dw, int *dh);
 int ob_look_renders(const ob_look *look);             /* 1 for the looks ob_look_render draws */
 const char *ob_refresh_label(ob_refresh r);
+/* The Video page's Frame rate row: the client's choices (static storage) and the one a new install starts with */
+void ob_frame_rate_choices(ob_host *h, const char *const *choices, int n, int def);
 const char *ob_height_label(ob_picture_height h);
 
 /* Shared tree. Overlay and the file-menu stub both call these. */
