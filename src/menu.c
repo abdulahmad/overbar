@@ -344,6 +344,11 @@ int ob_video_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
     int n = 0;
     (void)cls;
     add_choice(out, &n, cap, OB_ID_REFRESH, "Refresh", refresh_choices, 3, h->refresh);
+    if (h->nframe_choices > 0) {
+        begin_group(out, &n, cap);
+        add_choice(out, &n, cap, OB_ID_FRAME_RATE, "Frame rate", h->frame_choices, h->nframe_choices,
+                   h->frame_rate < h->nframe_choices ? h->frame_rate : 0);
+    }
     begin_group(out, &n, cap);
     add_choice(out, &n, cap, OB_ID_VSYNC, "Vsync", off_on, 2, h->vsync);
     begin_group(out, &n, cap);

@@ -219,6 +219,13 @@ int ob_sharp_index(int mul)
     return best;
 }
 
+void ob_frame_rate_choices(ob_host *h, const char *const *choices, int n, int def)
+{
+    h->frame_choices = choices;
+    h->nframe_choices = n;
+    if (h->frame_rate < 0 || h->frame_rate >= n) h->frame_rate = def >= 0 && def < n ? def : 0;
+}
+
 const char *ob_refresh_label(ob_refresh r)
 {
     static const char *lab[3] = { "60 Hz", "70 Hz", "VRR" };
@@ -364,6 +371,7 @@ int ob_host_save_ini(const ob_host *h)
     fprintf(f, "; Overbar host settings. Overlay and the file menu write the same file.\n[overbar]\n");
     fprintf(f, "refresh=%s\n", refresh_name[h->refresh % 3]);
     fprintf(f, "vsync=%s\n", h->vsync ? "on" : "off");
+    if (h->nframe_choices > 0) fprintf(f, "frame_rate=%d\n", h->frame_rate);
     fprintf(f, "stats=%s\n", h->stats ? "on" : "off");
     fprintf(f, "windows_pointer=%s\n", pointer_name[h->pointer % 3]);
     write_look(f, "lores", &h->lores, h->console_dar, 1);
@@ -399,6 +407,7 @@ int ob_host_load_ini(ob_host *h, const char *path)
         strip(k); strip(v);
         if (!strcmp(k, "refresh")) h->refresh = (ob_refresh)name_index(v, refresh_name, 3, OB_REFRESH_VRR);
         else if (!strcmp(k, "vsync")) h->vsync = strcmp(v, "off") != 0;
+        else if (!strcmp(k, "frame_rate")) h->frame_rate = atoi(v);
         else if (!strcmp(k, "stats")) h->stats = !strcmp(v, "on");
         else if (!strcmp(k, "windows_pointer"))
             h->pointer = !strcmp(v, "show") || !strcmp(v, "always show") ? 1
@@ -471,6 +480,7 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
         if (h->refresh == OB_REFRESH_60 && h->profile == OB_PROFILE_HANDHELD) h->vsync = 1;
         break;
     case OB_ID_VSYNC: h->vsync = value; break;
+    case OB_ID_FRAME_RATE: h->frame_rate = value; break;
     case OB_ID_STATS: h->stats = value; break;
     case OB_ID_BLEND: h->blend = value; break;
     case OB_ID_POINTER: h->pointer = value; break;
