@@ -36,6 +36,7 @@ typedef struct ob_pads_cfg {
 
 void ob_pads_init(const ob_pads_cfg *c);              /* reads pad<N>.<button>, player<N>.controller, controller.<button>, controller.dead_zone */
 uint32_t ob_pads_read(int player);                    /* the buttons held now (0 while the setup screen is open) */
+int ob_pads_player(int slot);                         /* the first player (1 ..) using the controller in that slot; 0: none */
 int ob_pads_extra(void);                              /* 1 when player 3 or later has keys or a controller (the multitap / 4 Way) */
 SDL_GameController *ob_pads_controller(int player);   /* NULL: none */
 

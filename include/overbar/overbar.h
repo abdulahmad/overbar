@@ -156,6 +156,7 @@ enum {
     OB_ID_VOLUME,
     OB_ID_MUTE,
     OB_ID_CONTROLLERS,
+    OB_ID_DEVICE,               /* a row of the Input page's device list (nothing to do) */
     OB_ID_CAP_REPLAY,
     OB_ID_CAP_RECORD,
     OB_ID_CAP_SECONDS,
@@ -287,6 +288,8 @@ typedef struct ob_game_ops {
     void *ctx;
 } ob_game_ops;
 
+#define OB_DEVICES_MAX 12
+
 typedef struct ob_host {
     ob_port port;
     ob_profile profile;
@@ -301,6 +304,9 @@ typedef struct ob_host {
     int replay_secs_index;      /* 0 off, 1 10s, 2 20s, 3 30s, 4 60s */
     int gif_scale;              /* 0 1x, 1 2x, 2 3x */
     int recording;
+    int device_n;               /* the Input page's list of connected devices (ob_host_device_*) */
+    char device_kind[OB_DEVICES_MAX][24];
+    char device_name[OB_DEVICES_MAX][64];
     int online_ready;           /* the client gave Online hooks (ob_online_set_ops); else "not in this build" */
     int has_sound;
     int has_hires;
@@ -419,6 +425,10 @@ const char *ob_height_label(ob_picture_height h);
 int ob_main_items(const ob_host *h, ob_item *out, int cap);
 int ob_video_items(const ob_host *h, ob_class cls, ob_item *out, int cap);
 int ob_page_items(const ob_host *h, int page, ob_item *out, int cap);
+/* The devices the Input page lists (keyboard, mouse, each controller). The platform layer fills them in; a port without it can too.
+ * clear, then add each: kind is the row's label ("Controller 1"), name what it is called. 1 when the list changed since the last clear. */
+void ob_host_devices_clear(ob_host *h);
+int ob_host_device_add(ob_host *h, const char *kind, const char *name);
 /* One directory of the MiSTer tree (folders, then files). at_root adds None for gamma and mask. */
 int ob_mister_entries(const char *dir_rel, int kind, int at_root, const char *selected,
                      ob_item *out, int cap);
