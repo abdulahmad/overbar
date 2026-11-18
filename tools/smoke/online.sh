@@ -7,7 +7,7 @@
 #     PORT     95
 #     EXE      the built port
 #     HOSTDIR, GUESTDIR  two separate COPIES of the game folder (they write league and settings files there)
-#     SECONDS  default 90
+#     SECONDS  default 240 (the game starts after about 40 s, then runs about 15 steps a second; 600 steps need around 150 s)
 #     NETSIM   "delay,jitter,loss%" for a bad link, default "40,10,2"; env NHL95_PORT picks the UDP port (default 41957, not the game's own 41950)
 #
 # Passes when both copies were still running at the end, wrote no crash.log, both reached at least MIN_STEPS (default 600) steps of the
@@ -15,7 +15,7 @@
 set -u
 port=${1:?usage: online.sh PORT EXE HOSTDIR GUESTDIR [SECONDS] [NETSIM]}
 exe=${2:?exe}; hdir=${3:?hostdir}; gdir=${4:?guestdir}
-secs=${5:-90}; netsim=${6:-40,10,2}
+secs=${5:-240}; netsim=${6:-40,10,2}
 min_steps=${MIN_STEPS:-600}
 [ "$port" = 95 ] || { echo "FAIL online test is only wired for 95 PC so far"; exit 1; }
 out=${SMOKE_OUT:-./smoke-out}/online
