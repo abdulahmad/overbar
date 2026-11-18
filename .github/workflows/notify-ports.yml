@@ -1,0 +1,23 @@
+# When Overbar main changes, ask every port to build against it (smoke test, project files smoke-test/plan.md).
+# Needs the PORTS_TOKEN secret (a token that may dispatch workflows in the port repos); skipped without it.
+name: notify-ports
+on:
+  push:
+    branches: [main]
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    env:
+      PORTS_TOKEN: ${{ secrets.PORTS_TOKEN }}
+    steps:
+      - name: dispatch to the PC ports
+        if: env.PORTS_TOKEN != ''
+        run: |
+          for r in NHL95PC NHL96PC NHL97PC; do
+            curl -sS -X POST -H "Authorization: Bearer $PORTS_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository_owner }}/$r/dispatches" \
+              -d '{"event_type":"overbar-changed","client_payload":{"overbar_sha":"${{ github.sha }}"}}'
+          done
+      - name: no token
+        if: env.PORTS_TOKEN == ''
+        run: echo "PORTS_TOKEN not set, ports not notified"
