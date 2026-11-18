@@ -8,6 +8,7 @@
 #     EXE      the built port (hockey-win32.exe, hockey97-win32.exe, hockey94.exe, or a Linux build)
 #     GAMEDIR  a COPY of the game's data folder (the game writes league and settings files there)
 #     SECONDS  how long to let it run (default 60)
+#     env NHL95_CD: 95 PC needs the folder holding its CD files (a scratch copy of the game folder usually leaves them out)
 #     MODE     boot (reach the front end) | game (also start an exhibition game, 95 only for now). Default boot.
 #
 # Passes when the process was still running at the end (it did not exit or crash), there is no crash.log, the screen changed at
@@ -19,7 +20,9 @@ exe=${2:?exe}
 gamedir=${3:?gamedir}
 secs=${4:-60}
 mode=${5:-boot}
-min_frames=${MIN_FRAMES:-8}
+# a 95 PC front end sits still without input, so a boot run only has to show the screen changed (it did, twice, in the first seconds)
+def=8; [ "$port" = 95 ] && [ "${5:-boot}" = boot ] && def=2
+min_frames=${MIN_FRAMES:-$def}
 out=${SMOKE_OUT:-./smoke-out}/$port
 rm -rf "$out"; mkdir -p "$out/frames"
 out=$(cd "$out" && pwd)
