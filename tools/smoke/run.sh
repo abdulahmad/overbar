@@ -11,6 +11,11 @@
 #     env NHL95_CD: 95 PC needs the folder holding its CD files (a scratch copy of the game folder usually leaves them out)
 #     MODE     boot (reach the front end) | game (also start an exhibition game, 95 only for now). Default boot.
 #
+# Frame hashes (the picture's hash, one per distinct screen the run showed; no pictures are kept in git):
+#   RECORD=file  after the run, keep in FILE the hashes that this run and every earlier recording into FILE both showed (run it two or
+#                three times: what stays is the screens that do not depend on timing, such as the title and menus)
+#   EXPECT=file  the run also fails unless at least MATCH_PCT percent (default 60) of the hashes in FILE were shown
+#
 # Passes when the process was still running at the end (it did not exit or crash), there is no crash.log, the screen changed at
 # least MIN_FRAMES times (NHL<PORT>_DUMP writes a picture each time it does) and the last picture is not blank.
 # Exit 0 pass, 1 fail. A report line goes to stdout, the details to $SMOKE_OUT (default ./smoke-out/PORT).
@@ -65,6 +70,18 @@ last=$(ls "$out/frames" 2>/dev/null | tail -1)
 if [ -n "$last" ]; then
   distinct=$(tail -c +16 "$out/frames/$last" | od -An -tu1 -w1 | sort -u | wc -l | tr -d ' ')
   [ "$distinct" -gt 3 ] || fails="$fails last-frame-blank"
+fi
+hashfn() { if command -v sha1sum >/dev/null 2>&1; then sha1sum "$@"; else shasum -a 1 "$@"; fi; }
+if [ "$frames" -gt 0 ]; then ( cd "$out/frames" && hashfn *.ppm | cut -d' ' -f1 | sort -u ) > "$out/hashes.txt"; else : > "$out/hashes.txt"; fi
+if [ -n "${RECORD:-}" ]; then
+  if [ -f "$RECORD" ]; then comm -12 "$RECORD" "$out/hashes.txt" > "$out/rec.tmp" && mv "$out/rec.tmp" "$RECORD"; else cp "$out/hashes.txt" "$RECORD"; fi
+  echo "recorded: $(wc -l < "$RECORD" | tr -d ' ') stable hashes in $RECORD"
+fi
+if [ -n "${EXPECT:-}" ]; then
+  want=$(wc -l < "$EXPECT" | tr -d ' ')
+  got=$(comm -12 "$EXPECT" "$out/hashes.txt" | wc -l | tr -d ' ')
+  need=$(( (want * ${MATCH_PCT:-60} + 99) / 100 ))
+  [ "$got" -ge "$need" ] || fails="$fails frame-hashes($got of $want expected screens shown, need $need)"
 fi
 if [ -z "$fails" ]; then echo "PASS port=$port mode=$mode frames=$frames seconds=$i"; exit 0; fi
 echo "FAIL port=$port mode=$mode frames=$frames:$fails (details in $out)"
