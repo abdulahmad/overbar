@@ -34,6 +34,10 @@
 #define ONE  1024
 #define LONE 16384
 #define WONE 4096
+/* The soft beam's three rows weigh 0.805 on average over a line (sqrt(pi / (7 ln 2))), so the picture
+ * came out about 20% dark in linear light, a washed-out grey. This gain (1/0.805) keeps the average
+ * the same as the source; src/gl.c's shader multiplies by the same 1.2425. */
+#define SOFT_GAIN 5089  /* 1.2425 x WONE */
 
 static uint32_t *o_px;          /* the output */
 static long o_cap;
@@ -243,7 +247,7 @@ static void vrows(const job *j, int oy0, int oy1)
             }
             for (ox = 0; ox < ow; ox++) {
                 int c[3], i = ox * 3;
-                for (t = 0; t < 3; t++) c[t] = (r[0][i + t] * w[0] + r[1][i + t] * w[1] + r[2][i + t] * w[2]) >> 12;
+                for (t = 0; t < 3; t++) c[t] = ((r[0][i + t] * w[0] + r[1][i + t] * w[1] + r[2][i + t] * w[2]) >> 12) * SOFT_GAIN >> 12;
                 if (j->style == 2) {
                     const int *g = grille[j->fx[ox] % 3];
                     for (t = 0; t < 3; t++) c[t] = (c[t] * g[t]) >> 8;

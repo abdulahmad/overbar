@@ -159,7 +159,7 @@ static const char *fs_src =
     "  }\n"
     "  if (style > 0.5) {\n"
     "    vec2 pos = uv;\n"
-    "    vec3 col = horz3(pos, -1.0) * scanw(pos, -1.0) + horz3(pos, 0.0) * scanw(pos, 0.0) + horz3(pos, 1.0) * scanw(pos, 1.0);\n"
+    "    vec3 col = (horz3(pos, -1.0) * scanw(pos, -1.0) + horz3(pos, 0.0) * scanw(pos, 0.0) + horz3(pos, 1.0) * scanw(pos, 1.0)) * 1.2425;\n"
     "    if (style > 1.5) col *= maskf(gl_FragCoord.xy) * 1.15;\n"
     "    gl_FragColor = vec4(clamp(toSrgb(col), 0.0, 1.0), 1.0);\n"
     "    return;\n"
