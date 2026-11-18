@@ -38,7 +38,10 @@ export SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-dummy} SDL_AUDIODRIVER=${SDL_AUDIODRIV
 # no sound card at all: a Gravis UltraSound (ULTRASND, ULTRADIR) set in the user's environment makes the game look for patch files
 # (C:\ULTRASND\MIDI) that a scratch copy of the game folder does not have, and it reports them missing
 unset ULTRASND ULTRADIR BLASTER
-export ${P}_ROOT="$gamedir" ${P}_DUMP="$out/frames" ${P}_SOUND=none ${P}_NOGL=1 OVERBAR_TEST_LOG="$out/overbar.log"
+# 95 PC: the game folder's SND.CFG picks the card (Ultrasound, 0x02, on a normal install) and with NHL95_SOUND=none the port emulates no
+# card at all, so the game stops at "Could not find a ULTRASOUND card". Let 95 have its emulated cards; the audio driver is dummy anyway.
+[ "$port" = 95 ] || export ${P}_SOUND=none
+export ${P}_ROOT="$gamedir" ${P}_DUMP="$out/frames" ${P}_NOGL=1 OVERBAR_TEST_LOG="$out/overbar.log"
 case $port in
   95) [ "$mode" = game ] && export NHL95_AUTOSKIP=1 || export NHL95_KEYS="";;
   96|97) export ${P}_SKIPINTRO=1;;
