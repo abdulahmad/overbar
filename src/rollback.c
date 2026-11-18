@@ -295,8 +295,8 @@ const char *ob_rollback_stats(ob_rollback *rb)
     const rb_slot *l;
     if (!rb) return "";
     l = &rb->s[(rb->next + (uint32_t)rb->ns - 1) % (uint32_t)rb->ns];
-    snprintf(rb->line, sizeof rb->line, "%u states, %.1f ms each, last %zu pages %zu bytes; %s", rb->saves,
-             rb->saves ? rb->save_s * 1000.0 / rb->saves : 0.0, l->os.ndiff, l->os.size, ob_snap_stats(rb->store));
+    snprintf(rb->line, sizeof rb->line, "%u states, %.1f ms each, last %lu pages %lu bytes; %s", rb->saves,
+             rb->saves ? rb->save_s * 1000.0 / rb->saves : 0.0, (unsigned long)l->os.ndiff, (unsigned long)l->os.size, ob_snap_stats(rb->store));
     return rb->line;
 }
 
