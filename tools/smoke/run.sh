@@ -32,6 +32,9 @@ cp "$exe" "$gamedir/$runexe" || { echo "FAIL port $port: cannot copy exe"; exit 
 [ -f "$(dirname "$exe")/SDL2.dll" ] && cp "$(dirname "$exe")/SDL2.dll" "$gamedir/" 2>/dev/null
 rm -f "$gamedir/crash.log"
 export SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-dummy} SDL_AUDIODRIVER=${SDL_AUDIODRIVER:-dummy}
+# no sound card at all: a Gravis UltraSound (ULTRASND, ULTRADIR) set in the user's environment makes the game look for patch files
+# (C:\ULTRASND\MIDI) that a scratch copy of the game folder does not have, and it reports them missing
+unset ULTRASND ULTRADIR BLASTER
 export ${P}_ROOT="$gamedir" ${P}_DUMP="$out/frames" ${P}_SOUND=none ${P}_NOGL=1 OVERBAR_TEST_LOG="$out/overbar.log"
 case $port in
   95) [ "$mode" = game ] && export NHL95_AUTOSKIP=1 || export NHL95_KEYS="";;
