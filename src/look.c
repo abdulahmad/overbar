@@ -179,6 +179,49 @@ static uint32_t pack(int r, int g, int b)        /* bytes, clamped */
     return 0xFF000000u | (uint32_t)clampi(r, 0, 255) << 16 | (uint32_t)clampi(g, 0, 255) << 8 | (uint32_t)clampi(b, 0, 255);
 }
 
+/* NTSC TV colors: a TV decoded the signal with a display gamma of about 2.4 and lit SMPTE-C
+ * phosphors; an sRGB monitor shows raw values with the sRGB curve and Rec.709 primaries, so the
+ * same numbers look lighter and slightly cooler. Linearise with 2.4, move SMPTE-C to Rec.709
+ * (both D65), encode with the sRGB curve. */
+static uint8_t o_ntsc_enc[4096];
+static float o_ntsc_lin[256];
+static int o_ntsc_ready;
+
+static void ntsc_init(void)
+{
+    int i;
+    for (i = 0; i < 256; i++) o_ntsc_lin[i] = powf(i / 255.f, 2.4f);
+    for (i = 0; i < 4096; i++) {
+        float v = (i + 0.5f) / 4096.f;
+        v = v <= 0.0031308f ? 12.92f * v : 1.055f * powf(v, 1.f / 2.4f) - 0.055f;
+        o_ntsc_enc[i] = (uint8_t)(v * 255.f + 0.5f);
+    }
+    o_ntsc_ready = 1;
+}
+
+uint32_t ob_ntsc_color(uint32_t p)
+{
+    float r, g, b, R, G, B;
+    if (!o_ntsc_ready) ntsc_init();
+    r = o_ntsc_lin[(p >> 16) & 255];
+    g = o_ntsc_lin[(p >> 8) & 255];
+    b = o_ntsc_lin[p & 255];
+    R = 0.939555f * r + 0.050173f * g + 0.010272f * b;
+    G = 0.017775f * r + 0.965795f * g + 0.016430f * b;
+    B = -0.001622f * r - 0.004371f * g + 1.005993f * b;
+#define NQ(v) o_ntsc_enc[clampi((int)((v) * 4096.f), 0, 4095)]
+    return 0xFF000000u | (uint32_t)NQ(R) << 16 | (uint32_t)NQ(G) << 8 | NQ(B);
+#undef NQ
+}
+
+void ob_ntsc_apply(uint32_t *dst, const uint32_t *src, int w, int h, int spitch)
+{
+    int x, y;
+    if (spitch < w) spitch = w;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++) dst[y * w + x] = ob_ntsc_color(src[y * spitch + x]);
+}
+
 int ob_look_renders(const ob_look *look)
 {
     return look && (look->mode == OB_MODE_CRT || look->mode == OB_MODE_MISTER);

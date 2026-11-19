@@ -57,6 +57,7 @@ typedef enum {
     OB_MODE_CRT,
     OB_MODE_MISTER,
     OB_MODE_RETROARCH,
+    OB_MODE_NTSC,               /* CRT TV colors: sharp scaling, the colors mapped as an NTSC TV showed them */
     OB_MODE_SCALE2X,
     OB_MODE_SCALE3X,
     OB_MODE_MMPX2X,
@@ -423,7 +424,12 @@ int ob_mister_prescale(const ob_look *look, const uint32_t *src, int sw, int sh,
  * next call. 0 when the look is not one of these (Sharp, the pixel filters). */
 int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int spitch,
                    int out_w, int out_h, uint32_t **dst, int *dw, int *dh);
-int ob_look_renders(const ob_look *look);             /* 1 for the looks ob_look_render draws */
+int ob_look_renders(const ob_look *look);
+/* NTSC CRT TV colors (OB_MODE_NTSC): the raw RGB of a console's palette mapped the way a TV showed it
+ * (display gamma 2.4, SMPTE-C phosphors) to what an sRGB monitor needs to show the same. */
+uint32_t ob_ntsc_color(uint32_t xrgb);
+void ob_ntsc_apply(uint32_t *dst, const uint32_t *src, int w, int h, int spitch);   /* dst is w x h, packed */
+             /* 1 for the looks ob_look_render draws */
 const char *ob_refresh_label(ob_refresh r);
 /* The Video page's Frame rate row: the client's choices (static storage) and the one a new install starts with */
 void ob_frame_rate_choices(ob_host *h, const char *const *choices, int n, int def);

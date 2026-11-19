@@ -10,11 +10,11 @@
 #include <string.h>
 
 static const char *mode_name[OB_MODE_COUNT] = {
-    "sharp", "crt", "mister", "retroarch",
+    "sharp", "crt", "mister", "retroarch", "ntsc",
     "scale2x", "scale3x", "mmpx2x", "mmpx4x", "xbr2x", "xbr3x", "xbr4x", "scale4x"
 };
 static const char *mode_label[OB_MODE_COUNT] = {
-    "Sharp", "CRT Monitor", "MiSTer", "RetroArch",
+    "Sharp", "CRT Monitor", "MiSTer", "RetroArch", "CRT TV Colors",
     "Scale2x 2x", "Scale2x 3x", "MMPX 2x", "MMPX 4x", "xBR 2x", "xBR 3x", "xBR 4x", "Scale2x 4x"
 };
 static const char *refresh_name[3] = { "60", "70", "vrr" };

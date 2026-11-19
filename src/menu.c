@@ -24,12 +24,12 @@ static const char *const height_choices[] = {
 };
 /* RetroArch is not offered. The enum value stays so an old ini name still parses. */
 static const char *const mode_choices[] = {
-    "Sharp", "CRT Monitor", "MiSTer",
+    "Sharp", "CRT Monitor", "MiSTer", "CRT TV Colors",
     "Scale2x", "MMPX", "xBR"
 };
 /* a pixel filter's size is its own option (ob_pixel_sizes) */
 static const ob_scale_mode mode_values[] = {
-    OB_MODE_SHARP, OB_MODE_CRT, OB_MODE_MISTER, OB_MODE_SCALE2X, OB_MODE_MMPX2X, OB_MODE_XBR2X
+    OB_MODE_SHARP, OB_MODE_CRT, OB_MODE_MISTER, OB_MODE_NTSC, OB_MODE_SCALE2X, OB_MODE_MMPX2X, OB_MODE_XBR2X
 };
 static const char *const sharp_steps[] = {
     "1x (native)", "2x (480p)", "3x (720p)", "4x (1080p)", "5x (1200p)", "6x (1440p)", "9x (4k)"

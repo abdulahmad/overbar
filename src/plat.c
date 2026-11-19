@@ -845,6 +845,19 @@ void ob_plat_present(void)
     dst = (SDL_Rect){ out.blit_x, out.blit_y, out.blit_w, out.blit_h };
     SDL_SetRenderDrawColor(P.ren, 0, 0, 0, 255);
     SDL_RenderClear(P.ren);
+    if (P.host->lores.mode == OB_MODE_NTSC) {
+        static uint32_t *ntsc_px;
+        static long ntsc_cap;
+        if ((long)sw * sh > ntsc_cap) {
+            free(ntsc_px);
+            ntsc_px = (uint32_t *)malloc((size_t)sw * sh * 4);
+            ntsc_cap = ntsc_px ? (long)sw * sh : 0;
+        }
+        if (ntsc_px) {
+            ob_ntsc_apply(ntsc_px, picture, sw, sh, sw);
+            pix = ntsc_px;
+        }
+    }
     if (ob_look_renders(&P.host->lores)) {
         /* the CRT looks and the MiSTer filters at the picture's size in window pixels */
         uint32_t *px = NULL;

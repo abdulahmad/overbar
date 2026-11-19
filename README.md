@@ -75,6 +75,7 @@ Pick a **Scale Mode** in the **Scaling** menu. Only that mode's own options are 
 | **Sharp** | Crisp pixels at 2x to 9x, then smoothed to fit the window. 3x is the default |
 | **CRT Monitor** | Light, medium or strong scanlines; a soft Lottes-style beam; soft with an aperture grille; or your own mix |
 | **MiSTer** | The MiSTer FPGA scaler's filter files: Presets, horizontal and vertical filters, gamma and shadow masks, browsed by folder |
+| **CRT TV Colors** | No filter at all: the console's RGB mapped the way an NTSC TV showed it (gamma 2.4, SMPTE-C phosphors), so the colors look as they did on a TV instead of raw on an RGB monitor. It is its own scaling choice, so no scanlines or filters go with it |
 | **Scale2x, Scale3x, MMPX, xBR** | Pixel-art smoothing filters, where the port has them |
 
 | Sharp | CRT medium | CRT soft |
