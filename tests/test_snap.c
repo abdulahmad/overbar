@@ -105,6 +105,17 @@ static int fake_step(void *user)
             shared[16] ^= 1;                                   /* (a region at another address: refused) */
             if (st->take(st->user, shared, shared_n) == 0 || !ob_rollback_why(rbt)[0]) return -1;
             shared[16] = keep;
+            {                                                  /* (a peer's own jump point, or stack, is refused) */
+                uint32_t nr = shared[8] | shared[9] << 8 | shared[10] << 16 | (uint32_t)shared[11] << 24;
+                size_t jb = 12 + (size_t)nr * 16 + 24;         /* (jb[0] at jb, jb[1] at jb + 8) */
+                uint8_t k2 = shared[jb + 8], k3 = shared[jb];
+                shared[jb + 8] ^= 0x10;
+                if (st->take(st->user, shared, shared_n) == 0) return -1;
+                shared[jb + 8] = k2;
+                shared[jb + 7] ^= 0x7F;                        /* (the frame pointer out of the stack put back) */
+                if (st->take(st->user, shared, shared_n) == 0) return -1;
+                shared[jb + 7] ^= 0x7F; shared[jb] = k3;
+            }
             if (st->take(st->user, shared, shared_n - 1) == 0) return -1;
             game_mem[PG + 5] = 200;                            /* (the shared state puts it back) */
             if (st->take(st->user, shared, shared_n)) { printf("take: %s\n", ob_rollback_why(rbt)); return -1; }

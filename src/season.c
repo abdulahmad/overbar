@@ -50,6 +50,12 @@ static void getstr(rd *r, char *s, size_t cap)
     s[n < cap ? n : cap - 1] = 0;
 }
 
+/* a player's name as read from the other machine: printable ASCII only (it goes into files and lines) */
+static void clean(char *s)
+{
+    for (; *s; s++) if ((uint8_t)*s < 32 || (uint8_t)*s > 126) *s = '?';
+}
+
 static void emit(ob_season *s, int to, const wr *w) { if (s->send) s->send(s->send_ud, to, w->b, w->n); }
 
 static void fail_to(ob_season *s, int to, const char *why)
@@ -288,6 +294,7 @@ static void got_hello(ob_season *s, int from, rd *r)
     if (from < 0 || from >= OB_NET_MAX_MACHINES) return;
     p = &s->peer[from];
     getstr(r, name, sizeof name);
+    clean(name);
     getstr(r, lname, sizeof lname);
     getstr(r, lid, sizeof lid);
     n = (int)get8(r);
@@ -479,6 +486,7 @@ static void got_claim(ob_season *s, int from, rd *r)
     char name[OB_NET_NAME + 1], why[96];
     int t;
     getstr(r, name, sizeof name);
+    clean(name);
     t = (int)get8(r);
     if (r->bad || from < 0 || from >= OB_NET_MAX_MACHINES) return;
     if (t >= OB_SEASON_TEAMS || !name[0]) { refuse(s, from, t, "no such team"); return; }

@@ -342,6 +342,7 @@ static void lane_acked(ob_net *n, int k, uint32_t have, uint64_t mask)
 {
     lane *l = &n->p[k].ln;
     uint32_t i, j = 0;
+    if (l->qn && have > l->q[l->qn - 1]->seq + 1) return;      /* (it cannot have more than was sent) */
     for (i = 0; i < l->qn; i++) {
         frag *f = l->q[i];
         uint32_t d = f->seq - have - 1;
@@ -1045,7 +1046,7 @@ static void core_message(ob_net *n, int from, int type, uint8_t *b, size_t size)
             seen[id] = 1;
             if (!n->p[id].used || n->p[id].here != (int)here) n->changes++;
             n->p[id].used = 1;
-            n->p[id].here = (int)here;
+            n->p[id].here = (int)(here > (uint32_t)PADS ? PADS : here);
             n->p[id].ping_ms = ms == 0xFFFF ? -1 : (int)ms;
             if (id) take_name(n->p[id].name, nm, len);
             if ((int)id == n->me) me_in = 1;
