@@ -186,10 +186,18 @@ static int rb_take(void *user, const void *in, size_t size)
     base = r64(&p); low = r64(&p); stack = r64(&p);
     if (base != (uint64_t)(uintptr_t)rb->base) return refuse(rb, "the game thread's stack is at another address here");
     if (low + stack != base || stack > 64u << 20) return refuse(rb, "a shared state's stack does not fit");
+    /* (the state is put back by a jump, so the peer must not choose where it lands, nor write stack bytes below this
+     * machine's own resumable frame: the code address is this machine's own, the frame and stack pointers lie in the
+     * stack put back, and the stack reaches no deeper than this frame does here) */
+    if (!rb->low || low < (uint64_t)(uintptr_t)rb->low - 4096 || low >= base) return refuse(rb, "a shared state's stack reaches outside the game thread's stack");
     if ((size_t)(p - (const uint8_t *)in) + 44 + total + stack != size) return refuse(rb, "a shared state of the wrong size");
     sl = &rb->s[rb->next % (uint32_t)rb->ns];
     sl->gen = 0;
     for (i = 0; i < 5; i++) sl->jb[i] = (void *)(uintptr_t)r64(&p);
+    if ((uint64_t)(uintptr_t)sl->jb[0] < low || (uint64_t)(uintptr_t)sl->jb[0] >= base ||
+        ((uint64_t)(uintptr_t)sl->jb[2] && ((uint64_t)(uintptr_t)sl->jb[2] < low || (uint64_t)(uintptr_t)sl->jb[2] >= base)) ||
+        sl->jb[1] != rb->jb[1])                          /* (jb[2], the stack pointer, is 0 on some targets) */
+        return refuse(rb, "a shared state's jump point is not this game's resumable point");
     tag = r32(&p);
     mem = p;
     if (rb->g.hold) (void)rb->g.hold(rb->g.user);    /* (off until back at the state: released there, with its tag) */

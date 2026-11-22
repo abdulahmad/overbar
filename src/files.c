@@ -192,9 +192,38 @@ static int holds(const char *dir, const ob_files_item *it)
     return same;
 }
 
+static int ieq_n(const char *a, const char *b, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++) {
+        int x = (uint8_t)a[i], y = (uint8_t)b[i];
+        if (x >= 'a' && x <= 'z') x -= 32;
+        if (y >= 'a' && y <= 'z') y -= 32;
+        if (x != y) return 1;
+    }
+    return 0;
+}
+
+/* a file name from the other machine, safe to make in a folder here: no path (/ \\ :), not hidden, no control
+ * characters, not a DOS/Windows device name (CON, NUL, COM1, ...), no trailing dot or space, nothing a system would run */
 static int safe_name(const char *s)
 {
-    return s[0] && s[0] != '.' && !strchr(s, '/') && !strchr(s, '\\') && !strchr(s, ':') && s[strlen(s) - 1] != '~';
+    static const char *const dev[] = { "CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$" };
+    static const char *const run[] = { "exe", "dll", "com", "bat", "cmd", "scr", "lnk", "pif", "msi", "ps1", "vbs", "vbe", "js", "jse",
+                                       "wsf", "wsh", "hta", "cpl", "sh", "so", "dylib", "app", "reg", "inf", "sys", "drv", "ocx" };
+    size_t i, k, n = strlen(s), stem;
+    const char *dot;
+    if (!n || s[0] == '.' || s[n - 1] == '~' || s[n - 1] == '.' || s[n - 1] == ' ') return 0;
+    for (i = 0; i < n; i++)
+        if ((uint8_t)s[i] < 32 || (uint8_t)s[i] == 127 || strchr("/\\:*?\"<>|", s[i])) return 0;
+    dot = strchr(s, '.');
+    stem = dot ? (size_t)(dot - s) : n;
+    for (k = 0; k < sizeof dev / sizeof *dev; k++)
+        if (strlen(dev[k]) == stem && !ieq_n(s, dev[k], stem)) return 0;
+    if (stem == 4 && (!ieq_n(s, "COM", 3) || !ieq_n(s, "LPT", 3)) && s[3] >= '0' && s[3] <= '9') return 0;
+    if ((dot = strrchr(s, '.')))
+        for (k = 0; k < sizeof run / sizeof *run; k++) if (!ob_fs_stricmp(dot + 1, run[k])) return 0;
+    return 1;
 }
 
 static void got_offer(ob_files *f, int from, rd *r)
