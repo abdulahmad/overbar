@@ -27,6 +27,7 @@ It describes how the work is set up and checked, not where any one piece of work
 | Library stays generic | Overbar's modules (overlay, net, season, vdrive, files) are for any game on any platform, or many games on one platform. A title's folders, names, export, and merge live in that port |
 | Keys stay | `` ` `` and F11 open the overlay, F12 shows the stats, F9 the on-screen keyboard, Alt+Enter toggles fullscreen |
 | Builds work as checked out | `-Werror` is for CI only. Don't fix pre-existing warnings or the known ucrt64 failures as part of other work |
+| Netplay security | Anything that comes over the network is hostile: never run, load or write code from it, never take an address from it, check every length before use, validate a state before and clean it after. The rules and checklist are in `docs/NETPLAY_SECURITY.md`; `tests/netsec.sh` (part of `make test`, and run by every port with `sh port/overbar/tests/netsec.sh .`) fails the build on what it can check. A change to a network path, a state or a file route follows it |
 | Credit | Overbar is a derivative of 1nputs' PulseMan. A derivative of Overbar carries the credit block in the README |
 
 ## 3. Gates (programs that can fail)

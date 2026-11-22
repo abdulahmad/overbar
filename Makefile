@@ -72,6 +72,7 @@ test: tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/t
 	./tests/test_season
 	./tests/test_net
 	./tests/test_snap
+	sh tests/netsec.sh
 
 # the platform layer on SDL's dummy drivers (needs SDL2): make test-plat SDL=1
 test-plat: tests/test_plat
