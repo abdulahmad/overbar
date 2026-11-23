@@ -57,7 +57,6 @@ typedef enum {
     OB_MODE_CRT,
     OB_MODE_MISTER,
     OB_MODE_RETROARCH,
-    OB_MODE_NTSC,               /* CRT TV colors: sharp scaling, the colors mapped as an NTSC TV showed them */
     OB_MODE_SCALE2X,
     OB_MODE_SCALE3X,
     OB_MODE_MMPX2X,
@@ -139,6 +138,7 @@ enum {
     OB_ID_CRT_LOOK,
     OB_ID_PICTURE_HEIGHT,
     OB_ID_MONITOR_KHZ,          /* lo-res CRT / MiSTer */
+    OB_ID_NTSC_COLORS,          /* CRT TV colors off/on, with any scale mode */
     OB_ID_MISTER_PRESET,
     OB_ID_MISTER_H,
     OB_ID_MISTER_V,
@@ -225,6 +225,7 @@ typedef struct ob_look {
     ob_crt_look crt;
     ob_picture_height height;
     int khz31;                  /* lo-res CRT/MiSTer: 0 = 15 kHz, 1 = 31 kHz */
+    int ntsc;                   /* 1: CRT TV colors, on top of any scale mode (see ob_ntsc_color) */
     int mask_scale;             /* 1..4 */
     int bright;                 /* 70..150 step 10 */
     /* CRT custom (95 PC's custom look): scanline gap darkness 0-1, gamma, RGB mask strength
@@ -425,7 +426,7 @@ int ob_mister_prescale(const ob_look *look, const uint32_t *src, int sw, int sh,
 int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int spitch,
                    int out_w, int out_h, uint32_t **dst, int *dw, int *dh);
 int ob_look_renders(const ob_look *look);
-/* NTSC CRT TV colors (OB_MODE_NTSC): the raw RGB of a console's palette mapped the way a TV showed it
+/* NTSC CRT TV colors (ob_look.ntsc, combines with every scale mode): the raw RGB of a console's palette mapped the way a TV showed it
  * (display gamma 2.4, SMPTE-C phosphors) to what an sRGB monitor needs to show the same. */
 uint32_t ob_ntsc_color(uint32_t xrgb);
 void ob_ntsc_apply(uint32_t *dst, const uint32_t *src, int w, int h, int spitch);   /* dst is w x h, packed */

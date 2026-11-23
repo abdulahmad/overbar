@@ -10,11 +10,11 @@
 #include <string.h>
 
 static const char *mode_name[OB_MODE_COUNT] = {
-    "sharp", "crt", "mister", "retroarch", "ntsc",
+    "sharp", "crt", "mister", "retroarch",
     "scale2x", "scale3x", "mmpx2x", "mmpx4x", "xbr2x", "xbr3x", "xbr4x", "scale4x"
 };
 static const char *mode_label[OB_MODE_COUNT] = {
-    "Sharp", "CRT Monitor", "MiSTer", "RetroArch", "CRT TV Colors",
+    "Sharp", "CRT Monitor", "MiSTer", "RetroArch",
     "Scale2x 2x", "Scale2x 3x", "MMPX 2x", "MMPX 4x", "xBR 2x", "xBR 3x", "xBR 4x", "Scale2x 4x"
 };
 static const char *refresh_name[3] = { "60", "70", "vrr" };
@@ -326,6 +326,7 @@ static void apply_look_key(ob_look *l, const char *key, const char *v)
         else l->sharp = ob_sharp_index(atoi(v));
     } else if (!strcmp(key, "crt")) l->crt = (ob_crt_look)atoi(v);
     else if (!strcmp(key, "picture_height")) l->height = (ob_picture_height)name_index(v, height_name, 4, 0);
+    else if (!strcmp(key, "ntsc_colors")) l->ntsc = atoi(v) != 0;
     else if (!strcmp(key, "khz")) l->khz31 = atoi(v) == 31;
     else if (!strcmp(key, "mask_scale")) l->mask_scale = atoi(v) < 1 ? 1 : atoi(v) > 4 ? 4 : atoi(v);
     else if (!strcmp(key, "bright")) l->bright = atoi(v);
@@ -350,6 +351,7 @@ static void write_look(FILE *f, const char *prefix, const ob_look *l, int consol
     fprintf(f, "%s_sharp=%s\n", prefix, sh);
     fprintf(f, "%s_crt=%d\n", prefix, l->crt);
     fprintf(f, "%s_picture_height=%s\n", prefix, height_name[l->height % 4]);
+    fprintf(f, "%s_ntsc_colors=%d\n", prefix, l->ntsc ? 1 : 0);
     fprintf(f, "%s_khz=%d\n", prefix, l->khz31 ? 31 : 15);
     fprintf(f, "%s_mask_scale=%d\n", prefix, l->mask_scale);
     fprintf(f, "%s_bright=%d\n", prefix, l->bright);
@@ -507,6 +509,7 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
     case OB_ID_CRT_LOOK: look->crt = (ob_crt_look)value; break;
     case OB_ID_PICTURE_HEIGHT: look->height = (ob_picture_height)value; break;
     case OB_ID_MONITOR_KHZ: look->khz31 = value; break;
+    case OB_ID_NTSC_COLORS: look->ntsc = value != 0; break;
     case OB_ID_MISTER_MASK_SCALE: look->mask_scale = value + 1; break;
     case OB_ID_MISTER_BRIGHT: look->bright = 70 + 10 * value; break;
     case OB_ID_MISTER_RESET:

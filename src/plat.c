@@ -845,7 +845,7 @@ void ob_plat_present(void)
     dst = (SDL_Rect){ out.blit_x, out.blit_y, out.blit_w, out.blit_h };
     SDL_SetRenderDrawColor(P.ren, 0, 0, 0, 255);
     SDL_RenderClear(P.ren);
-    if (P.host->lores.mode == OB_MODE_NTSC) {
+    if (P.host->lores.ntsc) {
         static uint32_t *ntsc_px;
         static long ntsc_cap;
         if ((long)sw * sh > ntsc_cap) {
@@ -856,6 +856,7 @@ void ob_plat_present(void)
         if (ntsc_px) {
             ob_ntsc_apply(ntsc_px, picture, sw, sh, sw);
             pix = ntsc_px;
+            picture = ntsc_px;
         }
     }
     if (ob_look_renders(&P.host->lores)) {

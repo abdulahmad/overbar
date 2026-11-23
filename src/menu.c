@@ -24,16 +24,17 @@ static const char *const height_choices[] = {
 };
 /* RetroArch is not offered. The enum value stays so an old ini name still parses. */
 static const char *const mode_choices[] = {
-    "Sharp", "CRT Monitor", "MiSTer", "CRT TV Colors",
+    "Sharp", "CRT Monitor", "MiSTer",
     "Scale2x", "MMPX", "xBR"
 };
 /* a pixel filter's size is its own option (ob_pixel_sizes) */
 static const ob_scale_mode mode_values[] = {
-    OB_MODE_SHARP, OB_MODE_CRT, OB_MODE_MISTER, OB_MODE_NTSC, OB_MODE_SCALE2X, OB_MODE_MMPX2X, OB_MODE_XBR2X
+    OB_MODE_SHARP, OB_MODE_CRT, OB_MODE_MISTER, OB_MODE_SCALE2X, OB_MODE_MMPX2X, OB_MODE_XBR2X
 };
 static const char *const sharp_steps[] = {
     "1x (native)", "2x (480p)", "3x (720p)", "4x (1080p)", "5x (1200p)", "6x (1440p)", "9x (4k)"
 };
+static const char *const ntsc_choices[] = { "Off", "On" };
 static const char *const crt_choices[] = {
     "Light scanlines", "Medium scanlines", "Dark scanlines",
     "Soft (Lottes)", "Soft + aperture", "Custom"
@@ -386,6 +387,7 @@ static int ob_scale_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
         n++;
     }
     begin_group(out, &n, cap);
+    add_choice(out, &n, cap, OB_ID_NTSC_COLORS, "CRT TV colors", ntsc_choices, 2, look->ntsc ? 1 : 0);
     add_choice(out, &n, cap, OB_ID_PICTURE_HEIGHT, "Picture height", height_choices, 4, look->height);
     if (cls == OB_CLASS_LORES) {
         begin_group(out, &n, cap);

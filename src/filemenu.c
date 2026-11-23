@@ -220,6 +220,7 @@ static int look_id(int id)
     case OB_ID_PIXEL_SIZE:
     case OB_ID_PICTURE_HEIGHT:
     case OB_ID_MONITOR_KHZ:
+    case OB_ID_NTSC_COLORS:
     case OB_ID_MISTER_PRESET:
     case OB_ID_MISTER_H:
     case OB_ID_MISTER_V:
