@@ -160,7 +160,7 @@ int main(void)
     ob_profile profile;
     ob_host host;
     ob_plat_hooks hk = { .title = "test", .win_w = 320, .win_h = 240, .cls = OB_CLASS_LORES, .src_w = W, .src_h = H,
-                         .picture = picture, .changed = changed, .quit = quit_hook };
+                         .picture = picture, .changed = changed, .quit = quit_hook, .esc_opens = 1 };
     SDL_Event e;
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
@@ -181,6 +181,10 @@ int main(void)
     SDL_PushEvent(&e);
     ob_plat_pump();
     CHECK(!host.overlay_open);                              /* the overlay key again closes it */
+    tap(SDL_SCANCODE_ESCAPE);
+    CHECK(host.overlay_open);                               /* esc_opens: Esc opens it while closed */
+    tap(SDL_SCANCODE_GRAVE);
+    CHECK(!host.overlay_open);
     CHECK(host.device_n >= 1 && !strcmp(host.device_kind[0], "Keyboard"));   /* a key was seen, so the Input page lists it */
     CHECK(changed_calls >= 1);
     ob_plat_present();
