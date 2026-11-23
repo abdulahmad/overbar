@@ -54,7 +54,7 @@ void ob_overlay_build(ob_host *h)
             snprintf(m->subtitle, sizeof m->subtitle, "Only this Scale Mode's options. Changes live-preview.");
     }
     else if (h->overlay_page == OB_PAGE_MAIN)
-        snprintf(m->subtitle, sizeof m->subtitle, "` / F11 overlay   F12 stats   F9 keyboard");
+        snprintf(m->subtitle, sizeof m->subtitle, "[`]/[F11] overlay   [F12] stats   [F9] keyboard");
     for (i = 0; i < n; i++) {
         const ob_item *it = &items[i];
         mdrt_menu_item *add;

@@ -759,6 +759,9 @@ static void fps_draw(void)
     SDL_RenderCopy(P.ren, P.fps_tex, &src, &to);
 }
 
+/* the black laid over the picture behind the overlay: 153 of 255 leaves it 40% bright */
+#define OB_OVERLAY_DIM 153
+
 static void overlay_draw(const SDL_Rect *dst)
 {
     int mw, mh, t = (int)(dst->h * 0.8 / (P.cur_h > 0 ? P.cur_h : P.hk.src_h) + 0.5);
@@ -781,7 +784,7 @@ static void overlay_draw(const SDL_Rect *dst)
     SDL_Rect to = { dst->x + (dst->w - mw * t) / 2, dst->y + (dst->h - mh * t) / 2, mw * t, mh * t };
     SDL_UpdateTexture(P.over_tex, NULL, P.over_px, mw * 4);
     SDL_SetRenderDrawBlendMode(P.ren, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(P.ren, 0, 0, 0, 96);
+    SDL_SetRenderDrawColor(P.ren, 0, 0, 0, OB_OVERLAY_DIM);
     SDL_RenderFillRect(P.ren, dst);
     SDL_RenderCopy(P.ren, P.over_tex, NULL, &to);
     P.over_x = to.x; P.over_y = to.y; P.over_w = to.w; P.over_h = to.h;
