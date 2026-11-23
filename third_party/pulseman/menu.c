@@ -369,6 +369,11 @@ static void row_text(uint32_t *px, int w, int h, int pitch, int x0, int y0, int 
 #define CAP_EDGE 0x54545Cu
 #define CAP_INK  0xFFFFFFu
 
+#define CAP_LIP  0x141418u                             /* the key's bottom edge, a shade darker */
+#define CAP_H    11                                    /* a key is 11 rows tall: 1 above and below the 10-row text row, with 3 columns of padding each side of its label */
+#define PAD_D    13                                    /* a controller button's diameter */
+#define CAP_GAP  2                                     /* between neighbouring keys and buttons */
+
 static int cap_arrow(char c) { return c == '<' || c == '>' || c == '^' || c == 'v'; }
 
 /* the width of one [..] at s (s points just past the '['); *end gets the index of the ']' (-1: no bracket) */
@@ -377,7 +382,7 @@ static int cap_width(const char *s, int *end)
     const char *e = strchr(s, ']');
     if (!e) { *end = -1; return 0; }
     *end = (int)(e - s);
-    return cap_arrow(s[0]) && *end == 1 ? 11 : *end * CW + 3;
+    return cap_arrow(s[0]) && *end == 1 ? 15 : *end * CW + 7;
 }
 
 static int hints_width(const char *s)
@@ -387,26 +392,28 @@ static int hints_width(const char *s)
         if (*s == '[') {
             int end, cw = cap_width(s + 1, &end);
             if (end < 0) return -1;
-            wd += cw + 1;
+            wd += cw + CAP_GAP;
             s += end + 2;
         } else if (*s == '{') {                            /* {A}: a controller button */
             if (!s[1] || s[2] != '}') return -1;
-            wd += 11;
+            wd += PAD_D + CAP_GAP;
             s += 3;
         } else { wd += CW; s++; }
     }
     return wd;
 }
 
+/* y is the text row's top; the key reaches a row above and below it */
 static void cap_draw(uint32_t *px, int w, int h, int pitch, int x, int y, int cw, const char *label, int n)
 {
-    for (int j = 0; j < 10; j++)
+    y -= 1;
+    for (int j = 0; j < CAP_H; j++)
         for (int i = 0; i < cw; i++) {
-            int edge = j == 0 || j == 9 || i == 0 || i == cw - 1;
-            if ((j == 0 || j == 9) && (i == 0 || i == cw - 1)) continue;   /* round the corners */
-            put(px, w, h, pitch, x + i, y + j, edge ? CAP_EDGE : CAP_FILL);
+            int edge = j == 0 || j == CAP_H - 1 || i == 0 || i == cw - 1;
+            if ((j == 0 || j == CAP_H - 1) && (i == 0 || i == cw - 1)) continue;   /* round the corners */
+            put(px, w, h, pitch, x + i, y + j, edge ? CAP_EDGE : j == CAP_H - 2 ? CAP_LIP : CAP_FILL);
         }
-    if (n == 1 && cap_arrow(label[0])) {                   /* a small solid triangle, centred */
+    if (n == 1 && cap_arrow(label[0])) {                   /* a solid triangle, centred in the key */
         int cx = x + cw / 2, cy = y + 5;
         for (int k = 0; k < 4; k++)
             for (int t = -(3 - k); t <= 3 - k; t++) {
@@ -419,23 +426,24 @@ static void cap_draw(uint32_t *px, int w, int h, int pitch, int x, int y, int cw
     }
     char buf[32];
     snprintf(buf, sizeof buf, "%.*s", n < 31 ? n : 31, label);
-    glyphs(px, w, h, pitch, x + 2, y + 1, buf, CAP_INK);
+    glyphs(px, w, h, pitch, x + 4, y + 2, buf, CAP_INK);
 }
 
 /* an Xbox-style face button: a round, coloured disc with its letter (A green, B red, X blue, Y yellow) */
 static void pad_draw(uint32_t *px, int w, int h, int pitch, int x, int y, char c)
 {
     uint32_t col = c == 'A' ? 0x58AA3Cu : c == 'B' ? 0xD63428u : c == 'X' ? 0x2E78D2u : 0xE0B020u;
-    for (int j = 0; j < 10; j++)
-        for (int i = 0; i < 10; i++) {
-            float dx = i - 4.5f, dy = j - 4.5f, d2 = dx * dx + dy * dy;
-            if (d2 <= 22.0f) put(px, w, h, pitch, x + i, y + j, d2 > 16.0f ? 0x141416u : col);
+    y -= 2;                                                /* 13 rows: the letter keeps about two pixels clear of the rim */
+    for (int j = 0; j < PAD_D; j++)
+        for (int i = 0; i < PAD_D; i++) {
+            float dx = i - 6.0f, dy = j - 6.0f, d2 = dx * dx + dy * dy;
+            if (d2 <= 42.0f) put(px, w, h, pitch, x + i, y + j, d2 > 30.0f ? 0x141416u : col);
         }
     char one[2] = { c, 0 };
-    glyphs(px, w, h, pitch, x + 2, y + 1, one, CAP_INK);
+    glyphs(px, w, h, pitch, x + 4, y + 3, one, CAP_INK);
 }
 
-static void hints_draw(uint32_t *px, int w, int h, int pitch, int x0, int y0, int cols, int row, const char *s)
+static void hints_draw(uint32_t *px, int w, int h, int pitch, int x0, int y0, int cols, int row, const char *s, int left)
 {
     int wd = hints_width(s), y = y0 + row * CH;
     if (wd < 0 || wd > (cols - 2) * CW) {                  /* too wide, or broken: the plain words */
@@ -444,19 +452,19 @@ static void hints_draw(uint32_t *px, int w, int h, int pitch, int x0, int y0, in
         for (; *s && n < (int)sizeof plain - 1; s++) if (*s != '[' && *s != ']' && *s != '{' && *s != '}') plain[n++] = *s;
         plain[n] = 0;
         fit(fitted, sizeof fitted, plain, cols - 2, 0);
-        row_text(px, w, h, pitch, x0 + (cols - (int)strlen(fitted)) * CW / 2, y0, 0, row, fitted, GREY);
+        row_text(px, w, h, pitch, left ? x0 + CW : x0 + (cols - (int)strlen(fitted)) * CW / 2, y0, 0, row, fitted, GREY);
         return;
     }
-    int x = x0 + (cols * CW - wd) / 2;
+    int x = left ? x0 + CW : x0 + (cols * CW - wd) / 2;
     while (*s) {
         if (*s == '[') {
             int end, cw = cap_width(s + 1, &end);
             cap_draw(px, w, h, pitch, x, y, cw, s + 1, end);
-            x += cw + 1;
+            x += cw + CAP_GAP;
             s += end + 2;
         } else if (*s == '{') {
             pad_draw(px, w, h, pitch, x, y, s[1]);
-            x += 11;
+            x += PAD_D + CAP_GAP;
             s += 3;
         } else {
             char one[2] = { *s, 0 };
@@ -482,8 +490,11 @@ void mdrt_menu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch)
     char buf[200];
     fit(buf, sizeof buf, m->title, cols - 2, 0);
     row_text(px, w, h, pitch, x0 + (cols - (int)strlen(buf)) * CW / 2, y0, 0, 0, buf, TITLE);
-    fit(buf, sizeof buf, m->subtitle, cols - 2, 1);
-    row_text(px, w, h, pitch, x0, y0, 1, 1, buf, GREY);
+    if (strpbrk(m->subtitle, "[{")) hints_draw(px, w, h, pitch, x0, y0, cols, 1, m->subtitle, 1);   /* key hints: keycaps, from the left */
+    else {
+        fit(buf, sizeof buf, m->subtitle, cols - 2, 1);
+        row_text(px, w, h, pitch, x0, y0, 1, 1, buf, GREY);
+    }
     if (m->top > 0) row_text(px, w, h, pitch, x0, y0, cols - 2, 2, "\x80", GREY);
     for (int r = 0; r < list && m->top + r < m->count; r++) {
         int i = m->top + r, y = y0 + (3 + r) * CH;
@@ -535,5 +546,5 @@ void mdrt_menu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch)
                      : it && it->kind == MDRT_ITEM_FIELD ? "[Enter] type into it   [Esc]/{B} back"
                      : it && (it->kind == MDRT_ITEM_CHOICE || it->kind == MDRT_ITEM_NUMBER)
                      ? "[Enter]/{A} choose  [Esc]/{B} back  [<][>] change" : "[Enter]/{A} choose   [Esc]/{B} back";
-    hints_draw(px, w, h, pitch, x0, y0, cols, rows - 1, keys);
+    hints_draw(px, w, h, pitch, x0, y0, cols, rows - 1, keys, 0);
 }
