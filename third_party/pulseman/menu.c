@@ -362,6 +362,111 @@ static void row_text(uint32_t *px, int w, int h, int pitch, int x0, int y0, int 
     mdrt_menu_text(px, w, h, pitch, x0 + col * CW, y0 + row * CH + 1, s, rgb);
 }
 
+/* ---- the key hints as keycaps (Overbar): "[Enter]/{A} choose   [<][>] change" -------------------------------------------------------
+ * [text] is a key, {A} a controller button: white text on a very dark grey cap with a slightly lighter grey outline; [<] [>] [^] [v] are arrow keys with a drawn arrow;
+ * anything else is text in grey. A hint too wide for the row falls back to plain text without the brackets. */
+#define CAP_FILL 0x222226u
+#define CAP_EDGE 0x54545Cu
+#define CAP_INK  0xFFFFFFu
+
+static int cap_arrow(char c) { return c == '<' || c == '>' || c == '^' || c == 'v'; }
+
+/* the width of one [..] at s (s points just past the '['); *end gets the index of the ']' (-1: no bracket) */
+static int cap_width(const char *s, int *end)
+{
+    const char *e = strchr(s, ']');
+    if (!e) { *end = -1; return 0; }
+    *end = (int)(e - s);
+    return cap_arrow(s[0]) && *end == 1 ? 11 : *end * CW + 3;
+}
+
+static int hints_width(const char *s)
+{
+    int wd = 0;
+    while (*s) {
+        if (*s == '[') {
+            int end, cw = cap_width(s + 1, &end);
+            if (end < 0) return -1;
+            wd += cw + 1;
+            s += end + 2;
+        } else if (*s == '{') {                            /* {A}: a controller button */
+            if (!s[1] || s[2] != '}') return -1;
+            wd += 11;
+            s += 3;
+        } else { wd += CW; s++; }
+    }
+    return wd;
+}
+
+static void cap_draw(uint32_t *px, int w, int h, int pitch, int x, int y, int cw, const char *label, int n)
+{
+    for (int j = 0; j < 10; j++)
+        for (int i = 0; i < cw; i++) {
+            int edge = j == 0 || j == 9 || i == 0 || i == cw - 1;
+            if ((j == 0 || j == 9) && (i == 0 || i == cw - 1)) continue;   /* round the corners */
+            put(px, w, h, pitch, x + i, y + j, edge ? CAP_EDGE : CAP_FILL);
+        }
+    if (n == 1 && cap_arrow(label[0])) {                   /* a small solid triangle, centred */
+        int cx = x + cw / 2, cy = y + 5;
+        for (int k = 0; k < 4; k++)
+            for (int t = -(3 - k); t <= 3 - k; t++) {
+                if (label[0] == '<') put(px, w, h, pitch, cx + 1 - k, cy + t, CAP_INK);
+                else if (label[0] == '>') put(px, w, h, pitch, cx - 2 + k, cy + t, CAP_INK);
+                else if (label[0] == '^') put(px, w, h, pitch, cx + t, cy - 2 + k, CAP_INK);
+                else put(px, w, h, pitch, cx + t, cy + 2 - k, CAP_INK);
+            }
+        return;
+    }
+    char buf[32];
+    snprintf(buf, sizeof buf, "%.*s", n < 31 ? n : 31, label);
+    glyphs(px, w, h, pitch, x + 2, y + 1, buf, CAP_INK);
+}
+
+/* an Xbox-style face button: a round, coloured disc with its letter (A green, B red, X blue, Y yellow) */
+static void pad_draw(uint32_t *px, int w, int h, int pitch, int x, int y, char c)
+{
+    uint32_t col = c == 'A' ? 0x58AA3Cu : c == 'B' ? 0xD63428u : c == 'X' ? 0x2E78D2u : 0xE0B020u;
+    for (int j = 0; j < 10; j++)
+        for (int i = 0; i < 10; i++) {
+            float dx = i - 4.5f, dy = j - 4.5f, d2 = dx * dx + dy * dy;
+            if (d2 <= 22.0f) put(px, w, h, pitch, x + i, y + j, d2 > 16.0f ? 0x141416u : col);
+        }
+    char one[2] = { c, 0 };
+    glyphs(px, w, h, pitch, x + 2, y + 1, one, CAP_INK);
+}
+
+static void hints_draw(uint32_t *px, int w, int h, int pitch, int x0, int y0, int cols, int row, const char *s)
+{
+    int wd = hints_width(s), y = y0 + row * CH;
+    if (wd < 0 || wd > (cols - 2) * CW) {                  /* too wide, or broken: the plain words */
+        char plain[160], fitted[160];
+        int n = 0;
+        for (; *s && n < (int)sizeof plain - 1; s++) if (*s != '[' && *s != ']' && *s != '{' && *s != '}') plain[n++] = *s;
+        plain[n] = 0;
+        fit(fitted, sizeof fitted, plain, cols - 2, 0);
+        row_text(px, w, h, pitch, x0 + (cols - (int)strlen(fitted)) * CW / 2, y0, 0, row, fitted, GREY);
+        return;
+    }
+    int x = x0 + (cols * CW - wd) / 2;
+    while (*s) {
+        if (*s == '[') {
+            int end, cw = cap_width(s + 1, &end);
+            cap_draw(px, w, h, pitch, x, y, cw, s + 1, end);
+            x += cw + 1;
+            s += end + 2;
+        } else if (*s == '{') {
+            pad_draw(px, w, h, pitch, x, y, s[1]);
+            x += 11;
+            s += 3;
+        } else {
+            char one[2] = { *s, 0 };
+            mdrt_menu_text(px, w, h, pitch, x, y + 1, one, GREY);
+            x += CW;
+            s++;
+        }
+    }
+}
+
 void mdrt_menu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch)
 {
     for (int y = 0; y < h; y++)                           /* the picture under it, a quarter as bright */
@@ -426,10 +531,9 @@ void mdrt_menu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch)
     fit(buf, sizeof buf, m->message, cols - 2, 0);
     row_text(px, w, h, pitch, x0, y0, 1, rows - 2, buf, WARN);
     const mdrt_menu_item *it = m->count && selectable(m, m->sel) ? &m->items[m->sel] : NULL;
-    const char *keys = m->editing >= 0 ? "Type it   Enter: keep it   Esc: as it was"
-                     : it && it->kind == MDRT_ITEM_FIELD ? "Enter: type into it   Esc/B: back"
+    const char *keys = m->editing >= 0 ? "Type it   [Enter] keep it   [Esc] as it was"
+                     : it && it->kind == MDRT_ITEM_FIELD ? "[Enter] type into it   [Esc]/{B} back"
                      : it && (it->kind == MDRT_ITEM_CHOICE || it->kind == MDRT_ITEM_NUMBER)
-                     ? "Enter/A: choose   Esc/B: back   < >: change" : "Enter/A: choose   Esc/B: back";
-    fit(buf, sizeof buf, keys, cols - 2, 0);
-    row_text(px, w, h, pitch, x0 + (cols - (int)strlen(buf)) * CW / 2, y0, 0, rows - 1, buf, GREY);
+                     ? "[Enter]/{A} choose  [Esc]/{B} back  [<][>] change" : "[Enter]/{A} choose   [Esc]/{B} back";
+    hints_draw(px, w, h, pitch, x0, y0, cols, rows - 1, keys);
 }
