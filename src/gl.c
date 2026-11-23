@@ -10,6 +10,8 @@
  * fails, the port falls back to SDL's renderer. */
 #ifdef HAVE_GL
 #include "overbar/gl.h"
+#include "overbar/overbar.h"
+#include "look_tables.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,7 +42,7 @@ static GLint u_tex, u_size, u_pre, u_mode, u_scan, u_gain, u_center, u_period, u
 static float c_dark = 0.3f, c_gamma = 1.13f, c_mask = 0.12f, c_sharp = 0.6f, m_bright = 1.0f, m_maskscale = 1.0f;
 static GLuint t_h, t_v, t_g, t_m;
 static int have_tables, mask_w = 1, mask_h = 1;
-static int look_pre = 1, look_period = 1, look_style, tgt_w, tgt_h;
+static int look_pre = 1, look_pre_y = 1, look_period = 1, look_style, tgt_w, tgt_h;
 static float look_scan, look_gain = 1, look_center = 0.5f;
 static int tex_w, tex_h, filter_mode = 2;
 const char *ob_gl_filter;                       /* set by the port before ob_gl_init */
@@ -55,7 +57,7 @@ static const char *fs_src =
     "#version 110\n"
     "uniform sampler2D tex;\n"
     "uniform vec2 srcsize;\n"
-    "uniform float pre;\n"
+    "uniform vec2 pre;\n"
     "uniform int mode;\n"
     "uniform float scan;\n"
     "uniform float gain;\n"
@@ -129,7 +131,7 @@ static const char *fs_src =
     "    vec4 wc = vec4(-0.5 * f3 + f2 - 0.5 * f.x, 1.5 * f3 - 2.5 * f2 + 1.0, -1.5 * f3 + 2.0 * f2 + 0.5 * f.x, 0.5 * f3 - 0.5 * f2);\n"
     "    vec4 wx = mix(vec4(0.0, 1.0 - f.x, f.x, 0.0), wc, csharp);\n"
     "    float sy = uv.y * srcsize.y * period;\n"
-    "    vec4 c = row(vec2(i.x, floor(sy / period) * pre), 0.0, wx);\n"
+    "    vec4 c = row(vec2(i.x, floor(sy / period) * pre.y), 0.0, wx);\n"
     "    float d = min(abs(fract(sy) - center) * 2.0, 1.0);\n"
     "    vec3 col = c.rgb * (1.0 - cdark * pow(d, 1.5));\n"
     "    col = pow(clamp(col, 0.0, 1.0), vec3(1.0 / cgamma));\n"
@@ -171,7 +173,7 @@ static const char *fs_src =
     "  vec4 c;\n"
     "  if (scan > 0.0) {\n"
     "    float sy = uv.y * srcsize.y;\n"
-    "    c = row(vec2(i.x, floor(sy) * pre), 0.0, wx);\n"
+    "    c = row(vec2(i.x, floor(sy) * pre.y), 0.0, wx);\n"
     "    float d = (fract(sy * period) - center) / scan;\n"
     "    c.rgb *= exp(-d * d) * gain;\n"
     "  } else {\n"
@@ -242,6 +244,7 @@ int ob_gl_init(SDL_Window *win)
     SDL_GL_SetSwapInterval(1);
     if (f && !strcmp(f, "nearest")) filter_mode = 0;
     else if (f && !strcmp(f, "linear")) filter_mode = 1;
+    ob_render_set_filter(f);
     return 1;
 }
 
@@ -338,7 +341,7 @@ void ob_gl_draw(SDL_Window *win, const uint32_t *argb, int w, int h, int vx, int
     p_glUseProgram(prog);
     p_glUniform1i(u_tex, 0);
     p_glUniform2f(u_size, (float)w, (float)h);
-    p_glUniform1f(u_pre, (float)look_pre);
+    p_glUniform2f(u_pre, (float)look_pre, (float)look_pre_y);
     p_glUniform1f(u_scan, look_scan);
     p_glUniform1f(u_gain, look_gain);
     p_glUniform1f(u_center, look_center);
@@ -394,7 +397,7 @@ void ob_gl_draw(SDL_Window *win, const uint32_t *argb, int w, int h, int vx, int
 /* the integer scale taken first for the sharp horizontal scaling; the width of the scanlines (a Gaussian profile: its sigma in source lines, 0 for
  * none, and the gain that keeps the brightness) and how many there are per source line. With scanlines the vertical scaling is nearest-neighbour: a
  * source line is never blended with its neighbours, only darkened between the scanlines. */
-void ob_gl_set_look(int pre, float sigma, float gain, float center, int period, int style) { look_pre = pre; look_scan = sigma; look_gain = gain; look_center = center; look_period = period; look_style = style; }
+void ob_gl_set_look(int pre, float sigma, float gain, float center, int period, int style) { look_pre = look_pre_y = pre; look_scan = sigma; look_gain = gain; look_center = center; look_period = period; look_style = style; }
 
 /* The tables of the MiSTer look, in 16 bits per value (a value is stored as v / 2): the horizontal filter (64 phases of 4 taps), the vertical filter
  * (256 phases of 4 taps, a set for dark and one for bright pixels), and the gamma curve (256 values). */
@@ -451,6 +454,48 @@ void ob_gl_mister_mask(const float *rgb, int w, int h)
 void ob_gl_set_target(int w, int h) { tgt_w = w; tgt_h = h; }
 
 void ob_gl_set_vsync(int on) { SDL_GL_SetSwapInterval(on ? 1 : 0); }
+
+/* The one path: the look's plan (ob_render_plan_get, the same one the software renderer draws) for a frame shown at vw x vh drawable pixels,
+ * the MiSTer tables of the look's files, then the draw. vx, vy is the view's bottom left corner in drawable pixels. */
+void ob_gl_render(SDL_Window *win, const ob_look *look, ob_class cls, const uint32_t *argb, int w, int h, int vx, int vy, int vw, int vh)
+{
+    static char up_sig[4][192];
+    static int up_ok, up_mask = -1;
+    ob_render_plan plan;
+    ob_render_plan_get(look, cls, w, h, vw, vh, &plan);
+    look_pre = plan.pre_x;
+    look_pre_y = plan.pre_y;
+    look_scan = plan.scan;
+    look_gain = plan.gain;
+    look_center = plan.center;
+    look_period = plan.period;
+    look_style = plan.style;
+    filter_mode = plan.filter;
+    if (look) {
+        c_dark = look->c_dark;
+        c_gamma = look->c_gamma;
+        c_mask = look->c_mask;
+        c_sharp = look->c_sharp;
+        m_bright = look->bright > 0 ? look->bright / 100.f : 1.f;
+        m_maskscale = (float)(look->mask_scale > 0 ? look->mask_scale : 1);
+    }
+    if (look && plan.style == OB_STYLE_MISTER) {
+        ob_mister_tables mt;
+        int i, best = 0, same = up_ok;
+        ob_mister_tables_get(look, &mt);
+        for (i = 0; i < 4; i++) if (strncmp(up_sig[i], look->mister_path[i], sizeof up_sig[i])) same = 0;
+        if (!same) {
+            ob_gl_mister_tables(mt.htap, mt.vtap, mt.gamma);
+            for (i = 0; i < 4; i++) snprintf(up_sig[i], sizeof up_sig[i], "%s", look->mister_path[i]);
+            up_ok = 1;
+            up_mask = -1;
+        }
+        for (i = 0; i < mt.nmasks; i++)          /* the largest pattern not above the output height */
+            if (mt.masks[i].res <= vh && mt.masks[i].res >= mt.masks[best].res) best = i;
+        if (best != up_mask) { ob_gl_mister_mask(mt.masks[best].rgb, mt.masks[best].w, mt.masks[best].h); up_mask = best; }
+    } else up_ok = 0;                            /* a port's own ob_gl_mister_tables may have replaced them */
+    ob_gl_draw(win, argb, w, h, vx, vy, vw, vh);
+}
 
 void ob_gl_quit(void)
 {

@@ -1,4 +1,5 @@
 src/scaler.c
+src/render.c
 src/host.c
 src/present.c
 src/menu.c

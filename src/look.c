@@ -102,21 +102,20 @@ static void hpass(const uint32_t *line, int ow, int lin, int16_t *out)
     }
 }
 
-/* the shader's cubic (Catmull-Rom) weights mixed with linear ones by sharp (1: all cubic) over a
- * grid of pre output-texels per source pixel: the taps i-1..i+2 of that grid, as source columns */
-static void cols_sharp(int sw, int ow, int pre, float sharp)
+/* the shader's taps over a grid of pre output-texels per source pixel (the integer prescale): the filter's weights
+ * (ob_render_weights), for the custom look mixed with linear ones by sharp (1: all cubic); the taps i-1..i+2 of that
+ * grid, as source columns */
+static void cols_sharp(int sw, int ow, int pre, int filter, float sharp)
 {
     int ox, k;
     for (ox = 0; ox < ow; ox++) {
         float p = (ox + 0.5f) / ow * sw * pre - 0.5f, i = floorf(p), f = p - i;
-        float f2 = f * f, f3 = f2 * f;
-        float cub[4] = { -0.5f * f3 + f2 - 0.5f * f, 1.5f * f3 - 2.5f * f2 + 1.f,
-                         -1.5f * f3 + 2.f * f2 + 0.5f * f, 0.5f * f3 - 0.5f * f2 };
-        float lin[4] = { 0.f, 1.f - f, f, 0.f };
+        float w[4], lin[4] = { 0.f, 1.f - f, f, 0.f };
+        ob_render_weights(filter, f, w);
         for (k = 0; k < 4; k++) {
             int g = (int)i - 1 + k;
             o_cols[ox].x[k] = clampi((int)floorf((float)g / pre), 0, sw - 1);
-            o_cols[ox].w[k] = wfix(lin[k] + (cub[k] - lin[k]) * sharp);
+            o_cols[ox].w[k] = wfix(sharp >= 1.f ? w[k] : lin[k] + (w[k] - lin[k]) * sharp);
         }
     }
 }
@@ -150,23 +149,6 @@ static void cols_mister(int sw, int ow, const float (*htap)[4])
             o_cols[ox].w[k] = wfix(htap[ph][k]);
         }
     }
-}
-
-/* 95 PC's scan_rows: where the scanline's centre sits in a line of rows output rows, and the gain
- * that keeps the line as bright as it was */
-static void scan_rows(float sigma, int rows, float *center, float *gain)
-{
-    float sum = 0;
-    int r;
-    if (rows < 1) rows = 1;
-    *center = ((rows - 1) / 2 + 0.5f) / rows;
-    *gain = 1;
-    if (sigma <= 0) return;
-    for (r = 0; r < rows; r++) {
-        float d = ((r + 0.5f) / rows - *center) / sigma;
-        sum += expf(-d * d);
-    }
-    *gain = rows / sum;
 }
 
 static const int16_t *row_of(int line, int sh, int ow)
@@ -231,7 +213,7 @@ int ob_look_renders(const ob_look *look)
 typedef struct {
     const ob_look *look;
     const uint32_t *src;
-    int sw, sh, spitch, ow, oh, d, period, style, lin;
+    int sw, sh, spitch, ow, oh, d, period, style, lin, pre_y, filter;
     float center, gain, sigma, bright;
     const int *fx;                  /* each output column's window column (gl_FragCoord.x) */
     const ob_mask_tile *mask;
@@ -260,7 +242,22 @@ static void vrows(const job *j, int oy0, int oy1)
         uint32_t *out = o_px + (long)oy * ow;
         float v = (oy + 0.5f) / j->oh;                /* the shader's uv.y */
         int fy = (int)((oy + 0.5f) * j->d);           /* the window row (gl_FragCoord.y), for the masks */
-        if (j->style == 0) {
+        if (j->style == 0 && j->sigma <= 0) {      /* Sharp: the same taps down the prescaled grid */
+            float p = v * sh * j->pre_y - 0.5f, iy = floorf(p), wf[4];
+            const int16_t *r[4];
+            int w[4], i;
+            ob_render_weights(j->filter, p - iy, wf);
+            for (k = 0; k < 4; k++) {
+                r[k] = row_of((int)floorf(((int)iy - 1 + k) / (float)j->pre_y), sh, ow);
+                w[k] = wfix(wf[k]);
+            }
+            for (ox = 0, i = 0; ox < ow; ox++, i += 3) {   /* (ONE x WONE >> 14: a byte) */
+                int c[3];
+                for (t = 0; t < 3; t++)
+                    c[t] = (r[0][i + t] * w[0] + r[1][i + t] * w[1] + r[2][i + t] * w[2] + r[3][i + t] * w[3] + (1 << 13)) >> 14;
+                out[ox] = pack(c[0], c[1], c[2]);
+            }
+        } else if (j->style == 0) {
             float sy = v * sh * period, dd = (sy - floorf(sy) - j->center) / j->sigma;
             const int16_t *r = row_of((int)floorf(sy / period), sh, ow);
             int K = (int)(expf(-dd * dd) * j->gain * 255.f * 256.f + 0.5f), i;
@@ -390,17 +387,18 @@ static void run(const job *j, int phase)
 }
 #endif
 
-int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int spitch,
-                   int out_w, int out_h, uint32_t **dst, int *dw, int *dh)
+int ob_render_cpu(const ob_look *look, ob_class cls, const uint32_t *src, int sw, int sh, int spitch,
+                  int out_w, int out_h, uint32_t **dst, int *dw, int *dh)
 {
-    static const float scan_strength[3] = { 0.80f, 0.60f, 0.45f };   /* light, medium, strong */
-    int ow = out_w, oh = out_h, d = 1, crt, ox, k;
+    int ow = out_w, oh = out_h, d = 1, ox, k;
+    ob_render_plan plan;
     ob_mister_tables mt;
     job j;
-    if (!ob_look_renders(look) || !src || sw < 1 || sh < 1 || out_w < 1 || out_h < 1) return 0;
+    if (!src || sw < 1 || sh < 1 || out_w < 1 || out_h < 1) return 0;
     if (spitch < sw) spitch = sw;
     while ((long)(ow = out_w / d) * (oh = out_h / d) > MAX_PX) d++;
     if (ow < 1 || oh < 1) return 0;
+    ob_render_plan_get(look, cls, sw, sh, ow, oh, &plan);
     luts();
     memset(&j, 0, sizeof j);
     j.look = look;
@@ -411,13 +409,14 @@ int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int
     j.ow = ow;
     j.oh = oh;
     j.d = d;
-    j.period = look->khz31 ? 2 : 1;
-    crt = look->mode == OB_MODE_CRT ? (int)look->crt : -1;
-    /* 0 scanlines, 1 soft, 2 soft + grille, 3 MiSTer, 4 custom (video_gl.c's style) */
-    j.style = crt < 0 ? 3 : crt <= OB_CRT_STRONG ? 0 : crt == OB_CRT_SOFT ? 1 : crt == OB_CRT_SOFT_APERTURE ? 2 : 4;
-    j.lin = j.style == 1 || j.style == 2;
-    if (j.style == 0) j.sigma = scan_strength[crt];
-    scan_rows(j.sigma, (oh + sh * j.period / 2) / (sh * j.period), &j.center, &j.gain);
+    j.period = plan.period;
+    j.style = plan.style;
+    j.lin = j.style == OB_STYLE_SOFT || j.style == OB_STYLE_GRILLE;
+    j.sigma = plan.scan;
+    j.gain = plan.gain;
+    j.center = plan.center;
+    j.pre_y = plan.pre_y;
+    j.filter = plan.filter;
     if (!grow((void **)&o_px, &o_cap, (long)ow * oh, sizeof *o_px)
         || !grow((void **)&o_cols, &o_cols_cap, ow, sizeof *o_cols)
         || !grow((void **)&o_fx, &o_fx_cap, ow, sizeof *o_fx)
@@ -425,7 +424,7 @@ int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int
         return 0;
     for (ox = 0; ox < ow; ox++) o_fx[ox] = (int)((ox + 0.5f) * d);
     j.fx = o_fx;
-    if (j.style == 3) {
+    if (j.style == OB_STYLE_MISTER) {
         int i, best = 0;
         ob_mister_tables_get(look, &mt);
         for (i = 0; i < mt.nmasks; i++)        /* the largest pattern not above the output height */
@@ -436,8 +435,9 @@ int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int
         for (k = 0; k < 256; k++) j.gam[k] = (int)(mt.gamma[k] * 4096.f + 0.5f);
         cols_mister(sw, ow, mt.htap);
     } else if (j.lin) cols_soft(sw, ow);
-    else cols_sharp(sw, ow, 3, j.style == 4 ? look->c_sharp : 1.f);
-    if (j.style == 4 && look->c_gamma != o_pow_for) {
+    else cols_sharp(sw, ow, plan.pre_x, j.style == OB_STYLE_CUSTOM ? OB_FILTER_CUBIC : plan.filter,
+                    j.style == OB_STYLE_CUSTOM ? look->c_sharp : 1.f);
+    if (j.style == OB_STYLE_CUSTOM && look->c_gamma != o_pow_for) {
         int i;
         float g = look->c_gamma > 0.05f ? look->c_gamma : 1.f;
         for (i = 0; i <= 2 * ONE; i++) o_pow_lut[i] = (int)(powf(i > ONE ? 1.f : i / (float)ONE, 1.f / g) * 4096.f + 0.5f);
@@ -449,4 +449,12 @@ int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int
     *dw = ow;
     *dh = oh;
     return 1;
+}
+
+/* the CRT looks and the MiSTer filters only, as before the one path; lo-res */
+int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int spitch,
+                   int out_w, int out_h, uint32_t **dst, int *dw, int *dh)
+{
+    if (!ob_look_renders(look)) return 0;
+    return ob_render_cpu(look, OB_CLASS_LORES, src, sw, sh, spitch, out_w, out_h, dst, dw, dh);
 }

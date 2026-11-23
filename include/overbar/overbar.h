@@ -85,7 +85,7 @@ typedef enum {
     OB_CRT_COUNT
 } ob_crt_look;
 
-/* Integer prescale before the window fit. 3x (720p) is the default for lo-res; hi-res defaults to 1x. */
+/* Integer prescale before the bicubic window fit (see ob_render_plan_get). Lo-res defaults to 3x (2x on a handheld); hi-res to 1x. */
 typedef enum {
     OB_SHARP_1X = 0,            /* hi-res only: the native 640x480, no prescale */
     OB_SHARP_2X,
@@ -426,6 +426,30 @@ int ob_mister_prescale(const ob_look *look, const uint32_t *src, int sw, int sh,
 int ob_look_render(const ob_look *look, const uint32_t *src, int sw, int sh, int spitch,
                    int out_w, int out_h, uint32_t **dst, int *dw, int *dh);
 int ob_look_renders(const ob_look *look);
+/* ---- the one rendering path (src/render.c) ----------------------------
+ * What a look means for one frame of sw x sh shown at view_w x view_h. The OpenGL shader (gl.h: ob_gl_render) and the software renderer
+ * (ob_render_cpu) both draw from it, so every port shows a look the same way. Sharp is an integer prescale with nearest neighbour, then a
+ * bicubic resize to the view; the prescale is capped at the whole multiple that fits the view on each axis, so it never shrinks. */
+enum { OB_FILTER_NEAREST = 0, OB_FILTER_LINEAR, OB_FILTER_CUBIC };
+enum { OB_STYLE_SHARP = 0, OB_STYLE_SOFT, OB_STYLE_GRILLE, OB_STYLE_MISTER, OB_STYLE_CUSTOM };
+typedef struct ob_render_plan {
+    int style;                  /* OB_STYLE_: Sharp also draws the CRT scanline looks (scan > 0) */
+    int pre_x, pre_y;           /* integer prescale on each axis */
+    int filter;                 /* OB_FILTER_ for Sharp */
+    float scan, gain, center;   /* scanlines: sigma in source lines (0 none), the gain keeping the brightness, the beam's centre in a line */
+    int period;                 /* 2 for 31 kHz (every line twice) */
+} ob_render_plan;
+void ob_render_plan_get(const ob_look *look, ob_class cls, int sw, int sh, int view_w, int view_h, ob_render_plan *p);
+int ob_render_prescale(int want, int src, int view);    /* min(want, view / src), at least 1 */
+void ob_render_scan_rows(float sigma, int rows, float *center, float *gain);
+void ob_render_weights(int filter, float f, float w[4]); /* the four taps i-1..i+2 at f (0..1) past tap i */
+void ob_render_set_filter(const char *name);            /* "nearest", "linear", else cubic (the default); a port's *_FILTER setting */
+int ob_render_filter(void);
+/* The software renderer: any look (Sharp included) at out_w x out_h, from the same plan as the shader. Above about 2.1 million pixels it
+ * draws at a whole fraction of the size, for the host to scale up. *dst is owned here and stays until the next call. 0 on bad input. */
+int ob_render_cpu(const ob_look *look, ob_class cls, const uint32_t *src, int sw, int sh, int spitch,
+                  int out_w, int out_h, uint32_t **dst, int *dw, int *dh);
+
 /* NTSC CRT TV colors (ob_look.ntsc, combines with every scale mode): the raw RGB of a console's palette mapped the way a TV showed it
  * (display gamma 2.4, SMPTE-C phosphors) to what an sRGB monitor needs to show the same. */
 uint32_t ob_ntsc_color(uint32_t xrgb);

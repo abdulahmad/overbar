@@ -78,6 +78,8 @@ void ob_defaults_apply(ob_host *h, ob_profile profile)
     look_init(&h->lores, console, 1);
     look_init(&h->hires, 0, 0);
     h->hires.sharp = OB_SHARP_1X;   /* hi-res (the menus) is native 640x480 by default */
+    /* lo-res: 3x, then bicubic to the window; 2x on a handheld (a 640x480 screen like the RG35XX's is 2x of 320x240) */
+    if (profile == OB_PROFILE_HANDHELD) h->lores.sharp = OB_SHARP_2X;
     h->stats = 0;
     h->volume = 80;
     h->mute = 0;
