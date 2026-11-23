@@ -10,10 +10,14 @@
 
 #include <stdint.h>
 #include <SDL.h>
+#include "overbar/overbar.h"
 
 extern const char *ob_gl_filter;               /* "nearest", "linear" or "cubic" (default), set before ob_gl_init */
 int ob_gl_init(SDL_Window *win);
 void ob_gl_draw(SDL_Window *win, const uint32_t *argb, int w, int h, int vx, int vy, int vw, int vh);
+/* The one rendering path (ob_render_plan_get): look and class pick the prescale, filter and CRT or MiSTer look; the frame is shown at
+ * vx, vy, vw, vh in drawable pixels, origin at the bottom left. CRT TV colors (look->ntsc) are the caller's, on the frame or its palette. */
+void ob_gl_render(SDL_Window *win, const ob_look *look, ob_class cls, const uint32_t *argb, int w, int h, int vx, int vy, int vw, int vh);
 void ob_gl_quit(void);
 void ob_gl_set_vsync(int on);
 void ob_gl_set_look(int pre, float sigma, float gain, float center, int period, int style);

@@ -72,7 +72,7 @@ Pick a **Scale Mode** in the **Scaling** menu. Only that mode's own options are 
 
 | Look | What it gives you |
 | --- | --- |
-| **Sharp** | Crisp pixels at 2x to 9x, then smoothed to fit the window. 3x is the default |
+| **Sharp** | Crisp pixels: a whole-number enlargement (2x to 9x, never more than the window fits), then bicubic to the window. 3x is the default, 2x on a handheld |
 | **CRT Monitor** | Light, medium or strong scanlines; a soft Lottes-style beam; soft with an aperture grille; or your own mix |
 | **MiSTer** | The MiSTer FPGA scaler's filter files: Presets, horizontal and vertical filters, gamma and shadow masks, browsed by folder |
 | **CRT TV colors** (a setting, with any of the above) | The console's RGB mapped the way an NTSC TV showed it (gamma 2.4, SMPTE-C phosphors), so the colors look as they did on a TV instead of raw on an RGB monitor. Off by default |
@@ -189,12 +189,10 @@ int pw, ph;
 ob_view_from_host(&host, OB_CLASS_LORES, 320, 224, win_w, win_h, &in);
 ob_view(&in, &v);
 
-/* a CRT look or the MiSTer filters: drawn at the picture's size, ready to copy 1:1 */
-if (ob_look_renders(look)
-    && ob_look_render(look, frame, 320, 224, 320, v.blit_w, v.blit_h, &px, &pw, &ph)) {
+/* every look (Sharp, CRT, MiSTer) through the one path: drawn at the picture's size, ready to copy 1:1.
+ * With OpenGL, ob_gl_render(win, look, OB_CLASS_LORES, frame, 320, 224, ...) draws the same plan on the GPU. */
+if (ob_render_cpu(look, OB_CLASS_LORES, frame, 320, 224, 320, v.blit_w, v.blit_h, &px, &pw, &ph)) {
     /* upload px (pw x ph, ARGB) and copy it to v.blit_x, v.blit_y, v.blit_w, v.blit_h */
-} else {
-    /* Sharp: nearest to a whole multiple, then smooth to the rect */
 }
 
 if (host.overlay_open) {

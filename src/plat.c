@@ -863,17 +863,16 @@ void ob_plat_present(void)
             picture = ntsc_px;
         }
     }
-    if (ob_look_renders(&P.host->lores)) {
-        /* the CRT looks and the MiSTer filters at the picture's size in window pixels */
+    {   /* the one rendering path (ob_render_plan_get): every look, Sharp included, drawn at the picture's size in window pixels */
         uint32_t *px = NULL;
         int dw = 0, dh = 0;
-        if (ob_look_render(&P.host->lores, picture, sw, sh, sw, dst.w, dst.h, &px, &dw, &dh) && px && dw > 0 && dh > 0) {
+        if (ob_render_cpu(&P.host->lores, P.hk.cls, picture, sw, sh, sw, dst.w, dst.h, &px, &dw, &dh) && px && dw > 0 && dh > 0) {
             if (!P.look_tex || P.look_w != dw || P.look_h != dh) {
                 if (P.look_tex) SDL_DestroyTexture(P.look_tex);
                 P.look_tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, dw, dh);
                 P.look_w = dw;
                 P.look_h = dh;
-                if (P.look_tex) SDL_SetTextureScaleMode(P.look_tex, SDL_ScaleModeLinear);
+                if (P.look_tex) SDL_SetTextureScaleMode(P.look_tex, SDL_ScaleModeLinear);   /* 1:1 unless the picture is above ~2.1M pixels */
             }
             if (P.look_tex) { show = P.look_tex; pix = px; pitch = dw * 4; }
         }

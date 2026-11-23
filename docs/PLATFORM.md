@@ -166,6 +166,16 @@ the mouse (read the lane's instead while paused), when its pause menu opens and 
 - NHL94Genesis-C-Port's netplay is now on ob_net (native/net.c): `make netplay-check` passes all its cases
   (head to head, 2+2, four, 2+1+1, 1+3, delay 0, host reset, host's state for everyone, roster set).
 
+## One rendering path (2026-11-23)
+
+Every port draws its picture from one plan, `ob_render_plan_get` (src/render.c): the look and the picture's class give the integer
+prescale, the filter and the CRT or MiSTer look for a frame at the size it is shown. Two renderers draw that plan with the same maths:
+`ob_gl_render` (the GL shader, desktop PC ports) and `ob_render_cpu` (software, the SDL_Renderer hosts: Genesis, SNES, handhelds, and a
+PC port whose GL fails). `tests/test_overbar.c` checks the software one against a float copy of the shader. Sharp is the whole-number
+prescale with nearest neighbour, then bicubic to the view; the prescale is capped at the multiple that fits the view on each axis, so it
+never shrinks (which is what makes pixels uneven). Lo-res defaults to 3x, 2x on a handheld. Ports keep no scaling or look maths of
+their own; they pass the `ob_look` and draw.
+
 ## Rules
 
 - No port includes `<SDL.h>` except through its own non-Overbar needs (PulseMan core stays untouched).

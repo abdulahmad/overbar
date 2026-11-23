@@ -10,6 +10,7 @@
 #include "overbar/overbar.h"
 #include "overbar/season.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,7 +168,7 @@ static void test_defaults(void)
     CHECK(hh.refresh == OB_REFRESH_60);
     CHECK(hh.vsync == 1);
     CHECK(hh.stats == 0);
-    CHECK(hh.lores.mode == OB_MODE_SHARP && hh.lores.sharp == OB_SHARP_3X);
+    CHECK(hh.lores.mode == OB_MODE_SHARP && hh.lores.sharp == OB_SHARP_2X);
     CHECK(hh.console_dar);
     CHECK(hh.lores.height == OB_HEIGHT_FIT);
     CHECK(!hh.has_hires);
@@ -668,6 +669,92 @@ static void g_changed(void *ctx, int i, int v)
     if (i == 1 && v != 0 && ob_game_get(g_h, 0) == 0) ob_game_set(g_h, 0, 2);
 }
 
+/* the shader's Sharp branch (src/gl.c main(), last part) in floats, for one output pixel's channel */
+static float shader_sharp(const uint32_t *src, int sw, int sh, int px_, int py_, int ox, int oy, int ow, int oh, int sh_bits)
+{
+    float p[2] = { (ox + 0.5f) / ow * sw * px_ - 0.5f, (oy + 0.5f) / oh * sh * py_ - 0.5f }, wx[4], wy[4], c = 0;
+    float ix = floorf(p[0]), iy = floorf(p[1]);
+    int a, b;
+    ob_render_weights(OB_FILTER_CUBIC, p[0] - ix, wx);
+    ob_render_weights(OB_FILTER_CUBIC, p[1] - iy, wy);
+    for (b = 0; b < 4; b++)
+        for (a = 0; a < 4; a++) {
+            int x = (int)floorf((ix - 1 + a) / px_), y = (int)floorf((iy - 1 + b) / py_);
+            x = x < 0 ? 0 : x >= sw ? sw - 1 : x;
+            y = y < 0 ? 0 : y >= sh ? sh - 1 : y;
+            c += wy[b] * wx[a] * (float)((src[y * sw + x] >> sh_bits) & 255);
+        }
+    return c < 0 ? 0 : c > 255 ? 255 : c;
+}
+
+static void test_render(void)
+{
+    ob_look l;
+    ob_render_plan plan;
+    ob_host h;
+    static uint32_t src[320 * 200];
+    uint32_t *px = NULL;
+    int x, y, w = 0, ht = 0, worst = 0, n = 0, i;
+    double cent[64], energy[64];
+    /* the prescale: the user's, never above the whole multiple the view shows */
+    CHECK(ob_render_prescale(3, 320, 1440) == 3);
+    CHECK(ob_render_prescale(3, 320, 640) == 2);
+    CHECK(ob_render_prescale(9, 200, 1080) == 5);
+    CHECK(ob_render_prescale(3, 320, 200) == 1);
+    ob_host_init(&h, OB_PORT_SNES, OB_PROFILE_HANDHELD);
+    ob_render_plan_get(&h.lores, OB_CLASS_LORES, 320, 240, 640, 480, &plan);
+    CHECK(plan.style == OB_STYLE_SHARP && plan.pre_x == 2 && plan.pre_y == 2 && plan.scan == 0);
+    ob_host_free(&h);
+    ob_host_init(&h, OB_PORT_PC95, OB_PROFILE_DESKTOP);
+    l = h.lores;
+    ob_render_plan_get(&l, OB_CLASS_LORES, 320, 200, 1440, 1080, &plan);
+    CHECK(plan.pre_x == 3 && plan.pre_y == 3 && plan.filter == OB_FILTER_CUBIC);
+    l.mode = OB_MODE_CRT; l.crt = OB_CRT_MEDIUM;
+    ob_render_plan_get(&l, OB_CLASS_LORES, 320, 200, 1440, 1080, &plan);
+    CHECK(plan.style == OB_STYLE_SHARP && plan.scan > 0 && plan.pre_x == 3);
+    ob_render_plan_get(&h.hires, OB_CLASS_HIRES, 640, 480, 1440, 1080, &plan);
+    CHECK(plan.pre_x == 1 && plan.pre_y == 1);
+    l = h.lores;
+    /* an exact multiple is nearest neighbour exactly: 2x of a pattern on a 640x400 view */
+    for (i = 0; i < 320 * 200; i++) src[i] = 0xFF000000u | (uint32_t)((i * 2654435761u) >> 8 & 0xFFFFFF);
+    l.sharp = OB_SHARP_2X;
+    CHECK(ob_render_cpu(&l, OB_CLASS_LORES, src, 320, 200, 320, 640, 400, &px, &w, &ht) && w == 640 && ht == 400);
+    for (y = 0; y < 400; y++)
+        for (x = 0; x < 640; x++) if (px[y * 640 + x] != src[(y / 2) * 320 + x / 2]) n++;
+    CHECK(n == 0);
+    /* the software renderer is the shader: within 2 of 255 on every channel at 3x to 1440x1080 */
+    l.sharp = OB_SHARP_3X;
+    CHECK(ob_render_cpu(&l, OB_CLASS_LORES, src, 320, 200, 320, 1440, 1080, &px, &w, &ht) && w == 1440 && ht == 1080);
+    for (y = 0; y < 1080; y += 7)
+        for (x = 0; x < 1440; x += 5)
+            for (i = 0; i < 24; i += 8) {
+                int d = (int)((px[y * 1440 + x] >> i) & 255) - (int)(shader_sharp(src, 320, 200, 3, 3, x, y, 1440, 1080, i) + 0.5f);
+                if (d < 0) d = -d;
+                if (d > worst) worst = d;
+            }
+    CHECK(worst <= 2);
+    /* even pixels: a bright column every 5 source pixels lands every 22.5 window pixels with the same weight, at 4.5x (nearest neighbour
+     * gives 4- and 5-pixel columns: a 25% difference) */
+    for (i = 0; i < 320 * 200; i++) src[i] = (i % 320) % 5 == 2 ? 0xFFC0C0C0u : 0xFF404040u;
+    CHECK(ob_render_cpu(&l, OB_CLASS_LORES, src, 320, 200, 320, 1440, 1080, &px, &w, &ht));
+    for (i = 0; i < 64; i++) {
+        double sum = 0, sx = 0;
+        for (x = (int)(i * 22.5); x < (int)((i + 1) * 22.5); x++) {
+            double v = (double)(px[540 * 1440 + x] & 255) - 64.0;
+            sum += v;
+            sx += v * (x + 0.5);
+        }
+        energy[i] = sum;
+        cent[i] = sx / sum;
+    }
+    for (i = 1; i < 63; i++) {
+        CHECK(fabs(cent[i] - cent[i - 1] - 22.5) < 0.1);
+        CHECK(fabs(energy[i] - energy[0]) < energy[0] * 0.01);
+    }
+    ob_host_free(&h);
+    puts("render: ok");
+}
+
 static void test_game_page(void)
 {
     ob_host h, g;
@@ -907,6 +994,7 @@ int main(void)
     test_view_from_host();
     test_mister_presets();
     test_look_render();
+    test_render();
     test_game_page();
     test_season_page();
     if (fails) {

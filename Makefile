@@ -10,7 +10,7 @@ WERROR ?=
 CFLAGS ?= -std=c99 -Wall -Wextra $(WERROR) -Iinclude
 
 LIB_OBJS = \
-	src/scaler.o \
+	src/scaler.o src/render.o \
 	src/host.o \
 	src/present.o \
 	src/menu.o \
