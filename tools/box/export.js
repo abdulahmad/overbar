@@ -30,6 +30,10 @@ const ART = {
   genFront: G + 'box_front.jpg', genSpine: G + 'box_spine.jpg', genBack: G + 'box_back.jpg', genCart: G + 'cart.jpg',
   genCartFlat: 'models/cart_label.jpg', genManual: G + 'manual.jpg',
 };
+// the player's own flatbed scans of the Genesis case, sleeve, manual and cartridge, cut to size in models/art/<key>.jpg, win over the web-sized ones;
+// genManualBack, genCartTop and genCartBack exist only there (without them the manual's back is plain and the cartridge draws its own top strip and back plate)
+for (const k of ['genFront', 'genSpine', 'genBack', 'genManual', 'genCartFlat', 'genManualBack', 'genCartTop', 'genCartBack'])
+  if (fs.existsSync(path.join(M, 'models/art/' + k + '.jpg'))) ART[k] = 'models/art/' + k + '.jpg';
 for (let i = 1; i <= 4; i++) ART['disk' + i] = A + 'disk' + i + '.png';
 const man = fs.readdirSync(path.join(M, A + 'web')).filter(f => /^man-\d+\.jpg$/.test(f)).sort();
 const tech = fs.readdirSync(path.join(M, A + 'web')).filter(f => /^tech-\d+\.jpg$/.test(f)).sort();
@@ -54,6 +58,9 @@ pc = patch(pc, 'const F={root,N:1,flip:0};', 'const F={root,N:1,flip:0,g};');
 pc = patch(pc, 'draw(null);if(src){', 'draw(null);t.userData.notch={src,w,h,NR,NY,cream:CREAM};if(src){');
 pc = patch(pc, 'return {enter,say:', 'window.__PC={get scene(){return scene},get rig(){return rig},get pair(){return pair},get sleeve(){return sleeve},get guide(){return guide},get gBook(){return gBook},get inbox(){return inbox},get lid(){return lid},get tray(){return tray},get trayItems(){return trayItems},get baseItems(){return baseItems},get techBook(){return techBook},get regFlip(){return regFlip},get lineBook(){return lineBook},get diskItems(){return diskItems},get pcDesk(){return pcDesk},get pcParts(){return pcParts},get cam(){return cam}};return {enter,say:');
 let gen = rd('src/gen3d.js');
+// hand the models the extra scans (a mockup whose gen3d.js already does is left as it is)
+if (!gen.includes('genManualBack')) gen = patch(gen, 'manual:A.genManual})', 'manual:A.genManual,manualBack:A.genManualBack})');
+if (!gen.includes('genCartTop')) gen = patch(gen, 'makeCart({labelFlat:A.genCartFlat})', 'makeCart({labelFlat:A.genCartFlat,labelStrip:A.genCartTop,backPlate:A.genCartBack})');
 gen = patch(gen, 'return {enter,back,state', 'window.__GEN={get scene(){return scene},get caseG(){return caseG},get cart(){return cart},get tv(){return tv},get tvScreen(){return tvScreen},get tvKnob(){return tvKnob},get con(){return con},get pads(){return pads},get tap(){return tap},get CP(){return CP},get NP(){return NP},get cam(){return cam}};return {enter,back,state');
 
 let html = rd('src/src.html');
