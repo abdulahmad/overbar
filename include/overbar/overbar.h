@@ -206,7 +206,7 @@ enum {
 
 typedef enum {
     OB_HOSTKEY_NONE = 0,
-    OB_HOSTKEY_OVERLAY,         /* ` or F11; controller Back too */
+    OB_HOSTKEY_OVERLAY,         /* ` (the tilde key); controller Back too. Esc as well on the console ports (host->esc_toggles) */
     OB_HOSTKEY_STATS,           /* F12 */
     OB_HOSTKEY_OSK              /* F9: on-screen keyboard, by hand */
 } ob_hostkey;
@@ -322,6 +322,7 @@ typedef struct ob_host {
     int has_hires;
     int console_dar;            /* 1: source 224, dest unit 240 */
     int overlay_open;
+    int esc_toggles;                  /* Esc opens and closes the overlay (the console ports); set by the platform layer. On the others Esc still closes it, never opens it */
     int overlay_vec;                  /* the overlay is drawn in vector type at the window's resolution (the layer sets it from the port's game_name) */
     const char *overlay_name, *overlay_platform;   /* the vector overlay's title and the line under it */
     int overlay_page;
@@ -558,7 +559,7 @@ int ob_overlay_input(ob_host *h, int mdrt_input);         /* applies + live-prev
 /* A mouse over the overlay buffer. what: 0 move, 1 left click, 2 right click, 3 wheel up, 4 wheel down. */
 int ob_overlay_pointer(ob_host *h, int x, int y, int w, int hgt, int what);
 void ob_overlay_draw(ob_host *h, uint32_t *px, int w, int hgt, int pitch);
-int ob_overlay_toggle_key(ob_host *h, int sdl_scancode);  /* ` / F11; 1 if handled */
+int ob_overlay_toggle_key(ob_host *h, int sdl_scancode);  /* `; 1 if handled */
 /* A field (Name, Address, Port) takes typed text while it is being edited: the client turns on
  * SDL_StartTextInput while ob_overlay_editing says so and passes SDL_TEXTINPUT's text here, and
  * Backspace as MDRT_MENU_LEFT. 1 when the text was used. */

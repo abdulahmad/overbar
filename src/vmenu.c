@@ -234,9 +234,9 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
     {
         const mdrt_menu_item *it = m->count && selectable(m, m->sel) ? &m->items[m->sel] : NULL;
         const char *keys = m->editing >= 0 ? "Type it   [Enter] keep it   [Esc] as it was"
-                         : it && it->kind == MDRT_ITEM_FIELD ? "[Enter] type into it   [Esc]/{B} back"
+                         : it && it->kind == MDRT_ITEM_FIELD ? "[Enter] type into it   [Backspace]/{B} back"
                          : it && (it->kind == MDRT_ITEM_CHOICE || it->kind == MDRT_ITEM_NUMBER)
-                         ? "[Enter]/{A} choose  [Esc]/{B} back  [<][>] change" : "[Enter]/{A} choose   [Esc]/{B} back";
+                         ? "[Enter]/{A} choose  [Backspace]/{B} back  [<][>] change" : "[Enter]/{A} choose   [Backspace]/{B} back";
         hints(px, w, h, pitch, x0 + 2 * s, h - 32 * s, s, keys, 1);
     }
 }

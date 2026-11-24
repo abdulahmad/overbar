@@ -19,14 +19,14 @@
 
 ### 🎮 One menu, always one key away
 
-- Press **`` ` ``** (the key above Tab) or **F11** to open the menu over the game. On a controller, press **Back**.
+- Press **`` ` ``** (the key above Tab; Esc too on the console ports) to open the menu over the game. On a controller, press **Back**.
 - The game pauses while the menu is open, and every change shows up on the picture right away.
 - A windowed game on Windows also gets a normal **menu bar** at the top of the window. It holds the same settings and shows a check mark next to each current choice.
 - **Esc** is left to the game, so it never opens the menu by accident.
 
 | Key | What it does |
 | --- | --- |
-| `` ` `` or **F11** | Open or close the menu |
+| `` ` `` (and **Esc** on the console ports) | Open or close the menu; Esc also closes it on the others. **Backspace** is Back |
 | **F12** | Show or hide the stats (frame rate and timing) |
 | **F9** | Open or close the on-screen keyboard |
 | Controller **Back** | Open the menu |
@@ -220,7 +220,7 @@ Overbar calls your port back through an `ob_shell`. Every hook is optional:
 Send keys and the controller to Overbar before the game sees them:
 
 ```c
-if (ob_overlay_toggle_key(&host, scancode)) return;     /* ` and F11 */
+if (ob_overlay_toggle_key(&host, scancode)) return;     /* ` (and Esc on the console ports) */
 if (ob_stats_toggle_key(&host, scancode)) return;       /* F12 */
 if (host.overlay_open) ob_overlay_input(&host, MDRT_MENU_UP /* DOWN, LEFT, RIGHT, OK, BACK */);
 ```

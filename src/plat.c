@@ -199,6 +199,7 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
     if (!hooks || !h || (!hooks->picture && !hooks->frame && !hooks->window_only)) return 0;
     P.hk = *hooks;
     P.host = h;
+    h->esc_toggles = hooks->esc_opens;
     if (h->profile == OB_PROFILE_HANDHELD) {
         wflags = SDL_WINDOW_FULLSCREEN_DESKTOP;
         if (h->vsync) rflags |= SDL_RENDERER_PRESENTVSYNC;
@@ -314,7 +315,7 @@ static void note_input(const SDL_Event *e)
     case SDL_KEYDOWN:
         if (!seen_key) { seen_key = 1; dev_dirty = 1; }
         if (e->key.repeat) return;
-        if (ob_map_key(e->key.keysym.scancode) != OB_HOSTKEY_NONE) return;  /* F9 / F11 / F12 / ` */
+        if (ob_map_key(e->key.keysym.scancode) != OB_HOSTKEY_NONE) return;  /* F9 / F12 / ` */
         last_in = IN_KEY;
         return;
     case SDL_MOUSEMOTION:
@@ -455,7 +456,7 @@ static int overlay_key_to_input(SDL_Scancode k)
     if (k == SDL_SCANCODE_LEFT) return MDRT_MENU_LEFT;
     if (k == SDL_SCANCODE_RIGHT) return MDRT_MENU_RIGHT;
     if (k == SDL_SCANCODE_RETURN || k == SDL_SCANCODE_KP_ENTER) return MDRT_MENU_OK;
-    if (k == SDL_SCANCODE_ESCAPE) return MDRT_MENU_BACK;
+    if (k == SDL_SCANCODE_BACKSPACE) return MDRT_MENU_BACK;   /* Back is Backspace; Esc closes the overlay (and opens it on the consoles) */
     return -1;
 }
 
@@ -532,7 +533,7 @@ static int event_used(const SDL_Event *e, int captured)
     case SDL_QUIT: case SDL_TEXTINPUT: case SDL_SYSWMEVENT: return 1;
     case SDL_KEYDOWN: case SDL_KEYUP: {
         int k = e->key.keysym.scancode;
-        return open || (P.hk.esc_opens && k == SDL_SCANCODE_ESCAPE) || k == SDL_SCANCODE_GRAVE || k == SDL_SCANCODE_F9 || k == SDL_SCANCODE_F11 || k == SDL_SCANCODE_F12;
+        return open || (P.hk.esc_opens && k == SDL_SCANCODE_ESCAPE) || k == SDL_SCANCODE_GRAVE || k == SDL_SCANCODE_F9 || k == SDL_SCANCODE_F12;
     }
     case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL: return P.host->overlay_open && !P.hk.window_only;
     case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: return open && !P.hk.no_pads;
@@ -736,7 +737,7 @@ void ob_plat_pump(void)
             int sc = e.key.keysym.scancode;
             if (captured) { if (P.hk.raw_key) P.hk.raw_key(sc); }
             else if (ob_overlay_toggle_key(P.host, sc) || ob_stats_toggle_key(P.host, sc) ||
-                     (P.hk.esc_opens && sc == SDL_SCANCODE_ESCAPE && !P.host->overlay_open && (ob_overlay_open(P.host), 1))) {
+                     (sc == SDL_SCANCODE_ESCAPE && (P.hk.esc_opens || P.host->overlay_open) && (P.host->overlay_open ? (ob_overlay_close(P.host), menu_sound(OB_SFX_BACK)) : ob_overlay_open(P.host), 1))) {
                 if (P.host->overlay_open) { osk_init_once(); ob_osk_close(&osk); }
                 after_change();
                 P.fps_frames = P.fps_all = 0;

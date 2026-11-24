@@ -543,8 +543,8 @@ void mdrt_menu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch)
     row_text(px, w, h, pitch, x0, y0, 1, rows - 2, buf, WARN);
     const mdrt_menu_item *it = m->count && selectable(m, m->sel) ? &m->items[m->sel] : NULL;
     const char *keys = m->editing >= 0 ? "Type it   [Enter] keep it   [Esc] as it was"
-                     : it && it->kind == MDRT_ITEM_FIELD ? "[Enter] type into it   [Esc]/{B} back"
+                     : it && it->kind == MDRT_ITEM_FIELD ? "[Enter] type into it   [Backspace]/{B} back"
                      : it && (it->kind == MDRT_ITEM_CHOICE || it->kind == MDRT_ITEM_NUMBER)
-                     ? "[Enter]/{A} choose  [Esc]/{B} back  [<][>] change" : "[Enter]/{A} choose   [Esc]/{B} back";
+                     ? "[Enter]/{A} choose  [Backspace]/{B} back  [<][>] change" : "[Enter]/{A} choose   [Backspace]/{B} back";
     hints_draw(px, w, h, pitch, x0, y0, cols, rows - 1, keys, 0);
 }
