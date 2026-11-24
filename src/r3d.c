@@ -529,7 +529,7 @@ static void raster(rctx *R, const pv *a, const pv *b, const pv *c)
     const r3_tex *tx = R->tex; int lv = R->lv;
     /* texels per uv unit, squared, for the per-pixel footprint */
     float tw2 = 0, th2 = 0;
-    if (tx) { float a = tx->w * tx->rep[0], b = tx->h * tx->rep[1]; tw2 = a * a; th2 = b * b; }
+    if (tx) { float tu = tx->w * tx->rep[0], tv = tx->h * tx->rep[1]; tw2 = tu * tu; th2 = tv * tv; }
     const r3_mat *m = R->m;
     float opa = R->opa, at = m->alpha_test, br = R->bright;
     for (int y = miny; y <= maxy; y++) {
@@ -577,8 +577,8 @@ static void raster(rctx *R, const pv *a, const pv *b, const pv *c)
                     float fp2 = mj2 / (float)(taps * taps);
                     if (fp2 < mn2) fp2 = mn2;
                     /* log2 of the footprint (half of log2 of its square), sharpened a quarter level */
-                    int e; float m = frexpf(fp2, &e);
-                    float l2 = (float)(e - 1) + (m - 0.5f) * 2.0f;        /* log2(fp2), close enough between powers of two */
+                    int e; float fm = frexpf(fp2, &e);
+                    float l2 = (float)(e - 1) + (fm - 0.5f) * 2.0f;        /* log2(fp2), close enough between powers of two */
                     int lvp = (int)(l2 * 0.5f + 0.25f);
                     lvp = lvp < 0 ? 0 : lvp >= tx->nlv ? tx->nlv - 1 : lvp;
                     if (taps == 1) s = sample(tx, lvp, u, v);

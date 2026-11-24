@@ -537,7 +537,7 @@ static void make_bg(int w, int h)
 /* the 3D picture in bands of rows on every core (SDL threads), each band picking the next free one */
 #define BX_THREADS 16
 #define BX_BAND 24
-static struct { int n; SDL_sem *go[BX_THREADS], *done; SDL_atomic_t next; int nb; } TP = { -1 };
+static struct { int n; SDL_sem *go[BX_THREADS], *done; SDL_atomic_t next; int nb; } TP = { .n = -1 };
 static void bands(void)
 {
     for (;;) {

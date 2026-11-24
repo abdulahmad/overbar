@@ -31,6 +31,17 @@ static void geometry(int w, int h, geom *g)
     if (g->rows < 1) g->rows = 1;
 }
 
+int ob_vmenu_edge(const mdrt_menu *m, int x, int y, int w, int h)
+{
+    geom g;
+    if (!m || w <= 0 || h <= 0) return 0;
+    geometry(w, h, &g);
+    if (x < g.x0 - 12 * g.s || x > g.x0 + g.listw + 12 * g.s) return 0;
+    if (y >= g.top + g.rows * g.rowh - g.rowh * 0.5f && m->top + g.rows < m->count) return 1;
+    if (y < g.top + g.rowh * 0.5f && y >= g.top - g.rowh * 1.5f && m->top > 0) return -1;
+    return 0;
+}
+
 int ob_vmenu_at(const mdrt_menu *m, int x, int y, int w, int h)
 {
     geom g;

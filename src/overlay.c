@@ -168,6 +168,47 @@ int ob_overlay_pointer(ob_host *h, int x, int y, int bw, int bh, int what)
     return h->overlay_open;
 }
 
+/* the pixel menu's list: rows 3 .. rows - 4 of its cell grid (see mdrt_menu_draw) */
+static int pixel_edge(const mdrt_menu *m, int x, int y, int w, int hgt)
+{
+    int cols = w / MDRT_MENU_CELL_W, rows = hgt / MDRT_MENU_CELL_H, x0, y0, list, top, bottom;
+    if (cols < 12 || rows < 8) return 0;
+    x0 = (w - cols * MDRT_MENU_CELL_W) / 2;
+    y0 = (hgt - rows * MDRT_MENU_CELL_H) / 2;
+    if (x < x0) return 0;
+    list = rows - 6;
+    top = y0 + 3 * MDRT_MENU_CELL_H;
+    bottom = top + list * MDRT_MENU_CELL_H;
+    if (y >= bottom - MDRT_MENU_CELL_H / 2 && m->top + list < m->count) return 1;
+    if (y < top + MDRT_MENU_CELL_H / 2 && y >= top - MDRT_MENU_CELL_H && m->top > 0) return -1;
+    return 0;
+}
+
+int ob_overlay_autoscroll(ob_host *h, int x, int y, int w, int hgt, unsigned now)
+{
+    static unsigned last;
+    static int was_dir;
+    mdrt_menu *m = &h->overlay;
+    int dir, i, rows;
+    if (!h->overlay_open || m->editing >= 0) { was_dir = 0; return 0; }
+    dir = h->overlay_vec ? ob_vmenu_edge(m, x, y, w, hgt) : pixel_edge(m, x, y, w, hgt);
+    if (!dir) { was_dir = 0; return 0; }
+    if (dir != was_dir) { was_dir = dir; last = now; return 0; }       /* the first step comes after the delay too */
+    if (now - last < 80u) return 0;
+    last = now;
+    rows = m->rows > 0 ? m->rows : 1;
+    m->top += dir;
+    if (m->top < 0) m->top = 0;
+    if (m->top > m->count - rows) m->top = m->count - rows > 0 ? m->count - rows : 0;
+    /* the selection follows: the item under the pointer, else the nearest visible one */
+    i = h->overlay_vec ? ob_vmenu_at(m, x, y, w, hgt) : mdrt_menu_at(m, x, y, w, hgt);
+    if (i < 0) i = dir > 0 ? m->top + rows - 1 : m->top;
+    if (i >= m->count) i = m->count - 1;
+    while (i > 0 && i < m->count - 1 && m->items[i].kind == MDRT_ITEM_TEXT) i += dir > 0 ? -1 : 1;
+    if (i >= 0 && m->items[i].kind != MDRT_ITEM_TEXT) m->sel = i;
+    return 1;
+}
+
 int ob_overlay_input(ob_host *h, int mdrt_input)
 {
     int id;

@@ -558,6 +558,8 @@ void ob_stats_place(int win_w, int win_h, int box_w, int box_h, int *x, int *y, 
 int ob_overlay_input(ob_host *h, int mdrt_input);         /* applies + live-previews; 1 still open */
 /* A mouse over the overlay buffer. what: 0 move, 1 left click, 2 right click, 3 wheel up, 4 wheel down. */
 int ob_overlay_pointer(ob_host *h, int x, int y, int w, int hgt, int what);
+/* the mouse at (x, y) of the overlay buffer (w x hgt) rests at the list's bottom or top edge: scroll the list one item per 80 ms (now: a millisecond clock). 1 when it moved */
+int ob_overlay_autoscroll(ob_host *h, int x, int y, int w, int hgt, unsigned now);
 void ob_overlay_draw(ob_host *h, uint32_t *px, int w, int hgt, int pitch);
 int ob_overlay_toggle_key(ob_host *h, int sdl_scancode);  /* `; 1 if handled */
 /* A field (Name, Address, Port) takes typed text while it is being edited: the client turns on

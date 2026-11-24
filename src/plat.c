@@ -41,6 +41,7 @@ static struct {
     uint32_t over_px[OVER_W * OVER_H];
     uint32_t fps_px[FPS_W * FPS_H];
     int over_mw, over_mh, over_x, over_y, over_w, over_h;
+    int mx, my, mvalid;               /* the mouse over the overlay, in its buffer's pixels (for the edge auto-scroll) */
     int fps_frames, fps_shown, fps_all, fps_new;
     uint32_t fps_since;
 } P = { .text_on = -1, .cursor_hidden = -1 };
@@ -512,10 +513,13 @@ static void pad_back(void)
 static void overlay_mouse(int wx, int wy, int what)
 {
     int ww, wh, winw, winh, r, was;
-    if (!P.host->overlay_open || what < 0 || !ob_plat_window_size(&ww, &wh)) return;
+    if (!P.host->overlay_open || what < 0 || !ob_plat_window_size(&ww, &wh)) { P.mvalid = 0; return; }
     SDL_GetWindowSize(P.win, &winw, &winh);
     if (winw > 0 && winh > 0 && (ww != winw || wh != winh)) { wx = wx * ww / winw; wy = wy * wh / winh; }
-    if (P.over_w <= 0 || P.over_h <= 0 || wx < P.over_x || wy < P.over_y || wx >= P.over_x + P.over_w || wy >= P.over_y + P.over_h) return;
+    if (P.over_w <= 0 || P.over_h <= 0 || wx < P.over_x || wy < P.over_y || wx >= P.over_x + P.over_w || wy >= P.over_y + P.over_h) { P.mvalid = 0; return; }
+    P.mx = (wx - P.over_x) * P.over_mw / P.over_w;
+    P.my = (wy - P.over_y) * P.over_mh / P.over_h;
+    P.mvalid = 1;
     was = P.host->overlay.sel;
     r = ob_overlay_pointer(P.host, (wx - P.over_x) * P.over_mw / P.over_w, (wy - P.over_y) * P.over_mh / P.over_h,
                            P.over_mw, P.over_mh, what);
@@ -804,6 +808,11 @@ void ob_plat_pump(void)
             bar_for_window();
         if (pass) P.hk.unused(&e);
     }
+    /* the mouse resting at the bottom (or top) edge of the list scrolls it, a step every 80 ms */
+    if (P.host->overlay_open && P.mvalid && !ob_plat_osk_is_open()) {
+        int was = P.host->overlay.sel;
+        if (ob_overlay_autoscroll(P.host, P.mx, P.my, P.over_mw, P.over_mh, SDL_GetTicks()) && P.host->overlay.sel != was) menu_sound(OB_SFX_MOVE);
+    } else if (!P.host->overlay_open) P.mvalid = 0;
 }
 
 /* ---- the picture ---- */
