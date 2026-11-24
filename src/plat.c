@@ -10,6 +10,7 @@
 #include "overbar/sides.h"
 #include "overbar/chat.h"
 #include "overbar/plat_pads.h"
+#include "overbar/screen.h"
 
 #ifdef OVERBAR_SDL
 #include <stdio.h>
@@ -621,6 +622,53 @@ static void test_keys(void)
     }
 }
 
+
+/* a full-window screen (screen.h) is up and the overlay closed: it takes the keys, the mouse and the controllers' menu
+ * buttons. The overlay's keys, Alt+Enter and closing the window still work. */
+static int screen_event(const SDL_Event *e)
+{
+    ob_screen_ev ev;
+    if (!ob_screen_up() || P.host->overlay_open || ob_plat_osk_is_open()) return 0;
+    memset(&ev, 0, sizeof ev);
+    switch (e->type) {
+    case SDL_KEYDOWN: {
+        SDL_Scancode k = e->key.keysym.scancode;
+        if (ob_map_key(k) != OB_HOSTKEY_NONE || ((e->key.keysym.mod & KMOD_ALT) && k == SDL_SCANCODE_RETURN)) return 0;
+        ev.kind = k == SDL_SCANCODE_UP ? OB_SCREEN_UP : k == SDL_SCANCODE_DOWN ? OB_SCREEN_DOWN : k == SDL_SCANCODE_LEFT ? OB_SCREEN_LEFT :
+                  k == SDL_SCANCODE_RIGHT ? OB_SCREEN_RIGHT : (k == SDL_SCANCODE_RETURN || k == SDL_SCANCODE_KP_ENTER || k == SDL_SCANCODE_SPACE) ? OB_SCREEN_OK :
+                  (k == SDL_SCANCODE_ESCAPE || k == SDL_SCANCODE_BACKSPACE) ? OB_SCREEN_BACK : 0;
+        break;
+    }
+    case SDL_KEYUP: case SDL_TEXTINPUT: return 1;
+    case SDL_MOUSEMOTION: ev.kind = OB_SCREEN_MOVE; ev.x = e->motion.x; ev.y = e->motion.y; break;
+    case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP:
+        if (e->button.button != SDL_BUTTON_LEFT) return 1;
+        ev.kind = e->type == SDL_MOUSEBUTTONDOWN ? OB_SCREEN_PRESS : OB_SCREEN_RELEASE; ev.x = e->button.x; ev.y = e->button.y; break;
+    case SDL_MOUSEWHEEL: ev.kind = OB_SCREEN_WHEEL; ev.y = e->wheel.y > 0 ? 1 : -1; break;
+    case SDL_CONTROLLERBUTTONDOWN: {
+        int b = e->cbutton.button;
+        if (b == SDL_CONTROLLER_BUTTON_BACK || b == SDL_CONTROLLER_BUTTON_GUIDE) return 0;
+        ev.pad = 1;
+        ev.kind = b == SDL_CONTROLLER_BUTTON_DPAD_UP ? OB_SCREEN_UP : b == SDL_CONTROLLER_BUTTON_DPAD_DOWN ? OB_SCREEN_DOWN : b == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? OB_SCREEN_LEFT :
+                  b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? OB_SCREEN_RIGHT : (b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START) ? OB_SCREEN_OK :
+                  b == SDL_CONTROLLER_BUTTON_B ? OB_SCREEN_BACK : 0;
+        break;
+    }
+    case SDL_CONTROLLERBUTTONUP: case SDL_CONTROLLERAXISMOTION: case SDL_JOYBUTTONDOWN: case SDL_JOYBUTTONUP: case SDL_JOYAXISMOTION: case SDL_JOYHATMOTION: return 1;
+    default: return 0;
+    }
+    if (ev.kind) {
+        if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEBUTTONUP) {
+            int ww = 0, wh = 0, sw = 0, sh = 0;                     /* window points to the pixels draw() gets */
+            SDL_GetWindowSize(P.win, &sw, &sh);
+            ob_plat_window_size(&ww, &wh);
+            if (sw > 0 && sh > 0 && ww > 0 && wh > 0) { ev.x = ev.x * ww / sw; ev.y = ev.y * wh / sh; }
+        }
+        ob_screen_input(&ev);
+    }
+    return 1;
+}
+
 void ob_plat_pump(void)
 {
     SDL_Event e;
@@ -633,6 +681,7 @@ void ob_plat_pump(void)
         if (P.hk.event && P.hk.event(&e)) continue;
         if (osk_event(&e)) continue;
         if (room_event(&e)) continue;
+        if (screen_event(&e)) continue;
         if (e.type == SDL_KEYDOWN && !e.key.repeat && e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT)) {
             static int win_w, win_h, win_x, win_y;            /* Alt+Enter; the windowed size and place, which the bar's coming back would move */
             int full = !!(SDL_GetWindowFlags(P.win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP));
@@ -863,6 +912,40 @@ static void osk_draw_screen(const SDL_Rect *dst)
     SDL_RenderCopy(P.ren, tex, NULL, &to);
 }
 
+
+/* a full-window screen instead of the picture, at the window's own pixels; the overlay over it when open */
+static int screen_present(void)
+{
+    static uint32_t *px;
+    static long cap;
+    static SDL_Texture *tex;
+    static int tw, th;
+    int ww = 0, wh = 0;
+    if (!ob_plat_window_size(&ww, &wh) || ww < 16 || wh < 16) return 0;
+    if ((long)ww * wh > cap) {
+        uint32_t *n = (uint32_t *)realloc(px, (size_t)ww * wh * 4);
+        if (!n) return 0;
+        px = n;
+        cap = (long)ww * wh;
+    }
+    if (!ob_screen_draw(px, ww, wh, ww)) return 0;
+    if (tex && (tw != ww || th != wh)) { SDL_DestroyTexture(tex); tex = NULL; }
+    if (!tex && (tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ww, wh))) SDL_SetTextureScaleMode(tex, SDL_ScaleModeLinear);
+    tw = ww; th = wh;
+    if (!tex) return 0;
+    SDL_UpdateTexture(tex, NULL, px, ww * 4);
+    SDL_SetRenderDrawColor(P.ren, 0, 0, 0, 255);
+    SDL_RenderClear(P.ren);
+    SDL_RenderCopy(P.ren, tex, NULL, NULL);
+    {
+        SDL_Rect all = { 0, 0, ww, wh };
+        if (P.host->overlay_open) overlay_draw(&all);
+    }
+    test_dump();
+    SDL_RenderPresent(P.ren);
+    return 1;
+}
+
 void ob_plat_present(void)
 {
     int ww, wh, sw = P.hk.src_w, sh = P.hk.src_h;
@@ -875,6 +958,7 @@ void ob_plat_present(void)
     int pitch;
     if (P.hk.window_only) { if (P.hk.present) P.hk.present(); return; }   /* the port presents */
     if (!P.ren) return;
+    if (ob_screen_up() && screen_present()) return;
     picture = P.hk.frame ? P.hk.frame(&sw, &sh) : P.hk.picture();
     if (!picture || sw < 1 || sh < 1) return;
     if (sw != P.cur_w || sh != P.cur_h) {                 /* the game changed the picture's size */
