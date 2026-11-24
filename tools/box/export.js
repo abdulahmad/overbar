@@ -34,6 +34,11 @@ const tech = fs.readdirSync(path.join(M, A + 'web')).filter(f => /^tech-\d+\.jpg
 man.forEach((f, i) => ART['man' + i] = A + 'web/' + f);
 tech.forEach((f, i) => ART['tech' + i] = A + 'web/' + f);
 
+// the larger scans in art-private/pc94/hires/<key>.<ext> (made from the full-size layouts) win over the web-sized ones
+for (const k in ART) {
+  if (!ART[k].startsWith(A)) continue;
+  for (const ext of ['.jpg', '.png']) if (fs.existsSync(path.join(M, A + 'hires/' + k + ext))) { ART[k] = A + 'hires/' + k + ext; break; }
+}
 const IMG = {};
 for (const k in ART) if (!/^(man|tech)\d/.test(k)) IMG[k] = dataUri(ART[k]);
 IMG.man = man.map((f, i) => dataUri(ART['man' + i]));
@@ -45,7 +50,7 @@ pc = patch(pc, 'const B={root,g,N,w,flip:0,leaves,blk,t};', 'const B={root,g,N,w
 pc = patch(pc, 'const F={root,N:2,flip:0};', 'const F={root,N:2,flip:0,A,Bp,g};');
 pc = patch(pc, 'const F={root,N:1,flip:0};', 'const F={root,N:1,flip:0,g};');
 pc = patch(pc, 'draw(null);if(src){', 'draw(null);t.userData.notch={src,w,h,NR,NY,cream:CREAM};if(src){');
-pc = patch(pc, 'return {enter,say:', 'window.__PC={get scene(){return scene},get rig(){return rig},get pair(){return pair},get sleeve(){return sleeve},get guide(){return guide},get gBook(){return gBook},get inbox(){return inbox},get lid(){return lid},get tray(){return tray},get trayItems(){return trayItems},get baseItems(){return baseItems},get techBook(){return techBook},get regFlip(){return regFlip},get lineBook(){return lineBook},get diskItems(){return diskItems},get cam(){return cam}};return {enter,say:');
+pc = patch(pc, 'return {enter,say:', 'window.__PC={get scene(){return scene},get rig(){return rig},get pair(){return pair},get sleeve(){return sleeve},get guide(){return guide},get gBook(){return gBook},get inbox(){return inbox},get lid(){return lid},get tray(){return tray},get trayItems(){return trayItems},get baseItems(){return baseItems},get techBook(){return techBook},get regFlip(){return regFlip},get lineBook(){return lineBook},get diskItems(){return diskItems},get pcDesk(){return pcDesk},get pcParts(){return pcParts},get cam(){return cam}};return {enter,say:');
 let gen = rd('src/gen3d.js');
 gen = patch(gen, 'return {enter,back,state', 'window.__GEN={get scene(){return scene},get caseG(){return caseG},get cart(){return cart},get tv(){return tv},get tvScreen(){return tvScreen},get tvKnob(){return tvKnob},get con(){return con},get pads(){return pads},get tap(){return tap},get CP(){return CP},get NP(){return NP},get cam(){return cam}};return {enter,back,state');
 
@@ -71,6 +76,9 @@ function dump(which, uriKey) {
     name(W.lineBook.root, 'lineBook'); name(W.lineBook.g, 'lineBook.g'); name(W.lineBook.A, 'lineBook.A'); name(W.lineBook.Bp, 'lineBook.B');
     name(W.regFlip.root, 'regFlip'); name(W.regFlip.g, 'regFlip.g');
     W.baseItems.forEach(m => name(m, 'item.' + m.userData.id));
+    // the PC on the desk (the install)
+    name(W.pcDesk, 'pcDesk');
+    for (const k in W.pcParts) { if (Array.isArray(W.pcParts[k])) W.pcParts[k].forEach((o, i) => name(o, 'pc.' + k.replace(/s$/, '') + (i + 1))); else name(W.pcParts[k], 'pc.' + k); }
   } else {
     ['caseG', 'cart', 'tv', 'tvScreen', 'tvKnob', 'con', 'tap'].forEach(k => name(W[k], k));
     W.pads.forEach((p, i) => name(p, 'pad' + i));

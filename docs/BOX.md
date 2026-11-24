@@ -9,13 +9,15 @@ starts, and later launches go straight to it. The Overbar menu gets "Open the bo
 
 - Overbar: `include/overbar/box.h`, `src/box.c` (the full-window screen, tweens and timers, 2D, hot spots and keys,
   the page reader, synthesized sounds, `box.ini`, the menu entries) and `include/overbar/r3d.h`, `src/r3d.c` (a small
-  software 3D renderer: Lambert / Phong / unlit materials as three.js r150 draws them, mipmaps, a pick buffer). It draws
-  into the full-window screen (`overbar/screen.h`), so it is the same on every port and needs no GPU.
+  software 3D renderer: Lambert / Phong / unlit materials as three.js r150 draws them, mipmaps chosen per pixel with up to
+  4 taps along a slanted surface (anisotropic), a pick buffer). It draws at the window's own size (up to 4K) in bands of
+  rows on every core, into the full-window screen (`overbar/screen.h`), so it is the same on every port and needs no GPU.
 - A port: its scene (a `bx_scene`: states, hot spots, captions; NHL 94 PC `port/box_pc94.c` and `port/box_install.c`,
   the Genesis C port `native/box_gen94.c`), its models (`box/<dir>/` beside the program), and a call to `ob_box_init`
   once its host is set up; it holds its game while `ob_screen_up()`.
 - `tools/box/export.js`: exports the mockup's three.js scenes to `scene.txt`, `scene.vtx`, `scene.idx` and the drawn
-  textures. `tools/box/make-art.py`: copies the player's scans into `box-art/<dir>/` by key.
+  textures (for NHL 94 PC also the desk the install runs on: `pcDesk`, `pc.tower`, `pc.slot`, `pc.screen`, `pc.disk1`..4).
+  Scans in the mockup's `art-private/pc94/hires/` (cut from the full-size layouts, up to 2048 pixels) win over the web-sized ones. `tools/box/make-art.py`: copies the player's scans into `box-art/<dir>/` by key.
 
 ## The art
 

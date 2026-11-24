@@ -526,24 +526,62 @@ static void make_bg(int w, int h)
         }
 }
 
-/* the scene's 3D picture at up to ~0.6 M pixels, then stretched smoothly to the window */
+/* the 3D picture in bands of rows on every core (SDL threads), each band picking the next free one */
+#define BX_THREADS 16
+#define BX_BAND 24
+static struct { int n; SDL_sem *go[BX_THREADS], *done; SDL_atomic_t next; int nb; } TP = { -1 };
+static void bands(void)
+{
+    for (;;) {
+        int b = SDL_AtomicAdd(&TP.next, 1);
+        if (b >= TP.nb) return;
+        r3_render_rows(BX_S, &B.tgt, B.bg, b * BX_BAND, (b + 1) * BX_BAND);
+    }
+}
+static int band_worker(void *arg)
+{
+    int i = (int)(intptr_t)arg;
+    for (;;) { SDL_SemWait(TP.go[i]); bands(); SDL_SemPost(TP.done); }
+    return 0;
+}
+static void pool_start(void)
+{
+    int n = SDL_GetCPUCount();
+    if (n > BX_THREADS) n = BX_THREADS;
+    TP.n = 1;
+    if (n < 2 || !(TP.done = SDL_CreateSemaphore(0))) return;
+    for (int i = 1; i < n; i++) {
+        if (!(TP.go[i] = SDL_CreateSemaphore(0))) break;
+        SDL_Thread *t = SDL_CreateThread(band_worker, "overbar box", (void *)(intptr_t)i);
+        if (!t) { SDL_DestroySemaphore(TP.go[i]); break; }
+        SDL_DetachThread(t);
+        TP.n = i + 1;
+    }
+}
+
+/* the scene's 3D picture at the window's own size (up to 4K; bigger is drawn smaller and stretched) */
 static void render3d(uint32_t *px, int w, int h, int pitch)
 {
-    float k = sqrtf(620000.0f / ((float)w * h));
+    float k = sqrtf(8.3e6f / ((float)w * h));
     if (k > 1) k = 1;
     int tw = (int)(w * k), th = (int)(h * k);
     if (tw < 16) tw = 16;
     if (th < 16) th = 16;
-    if (tw == w && th == h) {
-        B.tgt.px = px; B.tgt.w = w; B.tgt.h = h; B.tgt.pitch = pitch;
-        make_bg(w, h);
-        r3_render(BX_S, &B.tgt, B.bg);
-        return;
+    int direct = tw == w && th == h;
+    if (direct) { B.tgt.px = px; B.tgt.w = w; B.tgt.h = h; B.tgt.pitch = pitch; }
+    else {
+        if (B.rcap < tw * th) { free(B.rpx); B.rpx = (uint32_t *)malloc((size_t)tw * th * 4); B.rcap = B.rpx ? tw * th : 0; if (!B.rpx) return; }
+        B.tgt.px = B.rpx; B.tgt.w = tw; B.tgt.h = th; B.tgt.pitch = tw;
     }
-    if (B.rcap < tw * th) { free(B.rpx); B.rpx = (uint32_t *)malloc((size_t)tw * th * 4); B.rcap = B.rpx ? tw * th : 0; if (!B.rpx) return; }
-    B.tgt.px = B.rpx; B.tgt.w = tw; B.tgt.h = th; B.tgt.pitch = tw;
     make_bg(tw, th);
-    r3_render(BX_S, &B.tgt, B.bg);
+    if (!r3_render_begin(BX_S, &B.tgt)) return;
+    if (TP.n < 0) pool_start();
+    TP.nb = (th + BX_BAND - 1) / BX_BAND;
+    SDL_AtomicSet(&TP.next, 0);
+    for (int i = 1; i < TP.n; i++) SDL_SemPost(TP.go[i]);
+    bands();
+    for (int i = 1; i < TP.n; i++) SDL_SemWait(TP.done);
+    if (direct) return;
     /* bilinear up, 16.16 fixed */
     uint32_t sx = (uint32_t)(((uint64_t)tw << 16) / w), sy = (uint32_t)(((uint64_t)th << 16) / h);
     for (int y = 0; y < h; y++) {
