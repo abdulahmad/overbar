@@ -1012,6 +1012,35 @@ static void test_vmenu_and_sfx(void)
     mdrt_menu_free(&m);
 }
 
+/* the mouse resting at the list's bottom edge scrolls it one item per 80 ms; at the top edge, back */
+static void test_autoscroll(void)
+{
+    ob_host h;
+    int i, top;
+    ob_host_init(&h, OB_PORT_GENERIC, OB_PROFILE_DESKTOP);
+    h.overlay_open = 1;
+    h.overlay_vec = 1;
+    mdrt_menu_init(&h.overlay);
+    mdrt_menu_page(&h.overlay, "Test");
+    for (i = 0; i < 30; i++) mdrt_menu_add(&h.overlay, i + 1, MDRT_ITEM_ACTION, "Item");
+    h.overlay.rows = 9;
+    CHECK(!ob_overlay_autoscroll(&h, 80, 300, 960, 540, 1000));      /* mid list: nothing */
+    CHECK(!ob_overlay_autoscroll(&h, 80, 450, 960, 540, 1000));      /* entering the edge starts the delay */
+    CHECK(!ob_overlay_autoscroll(&h, 80, 450, 960, 540, 1050));
+    CHECK(ob_overlay_autoscroll(&h, 80, 450, 960, 540, 1085));
+    CHECK(h.overlay.top == 1 && h.overlay.sel >= 1);
+    CHECK(!ob_overlay_autoscroll(&h, 80, 450, 960, 540, 1120));      /* 35 ms later: too soon */
+    CHECK(ob_overlay_autoscroll(&h, 80, 450, 960, 540, 1170));
+    CHECK(h.overlay.top == 2);
+    top = h.overlay.top;
+    CHECK(!ob_overlay_autoscroll(&h, 80, 190, 960, 540, 1300));      /* the top edge: its own delay */
+    CHECK(ob_overlay_autoscroll(&h, 80, 190, 960, 540, 1385));
+    CHECK(h.overlay.top == top - 1);
+    for (i = 0; i < 100; i++) ob_overlay_autoscroll(&h, 80, 450, 960, 540, 2000 + 90u * i);
+    CHECK(h.overlay.top == 30 - 9);                                   /* it stops at the end */
+    mdrt_menu_free(&h.overlay);
+}
+
 int main(void)
 {
     test_scaler_console();
@@ -1030,6 +1059,7 @@ int main(void)
     test_game_page();
     test_season_page();
     test_vmenu_and_sfx();
+    test_autoscroll();
     if (fails) {
         fprintf(stderr, "%d check(s) failed\n", fails);
         return 1;
