@@ -336,6 +336,7 @@ int ob_main_items(const ob_host *h, ob_item *out, int cap)
     if (ob_season_ready(h)) add_action(out, &n, cap, OB_ID_SEASON, "Season", NULL);
     for (i = 0; i < h->naddons; i++)
         add_action(out, &n, cap, h->addons[i].id, h->addons[i].label, NULL);
+    add_choice(out, &n, cap, OB_ID_MENU_SOUNDS, "Menu sounds", ntsc_choices, 2, h->menu_sounds ? 1 : 0);
     add_action(out, &n, cap, OB_ID_QUIT, "Quit", NULL);
     return n;
 }

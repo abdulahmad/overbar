@@ -29,3 +29,7 @@ src/season.c
 src/season_ui.c
 src/serial.c
 src/game.c
+src/vfont.c
+src/vfont_data.c
+src/vmenu.c
+src/sfx.c
