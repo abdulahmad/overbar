@@ -3,8 +3,8 @@
  *
  * The box (experimental): on a game's first launch, its retail box opens on screen in 3D. The player takes
  * out the manual and the media, reads the manual, and installs the disks (PC) or puts the cartridge in the console
- * (Genesis); then the game starts. Later launches go straight to the game. The Overbar menu gets "Open the box",
- * "Read the manual" and a setting for when the box shows.
+ * (Genesis); then the game starts. Later launches go straight to the game. The Overbar menu gets one entry,
+ * "View Manual & Materials" (on the Game page and menu), which opens the box at any time; that screen can replay the opening at the next start.
  *
  * Drawn by its own software renderer into Overbar's full-window screen (overbar/screen.h), so it works the same on
  * every port. Overbar has the engine (renderer, screen, tweens, 2D, page reader, sounds, settings, menu entries); a
@@ -22,7 +22,7 @@
 enum { BOX_SHOW_FIRST, BOX_SHOW_REOPEN, BOX_SHOW_MANUAL };
 struct bx_scene;
 
-/* A port's start: adds the menu entries ("Open the box", "Read the manual", "Box at start") and, on the first launch,
+/* A port's start: adds the menu entry ("View Manual & Materials") and, on the first launch,
  * puts the box up (the port holds its game while ob_screen_up()). Returns 1 if the box is up. 0 and no menu entries
  * when the scene's models are not beside the program. */
 int ob_box_init(ob_host *h, const struct bx_scene *scene);

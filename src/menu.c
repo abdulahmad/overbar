@@ -320,7 +320,7 @@ int ob_mister_entries(const char *dir_rel, int kind, int at_root, const char *se
 
 int ob_main_items(const ob_host *h, ob_item *out, int cap)
 {
-    int n = 0, i;
+    int n = 0;
     add_action(out, &n, cap, OB_ID_RESUME, "Resume", NULL);
     add_action(out, &n, cap, OB_ID_VIDEO, "Video", NULL);
     /* Scaling is its own menu, as on 95 PC's bar: one for a console (320x224 and 256x224
@@ -330,12 +330,11 @@ int ob_main_items(const ob_host *h, ob_item *out, int cap)
     if (h->has_sound) add_action(out, &n, cap, OB_ID_SOUND, "Sound", NULL);
     add_action(out, &n, cap, OB_ID_INPUT, "Input", NULL);
     add_action(out, &n, cap, OB_ID_CAPTURE, "Capture", NULL);
-    if (h->game_ready) add_action(out, &n, cap, OB_ID_GAME, ob_game_title(h), NULL);
+    /* the Game page holds the game's own options and the add-ons (e.g. View Manual & Materials) */
+    if (h->game_ready || h->naddons) add_action(out, &n, cap, OB_ID_GAME, ob_game_title(h), NULL);
     add_action(out, &n, cap, OB_ID_ONLINE, "Online Play",
                h->online_ready ? NULL : "not in this build");
     if (ob_season_ready(h)) add_action(out, &n, cap, OB_ID_SEASON, "Season", NULL);
-    for (i = 0; i < h->naddons; i++)
-        add_action(out, &n, cap, h->addons[i].id, h->addons[i].label, NULL);
     add_choice(out, &n, cap, OB_ID_MENU_SOUNDS, "Menu sounds", ntsc_choices, 2, h->menu_sounds ? 1 : 0);
     add_action(out, &n, cap, OB_ID_QUIT, "Quit", NULL);
     return n;
@@ -517,10 +516,16 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
         n = online_items(h, out, n, cap);
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
-    case OB_PAGE_GAME:
+    case OB_PAGE_GAME: {
+        int a;
         n = ob_game_items(h, out, cap - 1);
+        if (h->naddons) {
+            if (n) begin_group(out, &n, cap);
+            for (a = 0; a < h->naddons; a++) add_action(out, &n, cap, h->addons[a].id, h->addons[a].label, NULL);
+        }
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
+    }
     case OB_PAGE_SEASON:
         if (!ob_season_ready(h)) {
             add_text(out, &n, cap, OB_ID_SEASON_NOTE, "Season", "not in this build");
