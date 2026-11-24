@@ -464,6 +464,7 @@ typedef struct { float x, y, z, iw, u, v, r, g, b, sr, sg, sb; } pv;   /* screen
 typedef struct {
     r3_target *t; const r3_tex *tex; int lv; const r3_mat *m; float opa; int blend, zw; int16_t pick; float zbias;
     float bright;
+    int y0, y1;                 /* the rows this call draws */
 } rctx;
 
 static inline uint32_t sample(const r3_tex *t, int lv, float u, float v)
@@ -501,6 +502,8 @@ static void raster(rctx *R, const pv *a, const pv *b, const pv *c)
     if (miny < 0) miny = 0;
     if (maxx > t->w - 1) maxx = t->w - 1;
     if (maxy > t->h - 1) maxy = t->h - 1;
+    if (miny < R->y0) miny = R->y0;
+    if (maxy > R->y1 - 1) maxy = R->y1 - 1;
     if (minx > maxx || miny > maxy) return;
     float ia = 1.0f / area;
     /* barycentric planes: attr = A + Bx * x + By * y */
@@ -524,6 +527,9 @@ static void raster(rctx *R, const pv *a, const pv *b, const pv *c)
     float sgn = area > 0 ? 1.0f : -1.0f;
     e0a *= sgn; e0b *= sgn; e0c *= sgn; e1a *= sgn; e1b *= sgn; e1c *= sgn; e2a *= sgn; e2b *= sgn; e2c *= sgn;
     const r3_tex *tx = R->tex; int lv = R->lv;
+    /* texels per uv unit, squared, for the per-pixel footprint */
+    float tw2 = 0, th2 = 0;
+    if (tx) { float a = tx->w * tx->rep[0], b = tx->h * tx->rep[1]; tw2 = a * a; th2 = b * b; }
     const r3_mat *m = R->m;
     float opa = R->opa, at = m->alpha_test, br = R->bright;
     for (int y = miny; y <= maxy; y++) {
@@ -559,7 +565,34 @@ static void raster(rctx *R, const pv *a, const pv *b, const pv *c)
             float cr = 1, cg = 1, cb = 1, ca = 1;
             if (tx) {
                 float u = (uA + uX * px + uY * py) * wv, v = (vA + vX * px + vY * py) * wv;
-                uint32_t s = sample(tx, lv, u, v);
+                uint32_t s;
+                if (tx->nlv > 1) {
+                    /* this pixel's footprint in texels: the mip level from its short side, up to 4 taps along its long side */
+                    float dux = (uX - u * iwX) * wv, dvx = (vX - v * iwX) * wv, duy = (uY - u * iwY) * wv, dvy = (vY - v * iwY) * wv;
+                    float ax2 = dux * dux * tw2 + dvx * dvx * th2, ay2 = duy * duy * tw2 + dvy * dvy * th2;
+                    float mj2 = ax2 > ay2 ? ax2 : ay2, mn2 = ax2 > ay2 ? ay2 : ax2;
+                    int taps = 1;
+                    if (mn2 * 16 < mj2) taps = 4;
+                    else if (mn2 * 4 < mj2) taps = (mn2 * 9 < mj2) ? 3 : 2;
+                    float fp2 = mj2 / (float)(taps * taps);
+                    if (fp2 < mn2) fp2 = mn2;
+                    /* log2 of the footprint (half of log2 of its square), sharpened a quarter level */
+                    int e; float m = frexpf(fp2, &e);
+                    float l2 = (float)(e - 1) + (m - 0.5f) * 2.0f;        /* log2(fp2), close enough between powers of two */
+                    int lvp = (int)(l2 * 0.5f + 0.25f);
+                    lvp = lvp < 0 ? 0 : lvp >= tx->nlv ? tx->nlv - 1 : lvp;
+                    if (taps == 1) s = sample(tx, lvp, u, v);
+                    else {
+                        float su = ax2 > ay2 ? dux : duy, sv = ax2 > ay2 ? dvx : dvy;
+                        unsigned A = 0, Rr = 0, G = 0, Bb = 0;
+                        for (int k = 0; k < taps; k++) {
+                            float o = ((float)k + 0.5f) / (float)taps - 0.5f;
+                            uint32_t q = sample(tx, lvp, u + su * o, v + sv * o);
+                            A += q >> 24; Rr += (q >> 16) & 255; G += (q >> 8) & 255; Bb += q & 255;
+                        }
+                        s = (A / taps) << 24 | (Rr / taps) << 16 | (G / taps) << 8 | (Bb / taps);
+                    }
+                } else s = sample(tx, lv, u, v);
                 ca = (s >> 24) / 255.0f;
                 cr = s2l[(s >> 16) & 255]; cg = s2l[(s >> 8) & 255]; cb = s2l[s & 255];
             }
@@ -615,9 +648,14 @@ static void tri_view(rctx *R, const cam_t *c, float znear, pv in[3])
 typedef struct { int mesh; float depth; } draw_item;
 static int by_depth(const void *a, const void *b) { float d = ((const draw_item *)a)->depth - ((const draw_item *)b)->depth; return d < 0 ? -1 : d > 0; }
 
-static float *vbuf; static int vcap;
+#if defined(_MSC_VER)
+#define R3_TLS __declspec(thread)
+#else
+#define R3_TLS _Thread_local
+#endif
+static R3_TLS float *vbuf; static R3_TLS int vcap;
 
-static void draw_mesh(r3_scene *s, r3_target *t, const cam_t *c, int mi)
+static void draw_mesh(r3_scene *s, r3_target *t, const cam_t *c, int mi, int y0, int y1)
 {
     r3_mesh *me = &s->meshes[mi];
     const r3_mat *m = &s->mats[me->mat_override >= 0 ? me->mat_override : me->mat];
@@ -695,6 +733,7 @@ static void draw_mesh(r3_scene *s, r3_target *t, const cam_t *c, int mi)
     R.pick = (int16_t)me->node;
     R.zbias = m->poff ? 1.0005f : 1.0f;
     R.bright = bright;
+    R.y0 = y0; R.y1 = y1;
     /* one mip level for the mesh: texels per pixel at its middle */
     R.lv = 0;
     if (tx && me->ni >= 3) {
@@ -739,7 +778,7 @@ static void draw_mesh(r3_scene *s, r3_target *t, const cam_t *c, int mi)
     }
 }
 
-void r3_render(r3_scene *s, r3_target *t, const uint32_t *bg)
+int r3_render_begin(r3_scene *s, r3_target *t)
 {
     color_init();
     if (t->cap < t->w * t->h) {
@@ -747,13 +786,27 @@ void r3_render(r3_scene *s, r3_target *t, const uint32_t *bg)
         t->z = (float *)malloc((size_t)t->w * t->h * sizeof(float));
         t->pick = (int16_t *)malloc((size_t)t->w * t->h * sizeof(int16_t));
         t->cap = t->z && t->pick ? t->w * t->h : 0;
-        if (!t->cap) return;
+        if (!t->cap) return 0;
     }
-    for (int i = 0; i < t->w * t->h; i++) { t->z[i] = 0; t->pick[i] = -1; }
-    if (bg) for (int y = 0; y < t->h; y++) memcpy(t->px + (size_t)y * t->pitch, bg + (size_t)y * t->w, (size_t)t->w * 4);
     r3_update(s);
+    return 1;
+}
+
+void r3_render(r3_scene *s, r3_target *t, const uint32_t *bg)
+{
+    if (r3_render_begin(s, t)) r3_render_rows(s, t, bg, 0, t->h);
+}
+
+void r3_render_rows(r3_scene *s, r3_target *t, const uint32_t *bg, int y0, int y1)
+{
+    if (!t->cap || t->cap < t->w * t->h) return;
+    if (y0 < 0) y0 = 0;
+    if (y1 > t->h) y1 = t->h;
+    if (y0 >= y1) return;
+    for (int i = y0 * t->w; i < y1 * t->w; i++) { t->z[i] = 0; t->pick[i] = -1; }
+    if (bg) for (int y = y0; y < y1; y++) memcpy(t->px + (size_t)y * t->pitch, bg + (size_t)y * t->w, (size_t)t->w * 4);
     cam_t c; cam_make(s, t, &c);
-    static draw_item *items; static int icap;
+    static R3_TLS draw_item *items; static R3_TLS int icap;
     if (icap < s->nmeshes) { icap = s->nmeshes + 64; items = (draw_item *)realloc(items, (size_t)icap * sizeof *items); if (!items) { icap = 0; return; } }
     int no = 0, ntr = 0;
     /* opaque first, by render order; then the see-through ones far to near */
@@ -776,7 +829,7 @@ void r3_render(r3_scene *s, r3_target *t, const uint32_t *bg)
             n++;
         }
         qsort(items, (size_t)n, sizeof *items, by_depth);
-        for (int i = 0; i < n; i++) draw_mesh(s, t, &c, items[i].mesh);
+        for (int i = 0; i < n; i++) draw_mesh(s, t, &c, items[i].mesh, y0, y1);
         if (pass) ntr = n; else no = n;
     }
     (void)no; (void)ntr;

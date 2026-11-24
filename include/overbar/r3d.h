@@ -97,6 +97,10 @@ int r3_is_under(const r3_scene *s, int node, int ancestor);
 
 /* draw; pick[] gets the node of each pixel's mesh (-1: background). bg: ARGB background to clear to (NULL: leave px) */
 void r3_render(r3_scene *s, r3_target *t, const uint32_t *bg);
+/* the same in parts, for several threads: begin once (world matrices, buffers), then rows [y0, y1) on any thread,
+   each thread its own rows. begin returns 0 when out of memory */
+int r3_render_begin(r3_scene *s, r3_target *t);
+void r3_render_rows(r3_scene *s, r3_target *t, const uint32_t *bg, int y0, int y1);
 /* project a world point; returns 0 if behind the camera. x, y in target pixels */
 int r3_project(r3_scene *s, const r3_target *t, const float p[3], float *x, float *y);
 /* the screen box of a node and everything under it; 0 if nothing visible */
