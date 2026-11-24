@@ -16,6 +16,8 @@ r3_scene *BX_S;
 const bx_scene *BX_SC;
 bx_canvas BX_C;
 float bx_look[3];
+static float zoom = 1, cam_real[3];       /* the wheel's or a pinch's zoom: the camera moved toward what it looks at (a new view starts at 1) */
+static void cam_unzoom(void) { if (cam_real[2] != 0) { memcpy(BX_S->cam, cam_real, sizeof cam_real); cam_real[2] = 0; } }
 
 static struct {
     ob_host *host;
@@ -86,8 +88,8 @@ int bx_node(const char *name)
 void bx_parent(int node, int parent) { if (node >= 0 && node != parent) { BX_S->nodes[node].parent = parent; BX_S->stamp++; } }
 void bx_attach(int node, int parent) { r3_attach(BX_S, node, parent); }
 void bx_set3(float *v, float x, float y, float z) { v[0] = x; v[1] = y; v[2] = z; }
-void bx_cam(float x, float y, float z) { BX_S->cam[0] = x; BX_S->cam[1] = y; BX_S->cam[2] = z; }
-void bx_cam_to(float x, float y, float z, float ms) { bx_tw3(BX_S->cam, x, y, z, ms, 0); }
+void bx_cam(float x, float y, float z) { zoom = 1; cam_real[2] = 0; BX_S->cam[0] = x; BX_S->cam[1] = y; BX_S->cam[2] = z; }
+void bx_cam_to(float x, float y, float z, float ms) { cam_unzoom(); zoom = 1; bx_tw3(BX_S->cam, x, y, z, ms, 0); }
 
 /* ---------------- 2D ---------------- */
 static uint32_t mix(uint32_t d, uint32_t s, int a)
@@ -620,6 +622,7 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
     B.last = now;
     if (dt < 0 || dt > 50) dt = dt < 0 ? 0 : 50;
     if (B.host && B.host->overlay_open) dt = 0;
+    if (B.up && BX_S && cam_real[2] != 0) { memcpy(BX_S->cam, cam_real, sizeof cam_real); cam_real[2] = 0; }   /* the scene's own camera while it moves */
     time_step(dt);
     fade_step(dt);
     BX_C.px = px; BX_C.w = w; BX_C.h = h; BX_C.pitch = pitch;
@@ -642,6 +645,9 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
             for (int i = 0; i < nhot; i++) if (HOT[i].node == hn) { BX_S->nodes[hn].hl = 1.12f; break; }
         }
         BX_S->look[0] = bx_look[0]; BX_S->look[1] = bx_look[1]; BX_S->look[2] = bx_look[2];
+        memcpy(cam_real, BX_S->cam, sizeof cam_real);
+        if (cam_real[2] == 0) cam_real[2] = 1e-6f;
+        for (int k = 0; k < 3; k++) BX_S->cam[k] = BX_S->look[k] + (BX_S->cam[k] - BX_S->look[k]) * zoom;   /* kept till the next frame: picks see this picture */
         render3d(px, w, h, pitch);
         /* the label under the highlighted object */
         if (hn >= 0 && !V.up && !B.dragging) {
@@ -717,7 +723,20 @@ static void input(void *ud, const ob_screen_ev *e)
         activate(hover);
         return;
     }
-    if (e->kind == OB_SCREEN_WHEEL) { if (V.up && V.zoom) V.scroll -= e->y * BX_C.sh * 0.08f; return; }
+    if (e->kind == OB_SCREEN_WHEEL) {
+        if (V.up) { if (V.zoom) V.scroll -= e->y * BX_C.sh * 0.08f; return; }
+        zoom *= e->y > 0 ? .88f : 1.0f / .88f;                    /* up: closer */
+        if (zoom < .35f) zoom = .35f;
+        if (zoom > 2.2f) zoom = 2.2f;
+        return;
+    }
+    if (e->kind == OB_SCREEN_ZOOM) {
+        if (V.up) { if ((e->x > 0) != !!V.zoom) view_zoom(0); return; }
+        zoom /= 1 + e->x / 1000.0f * 2.5f;                         /* fingers apart: closer */
+        if (zoom < .35f) zoom = .35f;
+        if (zoom > 2.2f) zoom = 2.2f;
+        return;
+    }
     if (V.up && e->kind != OB_SCREEN_OK) { view_key(e->kind); return; }
     if (e->kind == OB_SCREEN_BACK) { if (V.up) view_close(0); else BX_SC->back(); B.kb = -1; return; }
     if (e->kind == OB_SCREEN_OK) {

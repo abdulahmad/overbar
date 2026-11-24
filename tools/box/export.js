@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Copyright (c) 2026 abdulahmad
 // Exports the box mockup's 3D scenes (three.js r150) to the box module's scene files.
-// Usage: node export.js <mockup dir (index src/, models/, art-private/)> <out dir>
+// Usage: node export.js <mockup dir (index src/, models/, art-private/)> <out dir> [pc95,pc96,pc97]
+// With the third argument, only those CD games are written (src/cd3d.js built beside the desk; art from art-private/cd/<game>/).
 // The mockup's own scene code is loaded in headless Chromium with a few lines added that hand its objects out.
 // Writes <out>/<game>/scene.txt (nodes, meshes, materials, textures, lights), scene.vtx (vertices), scene.idx (indices) and the
 // procedural textures (tex/*.png). Retail scans are NOT written: a texture made from a scan is written as the
@@ -9,6 +10,7 @@
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
 const M = path.resolve(process.argv[2] || '.'), OUT = path.resolve(process.argv[3] || 'out');
+const CDS = process.argv[4] ? process.argv[4].split(',') : [];
 const rd = p => fs.readFileSync(path.join(M, p), 'utf8');
 
 function dataUri(p) {
@@ -56,7 +58,7 @@ gen = patch(gen, 'return {enter,back,state', 'window.__GEN={get scene(){return s
 
 let html = rd('src/src.html');
 html = html.replace('/*THREE*/', () => rd('src/three.min.js')).replace('/*PC3D*/', () => pc)
-  .replace('/*GENMODELS*/', () => rd('models/genmodels.js')).replace('/*GEN3D*/', () => gen)
+  .replace('/*GENMODELS*/', () => rd('models/genmodels.js')).replace('/*GEN3D*/', () => gen + '\n' + rd('src/cd3d.js'))
   .replace('/*IMG*/', () => 'const IMG=' + JSON.stringify(IMG) + ';\nconst FILELIST={};');
 fs.mkdirSync(OUT, { recursive: true });
 // which scan each art key is (make-art.py copies them into a player's art folder under the key's name)
@@ -69,6 +71,7 @@ function dump(which, uriKey) {
   const T = THREE, W = which === 'pc' ? window.__PC : window.__GEN;
   const role = new Map();
   const name = (o, n) => { if (o && !role.has(o)) role.set(o, n); };
+  if (window.__CDN) for (const n in window.__CDN) name(window.__CDN[n], n);
   if (which === 'pc') {
     ['rig', 'pair', 'sleeve', 'guide', 'inbox', 'lid', 'tray', 'trayItems'].forEach(k => name(W[k], k));
     const book = (B, n) => { name(B.root, n); name(B.g, n + '.g'); B.leaves.forEach((L, i) => name(L, n + '.leaf' + i)); name(B.blk, n + '.blk'); name(B.bc, n + '.bc'); name(B.sp, n + '.sp'); };
@@ -164,9 +167,33 @@ function dump(which, uriKey) {
   for (const k in IMG) { if (Array.isArray(IMG[k])) IMG[k].forEach((u, i) => uriKey[u] = k + i); else uriKey[IMG[k]] = k; }
   // the page needs uriKey: pass it once
   await p.evaluate(u => { window.__uriKey = u; }, uriKey);
-  for (const which of ['pc', 'gen']) {
+  if (CDS.length) {
+    for (const game of CDS) {
+      const ad = path.join(M, 'art-private/cd/' + game);
+      const CD = {};
+      for (const f of fs.readdirSync(ad)) { const k = f.replace(/\.(jpg|png)$/, ''); if (/^(man|tech)\d|^(lineOut|lineIn|maskOut|maskIn|trayBack)$/.test(k)) continue; CD[k] = dataUri('art-private/cd/' + game + '/' + f); }
+      const uk = { ...uriKey }; for (const k in CD) uk[CD[k]] = k;
+      await p.evaluate(([g, cd]) => {
+        const W = window.__PC, sc = W.scene;
+        // the 94 box goes; the desk stays (without the 94 disks); the CD box is built beside it
+        for (const o of [...sc.children]) if (!o.isLight && o !== W.pcDesk) sc.remove(o);
+        (W.pcParts.disks || []).forEach(d => W.pcDesk.remove(d)); delete W.pcParts.disks;
+        window.__CDN = CD3build(THREE, sc, g, cd).names;
+      }, [game, CD]);
+      await p.evaluate(u => { window.__uriKey = u; }, uk);
+      await write('pc', game);
+      await p.goto('file://' + pagePath); await p.waitForTimeout(1500);
+      await p.evaluate(() => { S.game = 'pc'; show('p1'); PC3.enter('sleeve'); }); await p.waitForTimeout(800);
+      await p.evaluate(u => { window.__uriKey = u; }, uriKey);
+    }
+    await b.close(); fs.unlinkSync(pagePath); return;
+  }
+  for (const which of ['pc', 'gen']) await write(which, which === 'pc' ? 'pc94' : 'gen94');
+  await b.close();
+  fs.unlinkSync(pagePath);
+  async function write(which, dname) {
     const d = await p.evaluate(([w, f]) => { const fn = eval('(' + f + ')'); return fn(w, window.__uriKey); }, [which, dump.toString()]);
-    const dir = path.join(OUT, which === 'pc' ? 'pc94' : 'gen94');
+    const dir = path.join(OUT, dname);
     fs.mkdirSync(path.join(dir, 'tex'), { recursive: true });
     const L = [];
     L.push(`obscene 2`);
@@ -186,8 +213,6 @@ function dump(which, uriKey) {
     fs.writeFileSync(path.join(dir, 'scene.txt'), L.join('\n') + '\n');
     fs.writeFileSync(path.join(dir, 'scene.vtx'), Buffer.from(new Float32Array(d.verts).buffer));
     fs.writeFileSync(path.join(dir, 'scene.idx'), Buffer.from(new Uint32Array(d.idx).buffer));
-    console.log(which, 'nodes', d.nodes.length, 'meshes', d.meshes.length, 'verts', d.verts.length / 8, 'indices', d.idx.length, 'textures', d.texs.length, 'lights', d.lights.length);
+    console.log(dname, 'nodes', d.nodes.length, 'meshes', d.meshes.length, 'verts', d.verts.length / 8, 'indices', d.idx.length, 'textures', d.texs.length, 'lights', d.lights.length);
   }
-  await b.close();
-  fs.unlinkSync(pagePath);
 })();
