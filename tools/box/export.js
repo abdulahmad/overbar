@@ -171,7 +171,7 @@ function dump(which, uriKey) {
     for (const game of CDS) {
       const ad = path.join(M, 'art-private/cd/' + game);
       const CD = {};
-      for (const f of fs.readdirSync(ad)) { const k = f.replace(/\.(jpg|png)$/, ''); if (/^(man|tech)\d|^(lineOut|lineIn|maskOut|maskIn|trayBack)$/.test(k)) continue; CD[k] = dataUri('art-private/cd/' + game + '/' + f); }
+      for (const f of fs.readdirSync(ad)) { const k = f.replace(/\.(jpg|png)$/, ''); if (/^(man|tech)\d|^inst9|^vgafont$|^(lineOut|lineIn|maskOut|maskIn|trayBack)$/.test(k)) continue; CD[k] = dataUri('art-private/cd/' + game + '/' + f); }
       const uk = { ...uriKey }; for (const k in CD) uk[CD[k]] = k;
       await p.evaluate(([g, cd]) => {
         const W = window.__PC, sc = W.scene;
