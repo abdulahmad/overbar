@@ -295,27 +295,67 @@ r3_tex *bx_art(const char *key)
 }
 
 /* ---------------- the page reader ---------------- */
-static struct { int up, i, n, spread, zoom; float scroll; r3_tex *pg[80]; char title[96]; void (*close)(int); } V;
-int bx_view_up(void) { return V.up; }
-void bx_view_open(const char *title, r3_tex **pages, int n, int spread, void (*on_close)(int))
+#define VIEW_MAX 200
+static struct {
+    int up, i, n, spread, zoom; float scroll; r3_tex *pg[VIEW_MAX]; char title[96]; void (*close)(int);
+    int keyed; char key[VIEW_MAX][32];                    /* pages by art key, read when shown (bx_view_open_keys) */
+    struct { int page; unsigned used; r3_tex t; } slot[4]; unsigned tick;
+} V;
+static void view_slots_free(void) { for (int k = 0; k < 4; k++) { r3_tex_set(&V.slot[k].t, NULL, 0, 0); V.slot[k].page = -1; } }
+/* page i: from the list, or read from the art folder into one of four slots (the least recently shown one goes) */
+static r3_tex *view_page(int i)
 {
-    memset(&V, 0, sizeof V);
-    if (n > 80) n = 80;
-    for (int i = 0; i < n; i++) V.pg[i] = pages[i];
-    V.n = n; V.spread = spread; V.close = on_close; V.up = 1;
+    if (i < 0 || i >= V.n) return NULL;
+    if (!V.keyed) return V.pg[i];
+    int k, old = 0;
+    V.tick++;
+    for (k = 0; k < 4; k++) if (V.slot[k].page == i) { V.slot[k].used = V.tick; return V.slot[k].t.loaded ? &V.slot[k].t : NULL; }
+    for (k = 1; k < 4; k++) if (V.slot[k].used < V.slot[old].used) old = k;
+    int w, h; uint32_t *px = art_load(V.key[i], &w, &h, NULL);
+    r3_tex_set(&V.slot[old].t, px, w, h);
+    V.slot[old].t.rep[0] = V.slot[old].t.rep[1] = 1;
+    V.slot[old].page = i; V.slot[old].used = V.tick;
+    return V.slot[old].t.loaded ? &V.slot[old].t : NULL;
+}
+int bx_art_exists(const char *key)
+{
+    static const char *ext[] = { ".jpg", ".png", ".jpeg" };
+    char p[1300];
+    for (int i = 0; i < 3; i++) { snprintf(p, sizeof p, "%s/%s%s", B.art, key, ext[i]); FILE *f = fopen(p, "rb"); if (f) { fclose(f); return 1; } }
+    return 0;
+}
+int bx_view_up(void) { return V.up; }
+static void view_start(const char *title, int n, int spread, void (*on_close)(int))
+{
+    view_slots_free();
+    V.n = n; V.i = 0; V.spread = spread; V.close = on_close; V.up = 1; V.zoom = 0; V.scroll = 0;
     snprintf(V.title, sizeof V.title, "%s", title);
     B.kb = -1;
+}
+void bx_view_open(const char *title, r3_tex **pages, int n, int spread, void (*on_close)(int))
+{
+    if (n > VIEW_MAX) n = VIEW_MAX;
+    V.keyed = 0;
+    for (int i = 0; i < n; i++) V.pg[i] = pages[i];
+    view_start(title, n, spread, on_close);
+}
+void bx_view_open_keys(const char *title, const char *const *keys, int n, int spread, void (*on_close)(int))
+{
+    if (n > VIEW_MAX) n = VIEW_MAX;
+    V.keyed = 1;
+    for (int i = 0; i < n; i++) snprintf(V.key[i], sizeof V.key[i], "%s", keys[i]);
+    view_start(title, n, spread, on_close);
 }
 static void view_next(int a) { (void)a; int nx = V.i == 0 ? 1 : V.i + (V.spread ? 2 : 1); if (nx < V.n) { V.i = nx; V.scroll = 0; bx_sfx(SFX_PAGE, 0); } }
 static void view_prev(int a) { (void)a; int nx = V.spread ? (V.i <= 2 ? 0 : V.i - 2) : V.i - 1; if (nx >= 0 && nx != V.i) { V.i = nx; V.scroll = 0; bx_sfx(SFX_PAGE, 0); } }
 static void view_zoom(int a) { (void)a; V.zoom = !V.zoom; V.scroll = 0; }
-static void view_close(int a) { (void)a; V.up = 0; B.kb = -1; if (V.close) V.close(0); }
+static void view_close(int a) { (void)a; V.up = 0; B.kb = -1; view_slots_free(); if (V.close) V.close(0); }
 static void view_draw(void)
 {
     bx_rect(0, 0, BX_C.w, BX_C.h, 0xdd000000);
     float u = BX_C.u;
     int two = V.spread && V.i > 0 && V.i + 1 < V.n;
-    r3_tex *a = V.pg[V.i], *b = two ? V.pg[V.i + 1] : NULL;
+    r3_tex *a = view_page(V.i), *b = two ? view_page(V.i + 1) : NULL;
     float ph = BX_C.sh * 0.74f, top = BX_C.sy + BX_C.sh * 0.08f;
     float ar = a && a->loaded ? (float)a->w / a->h : 0.77f, br = b && b->loaded ? (float)b->w / b->h : ar;
     if (V.zoom) {

@@ -76,6 +76,10 @@ void bx_fade(void (*fn)(int), int arg);
 
 /* ---- the page reader ---- */
 void bx_view_open(const char *title, r3_tex **pages, int n, int spread, void (*on_close)(int));
+/* the same, with the pages as art keys (box-art/<dir>/<key>.jpg): each is read when shown and only a few are kept, for a long
+ * manual of large scans. bx_art_exists: is that scan in the art folder. */
+void bx_view_open_keys(const char *title, const char *const *keys, int n, int spread, void (*on_close)(int));
+int bx_art_exists(const char *key);
 int bx_view_up(void);
 
 /* ---- art (the player's own scans, by key) ---- */
