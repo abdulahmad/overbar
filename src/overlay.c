@@ -6,6 +6,7 @@
  * F12 toggles stats; F9 toggles the on-screen keyboard. Changes apply immediately (live preview).
  */
 #include "overbar/overbar.h"
+#include "overbar/vmenu.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -152,7 +153,7 @@ int ob_overlay_pointer(ob_host *h, int x, int y, int bw, int bh, int what)
 {
     int i;
     if (!h || !h->overlay_open) return 0;
-    i = mdrt_menu_at(&h->overlay, x, y, bw, bh);
+    i = h->overlay_vec ? ob_vmenu_at(&h->overlay, x, y, bw, bh) : mdrt_menu_at(&h->overlay, x, y, bw, bh);
     if (what == 0) {
         if (i >= 0 && i != h->overlay.sel) { h->overlay.sel = i; return 1; }
         return 0;
@@ -321,6 +322,11 @@ void ob_overlay_draw(ob_host *h, uint32_t *px, int w, int hgt, int pitch)
 {
     int y, x;
     if (!h->overlay_open) return;
+    if (h->overlay_vec) {                       /* vector type: straight alpha, the shade is in the buffer itself */
+        for (y = 0; y < hgt; y++) memset(px + (size_t)y * pitch, 0, (size_t)w * 4);
+        ob_vmenu_draw(&h->overlay, px, w, hgt, pitch, h->overlay_name, h->overlay_platform);
+        return;
+    }
     /* Caller fills the buffer with 0x00040404. The dim turns that into 0x010101,
      * which stays clear so the filtered picture shows through the text. */
     mdrt_menu_draw(&h->overlay, px, w, hgt, pitch);

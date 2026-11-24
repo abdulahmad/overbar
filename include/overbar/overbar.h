@@ -187,6 +187,7 @@ enum {
     OB_ID_SEASON_NOTE,          /* a status or error line */
     OB_ID_OSK,                  /* Keys page: F9 on-screen keyboard */
     OB_ID_FRAME_RATE,           /* Video page: how often the game draws (when the client gave choices) */
+    OB_ID_MENU_SOUNDS,          /* Main page: the overlay's navigation sounds off / on */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
     OB_ID_ADDON = 1000
@@ -301,6 +302,7 @@ typedef struct ob_host {
     int stats;
     ob_look lores, hires;
     int volume, mute;
+    int menu_sounds;                  /* the overlay makes a sound when it moves, goes in and goes back (default on; the Menu sounds setting) */
     int blend;                  /* 0 off, 1 dither, 2 soft (PulseMan) */
     int pointer;                /* 0 auto, 1 show, 2 hide */
     /* Frame rate (Video page, after Refresh): how often the game itself draws, for games whose camera or animation moves a step
@@ -320,6 +322,8 @@ typedef struct ob_host {
     int has_hires;
     int console_dar;            /* 1: source 224, dest unit 240 */
     int overlay_open;
+    int overlay_vec;                  /* the overlay is drawn in vector type at the window's resolution (the layer sets it from the port's game_name) */
+    const char *overlay_name, *overlay_platform;   /* the vector overlay's title and the line under it */
     int overlay_page;
     ob_class video_class;       /* which Scale Mode tree the Video page edits */
     int live_preview;           /* 1: a menu change is already in the host (always on) */

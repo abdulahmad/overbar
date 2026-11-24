@@ -5,6 +5,7 @@
  * the other ports duplicated, so one copy runs on a desktop and on a Linux handheld.
  */
 #include "overbar/plat.h"
+#include "overbar/sfx.h"
 #include "overbar/osk.h"
 #include "overbar/sides.h"
 #include "overbar/chat.h"
@@ -458,9 +459,16 @@ static void after_change(void)
     if (P.host->request_quit) do_quit();
 }
 
+/* the overlay's navigation sounds: a move only when the selection moved, in for a choice, back for Back */
+static void menu_sound(int kind) { if (P.host->menu_sounds && !P.host->mute) ob_sfx_play(kind, P.host->volume); }
+
 static void overlay_handle(int mdrt_input)
 {
-    int r = ob_overlay_input(P.host, mdrt_input);
+    int was = P.host->overlay.sel, r;
+    r = ob_overlay_input(P.host, mdrt_input);
+    if (mdrt_input == MDRT_MENU_BACK) menu_sound(OB_SFX_BACK);
+    else if (mdrt_input == MDRT_MENU_OK) menu_sound(OB_SFX_SELECT);
+    else if (P.host->overlay.sel != was || mdrt_input == MDRT_MENU_LEFT || mdrt_input == MDRT_MENU_RIGHT) menu_sound(OB_SFX_MOVE);
     if (r == OB_ID_CONTROLLERS && P.hk.action) P.hk.action(r);
     after_change();
 }
@@ -477,14 +485,16 @@ static void pad_back(void)
 
 static void overlay_mouse(int wx, int wy, int what)
 {
-    int ww, wh, winw, winh, r;
+    int ww, wh, winw, winh, r, was;
     if (!P.host->overlay_open || what < 0 || !ob_plat_window_size(&ww, &wh)) return;
     SDL_GetWindowSize(P.win, &winw, &winh);
     if (winw > 0 && winh > 0 && (ww != winw || wh != winh)) { wx = wx * ww / winw; wy = wy * wh / winh; }
     if (P.over_w <= 0 || P.over_h <= 0 || wx < P.over_x || wy < P.over_y || wx >= P.over_x + P.over_w || wy >= P.over_y + P.over_h) return;
+    was = P.host->overlay.sel;
     r = ob_overlay_pointer(P.host, (wx - P.over_x) * P.over_mw / P.over_w, (wy - P.over_y) * P.over_mh / P.over_h,
                            P.over_mw, P.over_mh, what);
-    if (what == 0) return;
+    if (what == 0) { if (P.host->overlay.sel != was) menu_sound(OB_SFX_MOVE); return; }
+    menu_sound(what == 2 ? OB_SFX_BACK : what == 1 ? OB_SFX_SELECT : OB_SFX_MOVE);
     if (r == OB_ID_CONTROLLERS && P.hk.action) P.hk.action(r);
     after_change();
 }
@@ -762,9 +772,43 @@ static void fps_draw(void)
 /* the black laid over the picture behind the overlay: 153 of 255 leaves it 40% bright */
 #define OB_OVERLAY_DIM 153
 
+/* the vector overlay: window-sized, drawn by ob_vmenu_draw, shown 1:1 (smoothly) */
+static void overlay_draw_vec(const SDL_Rect *dst)
+{
+    static uint32_t *vpx;
+    static int vcap;
+    int ww = 0, wh = 0;
+    if (!ob_plat_window_size(&ww, &wh) || ww < 64 || wh < 64) return;
+    if (ww * wh > vcap) {
+        uint32_t *n = (uint32_t *)realloc(vpx, (size_t)ww * wh * 4);
+        if (!n) return;
+        vpx = n;
+        vcap = ww * wh;
+    }
+    ob_overlay_draw(P.host, vpx, ww, wh, ww);
+    if (P.over_tex && (P.over_mw != ww || P.over_mh != wh)) { SDL_DestroyTexture(P.over_tex); P.over_tex = NULL; }
+    if (!P.over_tex && (P.over_tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ww, wh))) {
+        SDL_SetTextureBlendMode(P.over_tex, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureScaleMode(P.over_tex, SDL_ScaleModeLinear);
+    }
+    P.over_mw = ww;
+    P.over_mh = wh;
+    if (!P.over_tex) return;
+    SDL_UpdateTexture(P.over_tex, NULL, vpx, ww * 4);
+    SDL_SetRenderDrawBlendMode(P.ren, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(P.ren, 0, 0, 0, OB_OVERLAY_DIM);
+    SDL_RenderFillRect(P.ren, dst);
+    SDL_RenderCopy(P.ren, P.over_tex, NULL, NULL);
+    P.over_x = 0; P.over_y = 0; P.over_w = ww; P.over_h = wh;
+}
+
 static void overlay_draw(const SDL_Rect *dst)
 {
     int mw, mh, t = (int)(dst->h * 0.8 / (P.cur_h > 0 ? P.cur_h : P.hk.src_h) + 0.5);
+    P.host->overlay_vec = P.hk.game_name && !ob_plat_osk_is_open();
+    P.host->overlay_name = P.hk.game_name;
+    P.host->overlay_platform = P.hk.game_platform;
+    if (P.host->overlay_vec) { overlay_draw_vec(dst); return; }
     if (t < 1) t = 1;
     if (ob_plat_osk_is_open()) t *= 2;                 /* the keyboard is drawn at twice the size of the overlay's text (its own scale stays 1 here) */
     mw = dst->w / t;

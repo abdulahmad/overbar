@@ -8,6 +8,8 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200112L
 #include "overbar/overbar.h"
+#include "overbar/vmenu.h"
+#include "overbar/sfx.h"
 #include "overbar/season.h"
 
 #include <math.h>
@@ -980,6 +982,34 @@ static void test_season_page(void)
     ob_season_free(&season);
 }
 
+/* the vector menu draws type and keycaps with alpha, finds the row under a pixel, and the sounds are made */
+static void test_vmenu_and_sfx(void)
+{
+    static uint32_t px[960 * 540];
+    mdrt_menu m;
+    int n, any = 0, hit, i;
+    mdrt_menu_init(&m);
+    mdrt_menu_page(&m, "Overlay");
+    snprintf(m.subtitle, sizeof m.subtitle, "[F11] overlay   {A} ok");
+    mdrt_menu_add(&m, 1, MDRT_ITEM_ACTION, "Resume");
+    mdrt_menu_add(&m, 2, MDRT_ITEM_ACTION, "Quit");
+    ob_vmenu_draw(&m, px, 960, 540, 960, "NHL 94", "For Sega Genesis");
+    for (i = 0; i < 960 * 540; i++) if (px[i] >> 24) any++;
+    CHECK(any > 20000);                                           /* the shade and the type */
+    CHECK(px[270 * 960 + 900] >> 24 == 0);                        /* the right side stays clear for the picture */
+    hit = ob_vmenu_at(&m, 80, (int)(168 * 1 + 30 * 1.5f), 960, 540);
+    CHECK(hit == 1);
+    CHECK(ob_vmenu_at(&m, 80, 20, 960, 540) == -1);
+    for (i = 0; i < OB_SFX_COUNT; i++) {
+        const short *s = ob_sfx_samples(i, &n);
+        int peak = 0, j;
+        CHECK(s && n > 1000 && n < 12000);
+        for (j = 0; j < n; j++) if (abs(s[j]) > peak) peak = abs(s[j]);
+        CHECK(peak > 20000 && peak <= 32767);
+    }
+    mdrt_menu_free(&m);
+}
+
 int main(void)
 {
     test_scaler_console();
@@ -997,6 +1027,7 @@ int main(void)
     test_render();
     test_game_page();
     test_season_page();
+    test_vmenu_and_sfx();
     if (fails) {
         fprintf(stderr, "%d check(s) failed\n", fails);
         return 1;
