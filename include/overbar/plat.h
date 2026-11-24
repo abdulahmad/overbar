@@ -80,6 +80,11 @@ void ob_plat_frame_done(int is_new);          /* count a frame shown (is_new: th
 
 SDL_Window *ob_plat_window(void);
 SDL_Renderer *ob_plat_renderer(void);
+/* High-DPI windows (Windows): call before SDL_Init. The process becomes per-monitor DPI aware, so Windows no longer
+ * stretches (blurs) the window when the display is scaled above 100%; window sizes are then real pixels.
+ * ob_plat_dpi_scale: the display's scale (1.0 at 96 DPI) for sizing the first window like before. */
+void ob_plat_dpi_aware(void);
+float ob_plat_dpi_scale(int display);
 int ob_plat_window_size(int *w, int *h);      /* the area the picture is placed in (the bar not counted) */
 
 /* controllers */
