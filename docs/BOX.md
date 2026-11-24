@@ -2,8 +2,9 @@
 
 On a game's first launch its retail box opens on screen in 3D: the player takes out the manual and the media, reads the
 manual, and installs the disks (PC) or puts the cartridge in and the TV and console come on (Genesis). Then the game
-starts, and later launches go straight to it. The Overbar menu gets "Open the box (experimental)", "Read the manual" and
-"Box at start (experimental)": First launch, Never or Every launch.
+starts, and later launches go straight to it. The Overbar overlay and the menu bar get one entry, "View Manual & Materials", on the Game page/menu. It opens
+the box with everything in it (manual, disks or disc, case...), at any time, installed or not. That screen has
+"Replay the opening at next start", which plays the whole opening again on the next launch.
 
 ## Parts
 

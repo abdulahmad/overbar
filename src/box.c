@@ -506,6 +506,14 @@ static void finish(int a)
 }
 void bx_done(void) { bx_fade(finish, 0); }
 static void skip(int a) { (void)a; if (BX_SC->skip) BX_SC->skip(); bx_done(); }
+/* opened from View Manual & Materials: play the whole opening again at the next start, or not */
+static void replay_toggle(int a)
+{
+    (void)a;
+    if (B.seen) { B.seen = 0; if (B.show_pref == 1) B.show_pref = 0; }
+    else B.seen = 1;
+    ini_write();
+}
 
 static void make_bg(int w, int h)
 {
@@ -651,6 +659,11 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
     }
     /* first launch: the way out */
     if (BX.first && !V.up) bx_button(BX_C.sx + BX_C.sw - 2 * BX_C.u, BX_C.sy + BX_C.sh - 4.6f * BX_C.u, "Skip to the game", skip, 0, 1);
+    /* from View Manual & Materials (the way back is the scene's own top-left button): the reset that plays the opening again at the next start */
+    if (BX.from_menu && !BX.manual_only && !V.up) {
+        bx_button(BX_C.sx + BX_C.sw - 2 * BX_C.u, BX_C.sy + BX_C.sh - 4.6f * BX_C.u,
+                  B.seen ? "Replay the opening at next start" : "Opening plays at next start (undo)", replay_toggle, 0, 1);
+    }
     {
         float u = BX_C.u;
         const char *tag = "EXPERIMENTAL";
@@ -756,12 +769,6 @@ int ob_box_open(int mode)
 void bx_manual_only_closed(int a) { (void)a; finish(0); }
 
 static int menu_box(void *ctx) { (void)ctx; return ob_box_open(BOX_SHOW_REOPEN), 1; }
-static int menu_manual(void *ctx) { (void)ctx; return ob_box_open(BOX_SHOW_MANUAL), 1; }
-static void pref_label(void)
-{
-    snprintf(B.pref_label, sizeof B.pref_label, "Box at start (experimental): %s", B.show_pref == 1 ? "Never" : B.show_pref == 2 ? "Every launch" : "First launch");
-}
-static int menu_pref(void *ctx) { (void)ctx; B.show_pref = (B.show_pref + 1) % 3; pref_label(); ini_write(); return 1; }
 
 int ob_box_init(ob_host *h, const bx_scene *scene)
 {
@@ -790,10 +797,8 @@ int ob_box_init(ob_host *h, const bx_scene *scene)
         if (!(f = fopen(p, "r"))) { fprintf(stderr, "box: %s missing, the box is off\n", p); return 0; }
         fclose(f);
     }
-    pref_label();
-    ob_host_add_addon(h, OB_ID_ADDON + 40, "Open the box (experimental)", menu_box);
-    ob_host_add_addon(h, OB_ID_ADDON + 41, "Read the manual", menu_manual);
-    ob_host_add_addon(h, OB_ID_ADDON + 42, B.pref_label, menu_pref);
+    /* one entry, on the Game page of the overlay and the menu bar: the box with everything in it (manual, disks, case...) */
+    ob_host_add_addon(h, OB_ID_ADDON + 40, "View Manual & Materials", menu_box);
     const char *force = getenv("OB_BOX");
     int show = force ? atoi(force) == 1 : (B.show_pref == 2 || (B.show_pref == 0 && !B.seen));
     if (force && atoi(force) == 2) return ob_box_open(BOX_SHOW_REOPEN);
