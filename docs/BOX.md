@@ -25,7 +25,7 @@ the box with everything in it (manual, disks or disc, case...), at any time, ins
   pointer stays visible while the box is up.
 - `tools/box/export.js` (`node export.js <mockup> <out>`, or `... pc95,pc96,pc97` for the CD boxes): exports the mockup's three.js scenes to `scene.txt`, `scene.vtx`, `scene.idx` and the drawn
   textures (for NHL 94 PC also the desk the install runs on: `pcDesk`, `pc.tower`, `pc.slot`, `pc.screen`, `pc.disk1`..4).
-  Scans in the mockup's `art-private/pc94/hires/` (cut from the full-size layouts, up to 2048 pixels) win over the web-sized ones. `tools/box/make-art.py`: copies the player's scans into `box-art/<dir>/` by key.
+  Scans in the mockup's `art-private/pc94/hires/` (cut from the full-size layouts, up to 2048 pixels) win over the web-sized ones. For the Genesis case, sleeve, manual and cartridge, scans cut to size in the mockup's `models/art/<key>.jpg` win too, and add the keys `genManualBack` (the manual's back cover), `genCartTop` (the label's strip on the cartridge's top edge) and `genCartBack` (the cartridge's back plate); without those three the parts draw plain. `tools/box/make-art.py`: copies the player's scans into `box-art/<dir>/` by key.
 
 ## The art
 
