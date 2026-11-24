@@ -33,3 +33,6 @@ src/vfont.c
 src/vfont_data.c
 src/vmenu.c
 src/sfx.c
+src/screen.c
+src/r3d.c
+src/box.c
