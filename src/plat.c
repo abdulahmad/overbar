@@ -446,7 +446,7 @@ static void sync_text_input(void)
 static void cursor_update(void)
 {
     if (P.hk.window_only) return;                         /* the port's: it knows when the game draws a pointer of its own */
-    int hide = !(P.host->overlay_open || (P.hk.captures && P.hk.captures()) || P.host->pointer == 1);
+    int hide = !(P.host->overlay_open || ob_screen_up() || (P.hk.captures && P.hk.captures()) || P.host->pointer == 1);   /* a full-window screen (the box) keeps the pointer */
     if (hide != P.cursor_hidden) { SDL_ShowCursor(hide ? SDL_DISABLE : SDL_ENABLE); P.cursor_hidden = hide; }
 }
 
@@ -674,6 +674,8 @@ static int screen_event(const SDL_Event *e)
         if (e->button.button != SDL_BUTTON_LEFT) return 1;
         ev.kind = e->type == SDL_MOUSEBUTTONDOWN ? OB_SCREEN_PRESS : OB_SCREEN_RELEASE; ev.x = e->button.x; ev.y = e->button.y; break;
     case SDL_MOUSEWHEEL: ev.kind = OB_SCREEN_WHEEL; ev.y = e->wheel.y > 0 ? 1 : -1; break;
+    case SDL_MULTIGESTURE: if (e->mgesture.numFingers < 2) return 1; ev.kind = OB_SCREEN_ZOOM; ev.x = (int)(e->mgesture.dDist * 1000); if (!ev.x) return 1; break;
+    case SDL_FINGERDOWN: case SDL_FINGERUP: case SDL_FINGERMOTION: return 1;
     case SDL_CONTROLLERBUTTONDOWN: {
         int b = e->cbutton.button;
         if (b == SDL_CONTROLLER_BUTTON_BACK || b == SDL_CONTROLLER_BUTTON_GUIDE) return 0;

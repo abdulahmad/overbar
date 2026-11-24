@@ -16,7 +16,8 @@ typedef enum {
     OB_SCREEN_MOVE,               /* the mouse moved to x, y */
     OB_SCREEN_PRESS,              /* the left button went down at x, y */
     OB_SCREEN_RELEASE,            /* and came up */
-    OB_SCREEN_WHEEL               /* y: +1 up, -1 down */
+    OB_SCREEN_WHEEL,              /* y: +1 up, -1 down */
+    OB_SCREEN_ZOOM                /* a pinch: x is how much, in 1/1000 of the window (+ apart, - together) */
 } ob_screen_kind;
 
 typedef struct ob_screen_ev {
