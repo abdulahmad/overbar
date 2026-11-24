@@ -22,7 +22,7 @@ static void geometry(int w, int h, geom *g)
     if (g->s < 0.5f) g->s = 0.5f;
     g->x0 = 56 * g->s;
     if (g->x0 > w * 0.12f) g->x0 = w * 0.12f;
-    g->top = 168 * g->s;
+    g->top = 184 * g->s;
     g->rowh = 30 * g->s;
     g->listw = w - 2 * g->x0;
     if (g->listw > 560 * g->s) g->listw = 560 * g->s;
@@ -158,18 +158,22 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
             int n = 0;
             for (; platform[n] && n < 79; n++) up[n] = (platform[n] >= 'a' && platform[n] <= 'z') ? platform[n] - 32 : platform[n];
             up[n] = 0;
-            ob_vf_draw(px, w, h, pitch, x0 + 2 * s, y + 26 * s, OB_VF_SEMIBOLD, 12 * s, ACCENT, 255, up, 2.6f * s, 2);
+            ob_vf_draw(px, w, h, pitch, x0 + 2 * s, y + 22 * s, OB_VF_SEMIBOLD, 12 * s, ACCENT, 255, up, 2.6f * s, 2);
         }
-        ob_vf_rrect(px, w, h, pitch, x0 + 2 * s, y + 38 * s, 40 * s, 2 * s, 1 * s, 0xFF000000u | ACCENT, 0, 0);
+        ob_vf_rrect(px, w, h, pitch, x0 + 2 * s, y + 31 * s, 40 * s, 2 * s, 1 * s, 0xFF000000u | ACCENT, 0, 0);
     }
     /* this page's title and key hints */
-    fitv(buf, sizeof buf, m->title, OB_VF_MEDIUM, 15 * s, g.listw);
-    if (!name || !*name) ob_vf_draw(px, w, h, pitch, x0, 100 * s, OB_VF_LIGHT, 40 * s, 0xFFFFFF, 255, buf, 0, 3);
-    else ob_vf_draw(px, w, h, pitch, x0 + 2 * s, 138 * s, OB_VF_MEDIUM, 15 * s, DIM, 255, buf, 1.5f * s, 1);
-    if (strpbrk(m->subtitle, "[{")) hints(px, w, h, pitch, x0 + 2 * s, 156 * s - 2 * s + 0.0f, s, m->subtitle, 1);
-    else if (m->subtitle[0]) {
-        fitv(buf, sizeof buf, m->subtitle, OB_VF_REGULAR, 13 * s, g.listw);
-        ob_vf_draw(px, w, h, pitch, x0 + 2 * s, 156 * s + 4 * s, OB_VF_REGULAR, 13 * s, MUTE, 255, buf, 0, 1);
+    {   /* this page's title (not on the main page, whose title is just the program's name) and the key hints */
+        int sub = strcmp(m->title, "Overbar") != 0;
+        float hy = sub ? 170 * s : 152 * s;
+        fitv(buf, sizeof buf, m->title, OB_VF_MEDIUM, 15 * s, g.listw);
+        if (!name || !*name) ob_vf_draw(px, w, h, pitch, x0, 100 * s, OB_VF_LIGHT, 40 * s, 0xFFFFFF, 255, buf, 0, 3);
+        else if (sub) ob_vf_draw(px, w, h, pitch, x0 + 2 * s, 152 * s, OB_VF_MEDIUM, 15 * s, DIM, 255, buf, 1.5f * s, 1);
+        if (strpbrk(m->subtitle, "[{")) hints(px, w, h, pitch, x0 + 2 * s, hy, s, m->subtitle, 1);
+        else if (m->subtitle[0]) {
+            fitv(buf, sizeof buf, m->subtitle, OB_VF_REGULAR, 13 * s, g.listw);
+            ob_vf_draw(px, w, h, pitch, x0 + 2 * s, hy + 5 * s, OB_VF_REGULAR, 13 * s, MUTE, 255, buf, 0, 1);
+        }
     }
     /* the list */
     m->rows = g.rows;

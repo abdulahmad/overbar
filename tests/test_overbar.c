@@ -997,7 +997,7 @@ static void test_vmenu_and_sfx(void)
     for (i = 0; i < 960 * 540; i++) if (px[i] >> 24) any++;
     CHECK(any > 20000);                                           /* the shade and the type */
     CHECK(px[270 * 960 + 900] >> 24 == 0);                        /* the right side stays clear for the picture */
-    hit = ob_vmenu_at(&m, 80, (int)(168 * 1 + 30 * 1.5f), 960, 540);
+    hit = ob_vmenu_at(&m, 80, 229, 960, 540);
     CHECK(hit == 1);
     CHECK(ob_vmenu_at(&m, 80, 20, 960, 540) == -1);
     for (i = 0; i < OB_SFX_COUNT; i++) {
