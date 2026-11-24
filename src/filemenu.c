@@ -288,7 +288,7 @@ static int build_bar(void)
         const ob_item *it = &main_items[i];
         int page;
         /* Resume and Quit are the overlay's. A bar has no game to resume. */
-        if (it->id == OB_ID_RESUME || it->id == OB_ID_QUIT) continue;
+        if (it->id == OB_ID_RESUME || it->id == OB_ID_QUIT || it->id == OB_ID_MENU_SOUNDS) continue;   /* (Menu sounds is the overlay's own row) */
         page = page_of(it->id);
         if (page == OB_PAGE_ONLINE) {
             /* the Online page types into fields: the bar opens it in the overlay */
@@ -448,7 +448,7 @@ int ob_filemenu_items(const ob_host *h, ob_item *out, int cap)
     if (cap < 1) return 0;
     v = ob_main_items(h, tmp, OB_ITEMS_MAX);
     for (i = 0; i < v && n < cap; i++) {
-        if (tmp[i].id == OB_ID_RESUME || tmp[i].id == OB_ID_QUIT || tmp[i].id == OB_ID_BACK) continue;
+        if (tmp[i].id == OB_ID_RESUME || tmp[i].id == OB_ID_QUIT || tmp[i].id == OB_ID_BACK || tmp[i].id == OB_ID_MENU_SOUNDS) continue;
         out[n++] = tmp[i];
     }
     return n;

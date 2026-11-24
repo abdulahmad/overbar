@@ -288,7 +288,7 @@ int ob_pixel_sizes(ob_scale_mode m, const char *const **labels, const ob_scale_m
 
 ob_hostkey ob_map_key(int sdl_scancode)
 {
-    if (sdl_scancode == OB_SCANCODE_GRAVE || sdl_scancode == OB_SCANCODE_F11)
+    if (sdl_scancode == OB_SCANCODE_GRAVE)
         return OB_HOSTKEY_OVERLAY;
     if (sdl_scancode == OB_SCANCODE_F12) return OB_HOSTKEY_STATS;
     if (sdl_scancode == OB_SCANCODE_F9) return OB_HOSTKEY_OSK;

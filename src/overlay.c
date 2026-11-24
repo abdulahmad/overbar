@@ -2,7 +2,7 @@
  * Copyright (c) 2026 abdulahmad
  *
  * Overlay shell: PulseMan mdrt_menu pages filled from the shared model.
- * Always available (windowed, fullscreen, handheld). ` and F11 toggle it;
+ * Always available (windowed, fullscreen, handheld). ` toggles it (and Esc on the console ports);
  * F12 toggles stats; F9 toggles the on-screen keyboard. Changes apply immediately (live preview).
  */
 #include "overbar/overbar.h"
@@ -55,7 +55,7 @@ void ob_overlay_build(ob_host *h)
             snprintf(m->subtitle, sizeof m->subtitle, "Only this Scale Mode's options. Changes live-preview.");
     }
     else if (h->overlay_page == OB_PAGE_MAIN)
-        snprintf(m->subtitle, sizeof m->subtitle, "[`]/[F11] overlay   [F12] stats   [F9] keyboard");
+        snprintf(m->subtitle, sizeof m->subtitle, h->esc_toggles ? "[Esc]/[`] overlay   [F12] stats   [F9] keyboard" : "[`] overlay   [F12] stats   [F9] keyboard");
     for (i = 0; i < n; i++) {
         const ob_item *it = &items[i];
         mdrt_menu_item *add;

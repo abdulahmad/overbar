@@ -296,7 +296,7 @@ static void test_keys(void)
     int n;
     ob_host_init(&h, OB_PORT_GENERIC, OB_PROFILE_DESKTOP);
     CHECK(ob_map_key(OB_SCANCODE_GRAVE) == OB_HOSTKEY_OVERLAY);
-    CHECK(ob_map_key(OB_SCANCODE_F11) == OB_HOSTKEY_OVERLAY);
+    CHECK(ob_map_key(OB_SCANCODE_F11) == OB_HOSTKEY_NONE);    /* F11 no longer opens it */
     CHECK(ob_map_key(OB_SCANCODE_F12) == OB_HOSTKEY_STATS);
     CHECK(ob_map_key(OB_SCANCODE_F9) == OB_HOSTKEY_OSK);
     CHECK(ob_map_pad_back() == OB_HOSTKEY_OVERLAY);
@@ -315,7 +315,9 @@ static void test_keys(void)
     CHECK(ob_items_contain(items, n, OB_ID_OSK));
     CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_GRAVE));
     CHECK(h.overlay_open);
-    CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_F11));
+    CHECK(!ob_overlay_toggle_key(&h, OB_SCANCODE_F11));
+    CHECK(h.overlay_open);
+    CHECK(ob_overlay_toggle_key(&h, OB_SCANCODE_GRAVE));
     CHECK(!h.overlay_open);
     CHECK(ob_stats_toggle_key(&h, OB_SCANCODE_F12));
     CHECK(h.stats == 1);
@@ -990,7 +992,7 @@ static void test_vmenu_and_sfx(void)
     int n, any = 0, hit, i;
     mdrt_menu_init(&m);
     mdrt_menu_page(&m, "Overlay");
-    snprintf(m.subtitle, sizeof m.subtitle, "[F11] overlay   {A} ok");
+    snprintf(m.subtitle, sizeof m.subtitle, "[F9] overlay   {A} ok");
     mdrt_menu_add(&m, 1, MDRT_ITEM_ACTION, "Resume");
     mdrt_menu_add(&m, 2, MDRT_ITEM_ACTION, "Quit");
     ob_vmenu_draw(&m, px, 960, 540, 960, "NHL 94", "For Sega Genesis");

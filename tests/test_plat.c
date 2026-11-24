@@ -164,7 +164,7 @@ int main(void)
     SDL_Event e;
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
-    SDL_setenv("OVERBAR_TEST_KEYS", "0:f11", 1);                 /* the scripted key hook: opens the overlay with no real input */
+    SDL_setenv("OVERBAR_TEST_KEYS", "0:`", 1);                 /* the scripted key hook: opens the overlay with no real input */
     CHECK(ob_plat_init(&profile));
     ob_host_init(&host, OB_PORT_SNES, profile);
     CHECK(ob_plat_open(&hk, &host));
@@ -183,8 +183,14 @@ int main(void)
     CHECK(!host.overlay_open);                              /* the overlay key again closes it */
     tap(SDL_SCANCODE_ESCAPE);
     CHECK(host.overlay_open);                               /* esc_opens: Esc opens it while closed */
+    tap(SDL_SCANCODE_ESCAPE);
+    CHECK(!host.overlay_open);                              /* Esc closes it again: Esc and ` both toggle on a console */
+    tap(SDL_SCANCODE_F11);
+    CHECK(!host.overlay_open);                              /* F11 no longer opens it */
     tap(SDL_SCANCODE_GRAVE);
-    CHECK(!host.overlay_open);
+    CHECK(host.overlay_open);
+    tap(SDL_SCANCODE_BACKSPACE);
+    CHECK(!host.overlay_open);                              /* Backspace is Back: from the main page it closes the overlay */
     CHECK(host.device_n >= 1 && !strcmp(host.device_kind[0], "Keyboard"));   /* a key was seen, so the Input page lists it */
     CHECK(changed_calls >= 1);
     ob_plat_present();
