@@ -5,6 +5,9 @@
  */
 #include "overbar/overbar.h"
 
+#ifdef OB_SDL_BASE
+#include <SDL.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -553,4 +556,17 @@ void ob_online_open(ob_host *h)
     h->overlay_page = OB_PAGE_ONLINE;
     h->overlay.sel = 0;
     ob_overlay_build(h);
+}
+
+/* the Overbar settings kept in a file next to the program, so the scaling, looks and the rest stay set */
+int ob_host_load_ini_beside(ob_host *h, const char *name)
+{
+    char path[512];
+    const char *base = "";
+#ifdef OB_SDL_BASE
+    char *b = SDL_GetBasePath();
+    if (b) { snprintf(path, sizeof path, "%s%s", b, name); SDL_free(b); return ob_host_load_ini(h, path); }
+#endif
+    snprintf(path, sizeof path, "%s%s", base, name);
+    return ob_host_load_ini(h, path);
 }

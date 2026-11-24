@@ -395,6 +395,7 @@ ob_profile ob_profile_from_env(void);                     /* env + SDL_VIDEODRIV
 ob_profile ob_profile_detect(const char *sdl_video_driver, int env_handheld);
 void ob_defaults_apply(ob_host *h, ob_profile profile);   /* L15 first-launch values */
 void ob_host_set_present(ob_host *h, int have_gles2, int have_desktop_gl);
+int ob_host_load_ini_beside(ob_host *h, const char *name);   /* name next to the program (the current folder without SDL); 0 missing */
 int ob_host_load_ini(ob_host *h, const char *path);       /* 0 missing: apply defaults, save */
 int ob_host_save_ini(const ob_host *h);
 
