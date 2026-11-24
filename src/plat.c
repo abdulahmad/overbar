@@ -18,6 +18,7 @@
 #include <string.h>
 #ifdef _WIN32
 #include <SDL_syswm.h>
+#include <windows.h>
 #endif
 #include "mdrt/menu.h"
 
@@ -167,6 +168,29 @@ static LRESULT CALLBACK plat_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     return r;
 }
 #endif
+
+void ob_plat_dpi_aware(void)
+{
+    SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");   /* SDL 2.24+ (by name: older headers lack the macro) */
+#ifdef _WIN32
+    /* and directly, for an older SDL: per-monitor v2 (Windows 10 1703+), else system aware */
+    typedef BOOL(WINAPI * ctx_fn)(HANDLE);
+    HMODULE u = GetModuleHandleA("user32.dll");
+    ctx_fn f = u ? (ctx_fn)(void *)GetProcAddress(u, "SetProcessDpiAwarenessContext") : NULL;
+    if (!f || !f((HANDLE)(INT_PTR)-4)) SetProcessDPIAware();
+#endif
+}
+
+float ob_plat_dpi_scale(int display)
+{
+    float d = 0;
+    if (SDL_GetDisplayDPI(display, &d, NULL, NULL) != 0 || d < 48 || d > 960) return 1;
+#ifdef __APPLE__
+    return 1;                                       /* macOS scales points itself */
+#else
+    return d / 96.0f;
+#endif
+}
 
 int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
 {
