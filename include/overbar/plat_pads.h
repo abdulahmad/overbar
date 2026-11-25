@@ -50,6 +50,20 @@ SDL_GameController *ob_pads_controller(int player);   /* NULL: none */
  * (player 1's, player 2's; a second device on a side is player 3 or 4) and says it is ready, and OK starts. A device left in the
  * middle does not play. Opens over the game from the Input page (host.sides_menu) or by a port's call; the port draws nothing. */
 void ob_pads_sides_open(void);
+/* The same for a port with its own pad code: apply gets the result when the game starts (what each player plays on); the mouse player
+ * is kept here (ob_pads_mouse_player, ob_pads_mouse_bits) either way. */
+typedef struct ob_pads_seats {
+    unsigned kbd_mask;             /* bit p: player p + 1's keys play */
+    int mouse_player;              /* the mouse's player (0 ..), -1: none */
+    int ctrl[OB_PADS_MAX];         /* each player's controller slot + 1 (0: none) */
+} ob_pads_seats;
+/* (the port's own pad code, as ob_pads_sides_open_ex but only remembered: the Input page's Select sides, which the layer opens itself, uses it.
+ * team_name and skin must stay) */
+void ob_pads_sides_register(int players, const char *const team_name[2], const ob_sides_skin *skin, void (*apply)(const ob_pads_seats *seats, void *ud), void *ud);
+void ob_pads_sides_open_ex(int players, const char *const team_name[2], const ob_sides_skin *skin, void (*apply)(const ob_pads_seats *seats, void *ud), void *ud);
+/* the mouse's buttons now: the pointer's distance from the window's middle as dir[0..3] (up, down, left, right) and the three mouse buttons
+ * (left, right, middle) as btn; 0 when the overlay is up or the window has no pointer */
+uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3]);
 int ob_pads_sides_active(void);
 /* The mouse as a pad: the player it was given on the screen (-1: none). It steers like NHL 95 PC: the pointer's distance from the
  * middle of the window is the stick, the buttons are cfg.mouse_btn. ob_pads_mouse_draw draws the small green cursor; call it

@@ -90,33 +90,51 @@ void ob_pads_init(const ob_pads_cfg *c)
 
 /* ---- the select-sides screen ---- */
 
+static void (*seats_cb)(const ob_pads_seats *, void *);
+static void *seats_ud;
+static int seats_players = 2;
+
 /* seat k of a team becomes player team + 2 * k: a controller plays it, the keyboard's keys of that player, or the mouse */
 static void sides_apply(void *ud, const ob_sides_seat *seat, int n)
 {
     int count[2] = { 0, 0 };
+    ob_pads_seats r;
     (void)ud;
-    kbd_mask = 0;
-    mouse_player = -1;
-    for (int p = 0; p < C.players; p++) player_ctrl[p] = 0;
+    memset(&r, 0, sizeof r);
+    r.mouse_player = -1;
     for (int k = 0; k < n; k++) {
         int t = seat[k].team & 1, p = t + 2 * count[t]++;
-        if (p >= C.players) continue;
-        if (seat[k].local == 0) kbd_mask |= 1u << p;
-        else if (seat[k].local == 100) mouse_player = p;
-        else player_ctrl[p] = seat[k].local;                   /* 1 + the controller's slot */
+        if (p >= seats_players || p >= OB_PADS_MAX) continue;
+        if (seat[k].local == 0) r.kbd_mask |= 1u << p;
+        else if (seat[k].local == 100) r.mouse_player = p;
+        else r.ctrl[p] = seat[k].local;                        /* 1 + the controller's slot */
     }
+    mouse_player = r.mouse_player;
+    if (seats_cb) { seats_cb(&r, seats_ud); return; }
+    kbd_mask = r.kbd_mask;
+    for (int p = 0; p < C.players; p++) player_ctrl[p] = r.ctrl[p];
 }
 
-void ob_pads_sides_open(void)
+static struct { int set, players; const char *const *names; const ob_sides_skin *skin; void (*apply)(const ob_pads_seats *, void *); void *ud; } reg;
+
+void ob_pads_sides_register(int players, const char *const team_name[2], const ob_sides_skin *skin, void (*apply)(const ob_pads_seats *, void *), void *ud)
+{
+    reg.set = 1; reg.players = players; reg.names = team_name; reg.skin = skin; reg.apply = apply; reg.ud = ud;
+}
+
+void ob_pads_sides_open_ex(int players, const char *const team_name[2], const ob_sides_skin *skin, void (*apply)(const ob_pads_seats *, void *), void *ud)
 {
     ob_sides_game g;
     memset(&g, 0, sizeof g);
+    seats_players = players < 2 ? 2 : players;
+    seats_cb = apply;
+    seats_ud = ud;
     g.teams = 2;
-    g.seats = C.players > 2 ? C.players : 2;
+    g.seats = seats_players;
     g.per_team = g.seats / 2;
-    g.team_name[0] = C.team_name[0] ? C.team_name[0] : "Away";
-    g.team_name[1] = C.team_name[1] ? C.team_name[1] : "Home";
-    if (C.skin) g.skin = *C.skin;
+    g.team_name[0] = team_name && team_name[0] ? team_name[0] : "Away";
+    g.team_name[1] = team_name && team_name[1] ? team_name[1] : "Home";
+    if (skin) g.skin = *skin;
     g.apply = sides_apply;
     ob_plat_overlay_close();
     ob_sides_init(&S, &g, 0, NULL, NULL);
@@ -124,6 +142,12 @@ void ob_pads_sides_open(void)
     ob_plat_room(&S, NULL);
     ob_sides_open(&S);
     sides_ready = 1;
+}
+
+void ob_pads_sides_open(void)
+{
+    if (reg.set) ob_pads_sides_open_ex(reg.players, reg.names, reg.skin, reg.apply, reg.ud);
+    else ob_pads_sides_open_ex(C.players, C.team_name, C.skin, NULL, NULL);
 }
 
 int ob_pads_sides_active(void) { return sides_ready && S.open; }
@@ -160,7 +184,7 @@ static uint32_t ctrl_buttons(SDL_GameController *c)
 #define MOUSE_DEAD 0.12f
 
 /* the pointer's distance from the middle of the window is the stick (past a small dead zone, so it can rest), the buttons are the port's */
-static uint32_t mouse_bits(void)
+uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3])
 {
     SDL_Window *w = ob_plat_window();
     int ww = 0, wh = 0, mx = 0, my = 0;
@@ -172,15 +196,22 @@ static uint32_t mouse_bits(void)
     st = SDL_GetMouseState(&mx, &my);
     dx = (mx - ww / 2.0f) / (ww / 2.0f);
     dy = (my - wh / 2.0f) / (wh / 2.0f);
-    if (dy < -MOUSE_DEAD) b |= C.b[0].bit;
-    if (dy > MOUSE_DEAD) b |= C.b[1].bit;
-    if (dx < -MOUSE_DEAD) b |= C.b[2].bit;
-    if (dx > MOUSE_DEAD) b |= C.b[3].bit;
-    for (int i = 0; i < 3; i++) {
-        static const uint32_t mask[3] = { SDL_BUTTON_LMASK, SDL_BUTTON_RMASK, SDL_BUTTON_MMASK };
-        if (C.mouse_btn[i] > 0 && C.mouse_btn[i] <= C.n && (st & mask[i])) b |= C.b[C.mouse_btn[i] - 1].bit;
-    }
+    if (dy < -MOUSE_DEAD) b |= dir[0];
+    if (dy > MOUSE_DEAD) b |= dir[1];
+    if (dx < -MOUSE_DEAD) b |= dir[2];
+    if (dx > MOUSE_DEAD) b |= dir[3];
+    if (st & SDL_BUTTON_LMASK) b |= btn[0];
+    if (st & SDL_BUTTON_RMASK) b |= btn[1];
+    if (st & SDL_BUTTON_MMASK) b |= btn[2];
     return b;
+}
+
+static uint32_t mouse_bits(void)
+{
+    uint32_t dir[4], btn[3] = { 0, 0, 0 };
+    for (int i = 0; i < 4; i++) dir[i] = C.b[i].bit;
+    for (int i = 0; i < 3; i++) if (C.mouse_btn[i] > 0 && C.mouse_btn[i] <= C.n) btn[i] = C.b[C.mouse_btn[i] - 1].bit;
+    return ob_pads_mouse_bits(dir, btn);
 }
 
 int ob_pads_mouse_player(void) { return mouse_player; }
