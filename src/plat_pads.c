@@ -199,7 +199,7 @@ static int mouse_aim(int *pdx, int *pdy)
     double ang;
     if (pdx) *pdx = 0;
     if (pdy) *pdy = 0;
-    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) return -2;
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS))) return -2;
     (void)ww; (void)wh; (void)mx; (void)my;
     dx = (int)aim_acc_x;                                 /* the hand's travel from the player (the mouse is captured in play) */
     dy = (int)aim_acc_y;
@@ -361,13 +361,13 @@ uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3])
     uint32_t b = 0, now, st;
     SDL_Window *w = ob_plat_window();
     if (mouse_play) {                                      /* in play the mouse is captured and steers from the player */
-        if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { mouse_relative(0); return 0; }
+        if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS))) { mouse_relative(0); return 0; }
         if (!mouse_rel) { aim_acc_x = aim_acc_y = 0; mouse_relative(1); }
         return ob_pads_mouse_bits(dir, btn);
     }
     if (menu_on) return menu_pointer(dir);
     mouse_relative(0);                                     /* (no capture outside play: the pointer stays free) */
-    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { rel_have = 0; return 0; }
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS))) { rel_have = 0; return 0; }
     {   int mx = 0, my = 0;                                /* the travel of the pointer itself steps the selection */
         SDL_GetMouseState(&mx, &my);
         if (rel_have) { macc_x += (float)(mx - rel_x); macc_y += (float)(my - rel_y); }
@@ -426,6 +426,7 @@ void ob_pads_mouse_draw(const SDL_Rect *dst)
     float sc, ax, ay;
     if (mouse_player < 0 || !mouse_play || !ren || !w || S.open || ob_plat_overlay_open()) return;
     fl = mouse_aim(&dx, &dy);
+    if (getenv("OVERBAR_TEST_AIMDBG")) { static Uint32 t; if (SDL_GetTicks() - t > 1000) { t = SDL_GetTicks(); fprintf(stderr, "aim fl=%d acc=%.0f,%.0f rel=%d flags=%x\n", fl, aim_acc_x, aim_acc_y, mouse_rel, (unsigned)SDL_GetWindowFlags(w)); } }
     if (fl == -2) return;
     f = fl < 0 ? 5 : frame[fl];
     flip = fl >= 5;
