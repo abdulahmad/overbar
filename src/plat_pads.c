@@ -243,8 +243,26 @@ static uint32_t pulse_bits, pulse_off, pulse_next;
 
 void ob_pads_mouse_mode(int play) { mouse_play = play; }
 int ob_pads_mouse_cursor(void) { return mouse_player >= 0 && mouse_play; }
-void ob_pads_mouse_motion(int dx, int dy) { macc_x += (float)dx; macc_y += (float)dy; }
-void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; }
+static int wheel_acc;                                      /* wheel clicks not yet used (up is minus) */
+static Uint32 move_ms;                                     /* when the pointer last moved or clicked */
+static int menu_on, menu_hover = -1, menu_steps;           /* the published menu; the row under the pointer; steps taken toward it */
+static ob_pad_menu menu;
+static ob_menu_rect menu_rect[OB_MENU_ROWS];
+static SDL_Rect menu_dst;                                  /* where the picture is in the window (from the last draw) */
+static int menu_lb, menu_rb;                               /* buttons last frame, for the click edges */
+static Uint32 click_off;
+
+void ob_pads_mouse_motion(int dx, int dy) { macc_x += (float)dx; macc_y += (float)dy; move_ms = SDL_GetTicks(); }
+void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; wheel_acc -= y; }
+
+void ob_pads_menu(const ob_pad_menu *m)
+{
+    if (!m || m->n <= 0 || m->n > OB_MENU_ROWS) { menu_on = 0; return; }
+    menu = *m;
+    for (int i = 0; i < m->n; i++) menu_rect[i] = m->row[i];
+    menu.row = menu_rect;
+    menu_on = 1;
+}
 
 static void mouse_relative(int on)
 {
@@ -254,12 +272,54 @@ static void mouse_relative(int on)
     macc_x = macc_y = 0;
 }
 
+/* A published menu (ob_pads_menu): the pointer is a real pointer. The row under it is the one the game's selection is walked to, with short
+ * presses of up / down (the game keeps its own rules: skipped lines and so on); a click on the selected row presses ok (on a row with left / right
+ * options: left or right of the middle moves the option); a right click presses back; the wheel is up and down. */
+static uint32_t menu_pointer(const uint32_t dir[4])
+{
+    SDL_Window *w = ob_plat_window();
+    int mx = 0, my = 0, hit = -1;
+    Uint32 now = SDL_GetTicks(), st;
+    uint32_t b = 0;
+    mouse_relative(0);
+    macc_x = macc_y = 0;
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS) || menu_dst.h <= 0) { menu_lb = menu_rb = 0; wheel_acc = 0; return 0; }
+    st = SDL_GetMouseState(&mx, &my);
+    {   float sc = menu_dst.h / 224.0f, px = (mx - (menu_dst.x + menu_dst.w / 2.0f)) / sc + 160.0f, py = (my - menu_dst.y) / sc;
+        for (int i = 0; i < menu.n; i++)
+            if (px >= menu.row[i].x && px < menu.row[i].x + menu.row[i].w && py >= menu.row[i].y && py < menu.row[i].y + menu.row[i].h) { hit = i; break; }
+        if (hit != menu_hover) { menu_hover = hit; menu_steps = 0; }
+        {   int lb = (st & SDL_BUTTON_LMASK) != 0, rb = (st & SDL_BUTTON_RMASK) != 0;
+            if ((lb && !menu_lb) || (rb && !menu_rb)) { move_ms = now; menu_steps = 0; }
+            if (now >= pulse_off) pulse_bits = 0;
+            if (!pulse_bits && now >= pulse_next) {
+                if (wheel_acc) { pulse_bits = wheel_acc < 0 ? dir[0] : dir[1]; wheel_acc += wheel_acc < 0 ? 1 : -1; }
+                else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700) {
+                    pulse_bits = hit < menu.sel ? dir[0] : dir[1]; menu_steps++;
+                } else if (lb && !menu_lb && hit >= 0 && hit == menu.sel) {
+                    pulse_bits = menu.ok;
+                    if (menu.lr) {
+                        float rel = (px - menu.row[hit].x) / menu.row[hit].w;
+                        if (rel < 0.4f) pulse_bits = dir[2]; else if (rel > 0.6f) pulse_bits = dir[3];
+                    }
+                } else if (rb && !menu_rb) pulse_bits = menu.back;
+                if (pulse_bits) { pulse_off = now + 70; pulse_next = now + 140; }
+            }
+            menu_lb = lb; menu_rb = rb;
+        }
+    }
+    (void)click_off;
+    b = pulse_bits;
+    return b;
+}
+
 /* the mouse player's buttons this moment: the pointer's 8 directions in play, direction steps for the menus anywhere else */
 uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3])
 {
     uint32_t b = 0, now, st;
     SDL_Window *w = ob_plat_window();
     if (mouse_play) { mouse_relative(0); return ob_pads_mouse_bits(dir, btn); }
+    if (menu_on) return menu_pointer(dir);
     if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { mouse_relative(0); return 0; }
     mouse_relative(1);
     now = SDL_GetTicks();
@@ -305,6 +365,7 @@ void ob_pads_mouse_anchor(int x, int y) { aim_x = x; aim_y = y; }
 
 void ob_pads_mouse_draw(const SDL_Rect *dst)
 {
+    menu_dst = *dst;
     static const int frame[8] = { 0, 1, 2, 3, 4, 3, 2, 1 };
     SDL_Renderer *ren = ob_plat_renderer();
     SDL_Window *w = ob_plat_window();
@@ -341,7 +402,7 @@ uint32_t ob_pads_read(int p)
     if (p < 0 || p >= C.players || setup || S.open) return 0;
     if (kbd_mask & (1u << p))
         for (int i = 0; i < C.n; i++) if (key[p][i] != SDL_SCANCODE_UNKNOWN && down[key[p][i]]) b |= C.b[i].bit;
-    if (p == mouse_player) b |= mouse_bits();
+    if (p == mouse_player || (mouse_player < 0 && !mouse_play && p == 0)) b |= mouse_bits();   /* (in the menus the mouse is pad 1 unless it plays) */
     if ((c = ob_pads_controller(p))) b |= ctrl_buttons(c);
     return b;
 }
