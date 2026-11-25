@@ -38,9 +38,10 @@ int ob_look_supported(ob_scale_mode mode, ob_present_backend backend)
 {
     switch (mode) {
     case OB_MODE_MISTER:
-        /* .txt filters need the GLES path. CRT scanlines and the MIT pixel-art
-         * set (Scale2x, MMPX, xBR) run on the SDL renderer. */
-        return backend == OB_PRESENT_GLES2 || backend == OB_PRESENT_GL;
+        /* the MiSTer filters run on every backend now: on the GPU (ob_gl_render) or, on the SDL renderer, on
+         * the CPU (ob_render_cpu, the one rendering path) */
+        (void)backend;
+        return 1;
     default:
         return 1;
     }
