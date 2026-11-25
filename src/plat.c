@@ -394,7 +394,8 @@ void ob_plat_sides_devices(ob_sides *sides)
     int i;
     if (!sides) return;
     ob_sides_add(sides, 0, "Keyboard");
-    if (desktop() || seen_mouse) ob_sides_add(sides, 100, "Mouse");
+    if (desktop() || seen_mouse || getenv("OVERBAR_TEST_FAKEPAD")) ob_sides_add(sides, 100, "Mouse");
+    if (getenv("OVERBAR_TEST_FAKEPAD")) ob_sides_add(sides, 50, "Xbox Controller");   /* (a test's stand-in for a pad) */
     if (!P.hk.no_pads)
         for (i = 0; i < OB_PLAT_SLOTS; i++)
             if (P.ctrl[i]) ob_sides_add(sides, 1 + i, SDL_GameControllerName(P.ctrl[i]));
@@ -654,7 +655,13 @@ static void test_keys(void)
     {   /* OVERBAR_TEST_SIDES=ms: opens the select-sides screen then */
         static int sides_done;
         const char *at = getenv("OVERBAR_TEST_SIDES");
-        if (at && !sides_done && now >= (uint32_t)atoi(at)) { sides_done = 1; ob_pads_sides_open(); }
+        if (at && !sides_done && now >= (uint32_t)atoi(at)) { sides_done = 1; ob_pads_sides_open();
+            if (getenv("OVERBAR_TEST_SEATS") && R_sides) {          /* a test's seating: the keyboard away, the pad and the mouse home */
+                ob_sides_input(R_sides, 0, MDRT_MENU_LEFT);
+                ob_sides_input(R_sides, 50, MDRT_MENU_RIGHT);
+                ob_sides_input(R_sides, 100, MDRT_MENU_RIGHT);
+            }
+        }
     }
     for (int i = 0; i < tk_n; i++) {
         SDL_Event e;
