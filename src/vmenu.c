@@ -220,13 +220,12 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
             ob_vf_tri(px, w, h, pitch, bx + 14 * s, by + bh / 2, bx + 22 * s, by + bh / 2 - 5 * s, bx + 22 * s, by + bh / 2 + 5 * s, 0xFF000000u | ACCENT);
             ob_vf_draw(px, w, h, pitch, bx + 30 * s, by + bh / 2 + 5 * s, OB_VF_REGULAR, 15 * s, 0xFFFFFF, 255, "Back", 0, 1);
         }
-        {   float cx = close[0] + close[2] / 2, cy = close[1] + close[3] / 2, r = 6 * s;
+        {   float cx = close[0] + close[2] / 2, cy = close[1] + close[3] / 2;
             ob_vf_rrect(px, w, h, pitch, close[0], close[1], close[2], close[3], close[3] / 2, 0x40FFFFFFu, 0x80FFFFFFu, 1.2f * s);
             for (int k = -6; k <= 6; k++) {                /* the X: two diagonals of small squares */
                 ob_vf_rrect(px, w, h, pitch, cx + k * s - 1 * s, cy + k * s - 1 * s, 2.4f * s, 2.4f * s, 1 * s, 0xFFFFFFFFu, 0, 0);
                 ob_vf_rrect(px, w, h, pitch, cx + k * s - 1 * s, cy - k * s - 1 * s, 2.4f * s, 2.4f * s, 1 * s, 0xFFFFFFFFu, 0, 0);
             }
-            (void)r;
         }
     }
     /* the list */
