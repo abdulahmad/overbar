@@ -42,6 +42,31 @@ int ob_vmenu_edge(const mdrt_menu *m, int x, int y, int w, int h)
     return 0;
 }
 
+/* the two chips over the list: Back (sub pages) and a close X in the window's top right corner. Their boxes: x, y, w, h. */
+static void chips(const mdrt_menu *m, int w, int h, const geom *g, float back[4], float close[4], int *has_back)
+{
+    float s = g->s;
+    (void)h;
+    close[0] = w - 56 * s; close[1] = 20 * s; close[2] = 36 * s; close[3] = 36 * s;
+    back[2] = 92 * s; back[3] = 30 * s;
+    back[0] = g->x0 + g->listw - back[2]; back[1] = 140 * s;
+    *has_back = strcmp(m->title, "Overbar") != 0;
+}
+
+/* 1 over the Back chip, 2 over the close X, else 0 */
+int ob_vmenu_chip(const mdrt_menu *m, int x, int y, int w, int h)
+{
+    geom g;
+    float back[4], close[4];
+    int has;
+    if (!m || w <= 0 || h <= 0) return 0;
+    geometry(w, h, &g);
+    chips(m, w, h, &g, back, close, &has);
+    if (x >= close[0] && x < close[0] + close[2] && y >= close[1] && y < close[1] + close[3]) return 2;
+    if (has && x >= back[0] && x < back[0] + back[2] && y >= back[1] && y < back[1] + back[3]) return 1;
+    return 0;
+}
+
 int ob_vmenu_at(const mdrt_menu *m, int x, int y, int w, int h)
 {
     geom g;
@@ -187,6 +212,23 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
             ob_vf_draw(px, w, h, pitch, x0 + 2 * s, hy + 5 * s, OB_VF_REGULAR, 13 * s, MUTE, 255, buf, 0, 1);
         }
     }
+    {   float back[4], close[4]; int has;                  /* Back always in view (a quieter pill than the rows) and a close X in the corner */
+        chips(m, w, h, &g, back, close, &has);
+        if (has) {
+            float bx = back[0], by = back[1], bw = back[2], bh = back[3];
+            ob_vf_rrect(px, w, h, pitch, bx, by, bw, bh, bh / 2, 0x40FFFFFFu, 0x80FFFFFFu, 1.2f * s);
+            ob_vf_tri(px, w, h, pitch, bx + 14 * s, by + bh / 2, bx + 22 * s, by + bh / 2 - 5 * s, bx + 22 * s, by + bh / 2 + 5 * s, 0xFF000000u | ACCENT);
+            ob_vf_draw(px, w, h, pitch, bx + 30 * s, by + bh / 2 + 5 * s, OB_VF_REGULAR, 15 * s, 0xFFFFFF, 255, "Back", 0, 1);
+        }
+        {   float cx = close[0] + close[2] / 2, cy = close[1] + close[3] / 2, r = 6 * s;
+            ob_vf_rrect(px, w, h, pitch, close[0], close[1], close[2], close[3], close[3] / 2, 0x40FFFFFFu, 0x80FFFFFFu, 1.2f * s);
+            for (int k = -6; k <= 6; k++) {                /* the X: two diagonals of small squares */
+                ob_vf_rrect(px, w, h, pitch, cx + k * s - 1 * s, cy + k * s - 1 * s, 2.4f * s, 2.4f * s, 1 * s, 0xFFFFFFFFu, 0, 0);
+                ob_vf_rrect(px, w, h, pitch, cx + k * s - 1 * s, cy - k * s - 1 * s, 2.4f * s, 2.4f * s, 1 * s, 0xFFFFFFFFu, 0, 0);
+            }
+            (void)r;
+        }
+    }
     /* the list */
     m->rows = g.rows;
     if (m->sel < m->top) m->top = m->sel;
@@ -225,8 +267,16 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
                 ob_vf_draw(px, w, h, pitch, right - rw, base - 1 * s, OB_VF_REGULAR, 18 * s, it->kind == MDRT_ITEM_TEXT ? MUTE : DIM, 255, rt, 0, 2);
             rw += arrows + 20 * s;
         }
-        fitv(buf, sizeof buf, it->label, sel ? OB_VF_REGULAR : OB_VF_LIGHT, 22 * s, g.listw - rw - 8 * s);
-        ob_vf_draw(px, w, h, pitch, x0 + 6 * s, base, sel ? OB_VF_REGULAR : OB_VF_LIGHT, 22 * s, it->kind == MDRT_ITEM_TEXT ? MUTE : sel ? 0xFFFFFF : INK, 255, buf, 0, 2);
+        {   const char *lab = it->label;
+            float lx = 0;
+            if ((unsigned char)lab[0] == 0x82) {              /* the bitmap font's check glyph: a dot in the accent colour here (the vector font has none) */
+                ob_vf_rrect(px, w, h, pitch, x0 + 6 * s, base - 11 * s, 8 * s, 8 * s, 4 * s, 0xFF000000u | ACCENT, 0, 0);
+                lab += lab[1] == ' ' ? 2 : 1;
+                lx = 22 * s;
+            }
+            fitv(buf, sizeof buf, lab, sel ? OB_VF_REGULAR : OB_VF_LIGHT, 22 * s, g.listw - rw - 8 * s - lx);
+            ob_vf_draw(px, w, h, pitch, x0 + 6 * s + lx, base, sel ? OB_VF_REGULAR : OB_VF_LIGHT, 22 * s, it->kind == MDRT_ITEM_TEXT ? MUTE : sel ? 0xFFFFFF : INK, 255, buf, 0, 2);
+        }
     }
     if (m->top + g.rows < m->count)
         ob_vf_tri(px, w, h, pitch, right - 20 * s, g.top + g.rows * g.rowh + 8 * s, right - 12 * s, g.top + g.rows * g.rowh + 8 * s, right - 16 * s, g.top + g.rows * g.rowh + 14 * s, 0xFFB4B4B8u);

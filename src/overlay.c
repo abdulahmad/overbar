@@ -164,6 +164,16 @@ int ob_overlay_pointer(ob_host *h, int x, int y, int bw, int bh, int what)
 {
     int i;
     if (!h || !h->overlay_open) return 0;
+    {   int chip = h->overlay_vec ? ob_vmenu_chip(&h->overlay, x, y, bw, bh) : 0;
+        if (chip) {
+            ob_pointer_hand_set(0, 1);
+            if (what == 1) {
+                if (chip == 2) { ob_overlay_close(h); return 0; }
+                return ob_overlay_input(h, MDRT_MENU_BACK);
+            }
+            if (what == 0) return 0;
+        }
+    }
     i = h->overlay_vec ? ob_vmenu_at(&h->overlay, x, y, bw, bh) : mdrt_menu_at(&h->overlay, x, y, bw, bh);
     ob_pointer_hand_set(0, i >= 0 && i < h->overlay.count && h->overlay.items[i].kind != MDRT_ITEM_TEXT);
     if (what == 0) {

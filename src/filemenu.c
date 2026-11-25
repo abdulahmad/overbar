@@ -98,6 +98,8 @@ static int page_of(int id)
     case OB_ID_OPTS_MENU_HI: return OB_PAGE_OPTS_HI;
     case OB_ID_OPTS_MENU_LO: return OB_PAGE_OPTS_LO;
     case OB_ID_SCALE_MOVIE: return OB_PAGE_SCALE_MOVIE;
+    case OB_ID_MODE_MENU_MOVIE: return OB_PAGE_MODE_MOVIE;
+    case OB_ID_OPTS_MENU_MOVIE: return OB_PAGE_OPTS_MOVIE;
     default: return -1;
     }
 }
@@ -120,7 +122,7 @@ static int add_mfile(int kind, int cls, const char *rel)
 static void fill_mister(void *menu, const char *rel, int kind, int cls, int at_root)
 {
     ob_item items[OB_ITEMS_MAX];
-    const char *sel = ob_mister_selected(g_host, cls ? OB_CLASS_HIRES : OB_CLASS_LORES, kind);
+    const char *sel = ob_mister_selected(g_host, (ob_class)cls, kind);
     int n = ob_mister_entries(rel, kind, at_root, sel, items, OB_ITEMS_MAX);
     int i;
     for (i = 0; i < n; i++) {
@@ -163,7 +165,8 @@ static void append_items(void *m, const ob_item *items, int n, int cls)
             int ns = ob_page_items(g_host, subpage, sub, OB_ITEMS_MAX);
             void *sm = bar_popup();
             int subcls = (subpage == OB_PAGE_SCALE_HI || subpage == OB_PAGE_MODE_HI
-                          || subpage == OB_PAGE_OPTS_HI) ? OB_CLASS_HIRES : OB_CLASS_LORES;
+                          || subpage == OB_PAGE_OPTS_HI) ? OB_CLASS_HIRES
+                       : (subpage == OB_PAGE_SCALE_MOVIE || subpage == OB_PAGE_MODE_MOVIE || subpage == OB_PAGE_OPTS_MOVIE) ? OB_CLASS_MOVIE : OB_CLASS_LORES;
             append_items(sm, sub, ns, subcls);
             bar_sub(m, it->label ? it->label : "", sm);
             continue;
@@ -250,12 +253,12 @@ static void apply_marks(void)
         int cur = -1, found = 0;
         int want = -1;
         if (cmds[c].id == OB_ID_SCALE_MODE && g_host) {
-            const ob_look *look = cmds[c].cls ? &g_host->hires : &g_host->lores;
+            const ob_look *look = ob_host_look_c(g_host, (ob_class)cmds[c].cls);
             bar_check_cmd(g_bar, CMD0 + c, cmds[c].value == (int)ob_mode_family(look->mode));
             continue;
         }
         if (look_id(cmds[c].id)) {
-            want = cmds[c].cls ? OB_PAGE_SCALE_HI : OB_PAGE_SCALE_LO;
+            want = cmds[c].cls == OB_CLASS_MOVIE ? OB_PAGE_SCALE_MOVIE : cmds[c].cls ? OB_PAGE_SCALE_HI : OB_PAGE_SCALE_LO;
         }
         for (p = 0; p < (int)(sizeof pages / sizeof *pages); p++) {
             if (want >= 0 && pages[p] != want) continue;
@@ -301,8 +304,12 @@ static int build_bar(void)
             snprintf(game_label, sizeof game_label, "%s...", ob_game_title(g_host));
             bar_item(g_bar, game_label, add_cmd(OB_ID_GAME, 0, OB_CLASS_LORES), 0, 0);
         } else if (page == OB_PAGE_SCALE_MOVIE) {
-            /* the movie's scaling: the bar opens the overlay page (its rows edit the movie look, not the bar's two) */
-            bar_item(g_bar, "Scaling (Movie)...", add_cmd(OB_ID_SCALE_MOVIE, 0, OB_CLASS_LORES), 0, 0);
+            /* the movie's scaling: its own submenu, rows of the movie's look */
+            ob_item sub[OB_ITEMS_MAX];
+            int ns = ob_page_items(g_host, page, sub, OB_ITEMS_MAX);
+            void *sm = bar_popup();
+            append_items(sm, sub, ns, OB_CLASS_MOVIE);
+            bar_sub(g_bar, it->label ? it->label : "Scaling (Movie)", sm);
         } else if (page == OB_PAGE_SEASON) {
             /* Season lists who has which team: the bar opens the overlay page */
             bar_item(g_bar, "Season...", add_cmd(OB_ID_SEASON, 0, OB_CLASS_LORES), 0, 0);
@@ -411,7 +418,7 @@ void ob_filemenu_command(int cmd)
     int mf = cmd - MF0;
     int idx = cmd - CMD0;
     if (mf >= 0 && mf < nmfiles && g_host) {
-        ob_mister_pick(g_host, mfiles[mf].cls ? OB_CLASS_HIRES : OB_CLASS_LORES, mfiles[mf].kind, mfiles[mf].rel);
+        ob_mister_pick(g_host, (ob_class)mfiles[mf].cls, mfiles[mf].kind, mfiles[mf].rel);
         ob_picture_apply(g_host);
         if (g_host->overlay_open) {
             ob_overlay_build(g_host);
@@ -421,7 +428,7 @@ void ob_filemenu_command(int cmd)
         return;
     }
     if (idx >= 0 && idx < ncmds && g_host) {
-        if (look_id(cmds[idx].id)) g_host->video_class = cmds[idx].cls ? OB_CLASS_HIRES : OB_CLASS_LORES;
+        if (look_id(cmds[idx].id)) g_host->video_class = (ob_class)cmds[idx].cls;
         apply_cmd(cmds[idx].id, cmds[idx].value);
         if (g_host->overlay_open) {
             ob_overlay_build(g_host);
@@ -490,7 +497,7 @@ void ob_filemenu_init(void *native_window)
 void ob_filemenu_after_change(int id)
 {
     if (!g_have_window) return;
-    if (id == OB_ID_SCALE_MODE || id == OB_ID_CAP_RECORD)
+    if (id == OB_ID_SCALE_MODE || id == OB_ID_CAP_RECORD || id == OB_ID_MOVIE_OWN)
         g_dirty = 1;
     if (g_in_bar) {
         if (g_bar) apply_marks();
