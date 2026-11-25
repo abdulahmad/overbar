@@ -400,6 +400,8 @@ static uint32_t mouse_bits(void)
 }
 
 int ob_pads_mouse_player(void) { return mouse_player; }
+/* does player p have a device (the keyboard's keys, a controller or the mouse) after the select-sides screen? */
+int ob_pads_seated(int p) { return p >= 0 && p < C.players && p < OB_PADS_MAX && ((kbd_mask >> p & 1) || player_ctrl[p] || p == mouse_player); }
 
 /* The green arrow of the NHL 95 PC game (AimArrowFrames): it points where the player is asked to skate, drawn a quarter of the pointer's
  * distance from the player. Frames 0x2C4 up, 0x2C5 up-right, 0x2C6 right, 0x2C9 down-right, 0x2CA down (mirrored for the left side), 0x164 at rest.
