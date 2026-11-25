@@ -1077,7 +1077,8 @@ static int screen_present(void)
     int pw, ph, lines;
     const uint32_t *pic = ob_screen_picture(&pw, &ph, &lines);
     if (pic) {                                             /* a console-sized picture (a movie): drawn like the game's, through the look */
-        const ob_look *look = P.hk.cls == OB_CLASS_HIRES ? &P.host->hires : &P.host->lores;
+        const ob_look *look = ob_screen_video_look();         /* (a movie look the port chose, else the player's) */
+        if (!look) look = P.hk.cls == OB_CLASS_HIRES ? &P.host->hires : &P.host->lores;
         static uint32_t *half, *ntsc;
         static long half_cap, ntsc_cap;
         int f = lines > 0 && ph % lines == 0 ? ph / lines : 1, sw = pw, sh = ph;
