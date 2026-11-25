@@ -1091,6 +1091,7 @@ void ob_plat_present(void)
     pitch = sw * 4;
     ob_plat_window_size(&ww, &wh);
     ob_view_from_host(P.host, P.hk.cls, sw, sh, ww, wh, &in);
+    if (P.hk.wide) P.hk.wide(&in.wide_num, &in.wide_den);
     ob_view(&in, &out);
     dst = (SDL_Rect){ out.blit_x, out.blit_y, out.blit_w, out.blit_h };
     SDL_SetRenderDrawColor(P.ren, 0, 0, 0, 255);

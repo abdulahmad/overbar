@@ -31,6 +31,7 @@ void ob_view(const ob_view_in *in, ob_view_out *out)
     int unit = src_h * period;              /* a whole number of dest rows per source line */
     long an = 4L * dar_h, ad = 3L * src_h;  /* the picture's width : height */
     int w, h;
+    if (in->wide_num > 0 && in->wide_den > 0) { an *= in->wide_num; ad *= in->wide_den; }   /* (a widescreen picture: wider, never stretched) */
 
     /* Fit: the largest picture of that shape in the window. */
     w = ww;
@@ -96,4 +97,5 @@ void ob_view_from_host(const ob_host *h, ob_class cls, int src_w, int src_h,
     in->height = look->height;
     in->line_double = (cls == OB_CLASS_LORES && ob_mode_has_khz(look->mode) && look->khz31);
     in->auto_crop_src_rows = 0;
+    in->wide_num = in->wide_den = 0;
 }
