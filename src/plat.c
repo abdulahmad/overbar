@@ -45,6 +45,7 @@ static struct {
     int mx, my, mvalid;               /* the mouse over the overlay, in its buffer's pixels (for the edge auto-scroll) */
     int fps_frames, fps_shown, fps_all, fps_new;
     uint32_t fps_since;
+    int vsync0;                    /* the renderer was made with vsync (handhelds) */
 } P = { .text_on = -1, .cursor_hidden = -1 };
 static ob_sides *R_sides;                    /* the select-sides screen and chat (ob_plat_room) */
 static ob_chat *R_chat;
@@ -204,7 +205,7 @@ int ob_plat_open(const ob_plat_hooks *hooks, ob_host *h)
     h->esc_toggles = hooks->esc_opens;
     if (h->profile == OB_PROFILE_HANDHELD) {
         wflags = SDL_WINDOW_FULLSCREEN_DESKTOP;
-        if (h->vsync) rflags |= SDL_RENDERER_PRESENTVSYNC;
+        if (h->vsync) rflags |= SDL_RENDERER_PRESENTVSYNC, P.vsync0 = 1;
     }
     if (hooks->gl) wflags |= SDL_WINDOW_OPENGL;
     P.win = SDL_CreateWindow(hooks->title ? hooks->title : "Overbar", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -761,7 +762,9 @@ void ob_plat_pump(void)
         captured = P.hk.captures && P.hk.captures();
         if (P.hk.unused && !event_used(&e, captured)) pass = 1;
         else pass = 0;
-        if (e.type == SDL_QUIT) do_quit();
+        /* (closing the window quits even while another, hidden one is open: the box's GPU context has one, and SDL only sends
+           SDL_QUIT when the last window closes) */
+        if (e.type == SDL_QUIT || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE)) do_quit();
         else if (e.type == SDL_TEXTINPUT) {
             if (P.host->overlay_open && ob_overlay_editing(P.host)) ob_overlay_text(P.host, e.text.text);
         } else if (e.type == SDL_KEYDOWN && P.host->overlay_open && ob_overlay_editing(P.host)) {
@@ -989,6 +992,15 @@ static void osk_draw_screen(const SDL_Rect *dst)
 }
 
 
+int ob_window_hz(SDL_Window *win)
+{
+    SDL_DisplayMode m;
+    int d = win ? SDL_GetWindowDisplayIndex(win) : 0;
+    if (d < 0) d = 0;
+    if (SDL_GetCurrentDisplayMode(d, &m) == 0 && m.refresh_rate >= 24 && m.refresh_rate <= 1000) return m.refresh_rate;
+    return 60;
+}
+
 /* a full-window screen instead of the picture, at the window's own pixels; the overlay over it when open */
 static int screen_present(void)
 {
@@ -1034,6 +1046,13 @@ void ob_plat_present(void)
     int pitch;
     if (P.hk.window_only) { if (P.hk.present) P.hk.present(); return; }   /* the port presents */
     if (!P.ren) return;
+    {
+        /* the box (a full-window screen) waits for the display (vsync) whatever the game's setting, so the main loop draws it once
+           per refresh, evenly; the setting comes back when it closes */
+        static int box_vsync;
+        int up = ob_screen_up();
+        if (up != box_vsync) { box_vsync = up; SDL_RenderSetVSync(P.ren, up || P.vsync0); }
+    }
     if (ob_screen_up() && screen_present()) return;
     picture = P.hk.frame ? P.hk.frame(&sw, &sh) : P.hk.picture();
     if (!picture || sw < 1 || sh < 1) return;

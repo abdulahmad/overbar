@@ -108,7 +108,7 @@ void r3_m4_inv(float *o, const float *m)
 unsigned r3_tex_serial;
 void r3_tex_set(r3_tex *t, uint32_t *argb, int w, int h)
 {
-    r3_tex_serial++;
+    t->serial = ++r3_tex_serial;
     for (int i = 0; i < t->nlv; i++) free(t->lv[i]);
     t->nlv = 0;
     if (!argb || w < 1 || h < 1) { t->loaded = 0; return; }
