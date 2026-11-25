@@ -67,6 +67,23 @@ for x in range(2,W-2):
     if m[11][x] in '12': m[11][x]='0'
 for y in range(4,9): m[y][cx-1]='0'
 for y in range(5,9): m[y][cx-1]='4'; m[y][cx]='3'
+# shading like the controller's: a grey body, a lighter rim up and to the left (light from the top left), a darker rim down and to the right
+def _near(g,x,y,dx,dy,n):
+    for k in range(1,n+1):
+        xx,yy=x+dx*k,y+dy*k
+        if not(0<=xx<W and 0<=yy<H) or g[yy][xx]=='0': return True
+    return False
+base=[r[:] for r in m]
+for y in range(H):
+    for x in range(W):
+        if base[y][x] in '12':
+            if _near(base,x,y,-1,0,1) or _near(base,x,y,0,-1,1): m[y][x]='3'
+            elif _near(base,x,y,1,0,1) or _near(base,x,y,0,1,1): m[y][x]='1'
+            else: m[y][x]='2'
+for y in range(H):
+    for x in range(W):
+        if base[y][x] in '12' and m[y][x]=='3' and _near(base,x,y,-1,-1,1) : m[y][x]='4'
+for y in range(5,9): m[y][cx-1]='4'; m[y][cx]='3'   # the wheel
 mouse=[''.join(r) for r in m]
 def cdef(name,rows):
     s='static const char *const %s[] = {\n'%name

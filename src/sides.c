@@ -462,30 +462,15 @@ static void cicon(cv *c, int kind, int x, int y)
         }
 }
 
-/* the star (37 x 21 game pixels, from the game's own screen): an outline in rgb with its dark shadow, filled when the device is ready */
-static void cstar(cv *c, int x, int y, uint32_t rgb, int on)
+/* the star (37 x 21 game pixels, from the game's own screen): an outline in rgb with its dark shadow; always empty */
+static void cstar(cv *c, int x, int y, uint32_t rgb)
 {
-    char in[21][37];                                             /* 0: the star's own pixel, 1: not reached from outside (inside), 2: outside */
-    int j, i, w = ob_star_w, h = ob_star_h, again = 1;
-    for (j = 0; j < h; j++)
-        for (i = 0; i < w; i++) in[j][i] = ob_star_rows[j][i] != '.' ? 0 : 1;
-    while (on && again) {
-        again = 0;
-        for (j = 0; j < h; j++)
-            for (i = 0; i < w; i++) {
-                if (in[j][i] != 1) continue;
-                if (j == 0 || i == 0 || j == h - 1 || i == w - 1 || in[j - 1][i] == 2 || in[j + 1][i] == 2 || in[j][i - 1] == 2 || in[j][i + 1] == 2) {
-                    in[j][i] = 2;
-                    again = 1;
-                }
-            }
-    }
-    for (j = 0; j < h; j++)
-        for (i = 0; i < w; i++) {
+    int j, i;
+    for (j = 0; j < ob_star_h; j++)
+        for (i = 0; i < ob_star_w; i++) {
             char l = ob_star_rows[j][i];
             if (l == 'c') cfill(c, x + i, y + j, 1, 1, rgb);
             else if (l == 's') cfill(c, x + i, y + j, 1, 1, 0x240024);
-            else if (on && in[j][i] == 1) cfill(c, x + i, y + j, 1, 1, rgb);
         }
 }
 
@@ -566,7 +551,7 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
         py0 = 120 + (at[col]++ * 2 - (n - 1)) * sp / 2;
         px0 = col == 0 ? 45 : col == 2 ? 237 : 158;
         sx = col == 0 ? px0 + 36 : px0 - 36;
-        cstar(&c, sx, py0 + 2, starrgb[i & 3], d->ready);
+        cstar(&c, sx, py0 + 2, starrgb[i & 3]);
         cicon(&c, kind, px0 + (40 - ob_icons[kind].w) / 2, py0 + (27 - ob_icons[kind].h) / 2);
     }
     (void)cols; (void)cx; (void)rowh; (void)top; (void)lbl; (void)line;
