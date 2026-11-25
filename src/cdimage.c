@@ -19,7 +19,8 @@
 #define FRAME 2352                      /* a CD frame: audio, or a raw sector */
 #define SECTOR 2048
 #define PATH 600
-#define FILES_MAX 32                    /* the image's files (a track a file: 99 at most, kept open as asked) */
+#define FILES_MAX 100                   /* the image's files (a track a file: 99 tracks and a sheet's data file) */
+#define OPEN_MAX 4                      /* of them open at once (the ones last read) */
 #define ISO_MAX 2048                    /* files on the data track */
 #define WALK_MAX 4096
 
@@ -32,7 +33,7 @@ static void cpy(char *out, size_t size, const char *src)
     out[n] = 0;
 }
 
-struct src { char path[PATH]; FILE *f; long size; };
+struct src { char path[PATH]; FILE *f; long size; unsigned long used; };
 struct track { int file; long start, end; };          /* (byte offsets in its file: end -1 its end) */
 struct isofile { char name[96]; uint32_t lba, size; };
 
@@ -40,6 +41,7 @@ struct ob_cd {
     char opened[PATH];
     struct src files[FILES_MAX];
     int nfiles;
+    unsigned long reads;                /* (which open file was read last) */
     int data;                           /* the data track's file */
     long data_at;                       /* where it starts in that file */
     int ssize, header, lead;            /* its sectors: their size, the header before the 2048 bytes, a pregap */
@@ -129,7 +131,14 @@ static long read_at(ob_cd *cd, int file, long at, void *out, long n)
     struct src *s;
     if (file < 0 || file >= cd->nfiles || at < 0) return 0;
     s = &cd->files[file];
-    if (!s->f && !(s->f = fopen(s->path, "rb"))) return 0;
+    if (!s->f) {
+        int open = 0, old = -1;
+        for (int i = 0; i < cd->nfiles; i++)
+            if (cd->files[i].f) { open++; if (old < 0 || cd->files[i].used < cd->files[old].used) old = i; }
+        if (open >= OPEN_MAX && old >= 0) { fclose(cd->files[old].f); cd->files[old].f = NULL; }
+        if (!(s->f = fopen(s->path, "rb"))) return 0;
+    }
+    s->used = ++cd->reads;
     if (at >= s->size) return 0;
     if (n > s->size - at) n = s->size - at;
     if (fseek(s->f, at, SEEK_SET) != 0) return 0;
