@@ -12,7 +12,7 @@ the box with everything in it (manual, disks or disc, case...), at any time, ins
   the page reader, synthesized sounds, `box.ini`, the menu entries) and `include/overbar/r3d.h`, `src/r3d.c` (a small
   software 3D renderer: Lambert / Phong / unlit materials as three.js r150 draws them, mipmaps chosen per pixel with up to
   4 taps along a slanted surface (anisotropic), a pick buffer). It draws at the window's own size (up to 4K) in bands of
-  rows on every core, into the full-window screen (`overbar/screen.h`), so it is the same on every port and needs no GPU.
+  rows on every core, into the full-window screen (`include/overbar/screen.h`), so it is the same on every port and needs no GPU.
 - A port: its scene (a `bx_scene`: states, hot spots, captions; NHL 94 PC `port/box_pc94.c` and `port/box_install.c`,
   the Genesis C port `native/box_gen94.c`), its models (`box/<dir>/` beside the program), and a call to `ob_box_init`
   once its host is set up; it holds its game while `ob_screen_up()`.
