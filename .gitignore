@@ -15,4 +15,5 @@ tools/shots.exe
 /tests/test_serial
 /tests/test_cdimage
 /tests/test_postfx
+/tests/test_snap
 /test_cdimage_out/
