@@ -65,11 +65,21 @@ void ob_pads_sides_open_ex(int players, const char *const team_name[2], const ob
  * (left, right, middle) as btn; 0 when the overlay is up or the window has no pointer */
 uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3]);
 int ob_pads_sides_active(void);
+
+/* The mouse as a pad. In play (the default) the pointer steers and the green cursor is drawn; outside play (menus, setup, pause) the mouse steps a
+ * selection instead. The port says which, every frame, with ob_pads_mouse_mode. ob_pads_mouse_motion / _wheel are fed by the platform layer. */
+void ob_pads_mouse_mode(int play);
+int ob_pads_mouse_cursor(void);                 /* 1: the green cursor is the pointer now */
+void ob_pads_mouse_motion(int dx, int dy);
+void ob_pads_mouse_wheel(int y);
 /* The mouse as a pad: the player it was given on the screen (-1: none). It steers like NHL 95 PC: the pointer's distance from the
  * middle of the window is the stick, the buttons are cfg.mouse_btn. ob_pads_mouse_draw draws the small green cursor; call it
  * where the port draws over the picture (ob_pads_setup_draw's place). */
 int ob_pads_mouse_player(void);
+uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3]);   /* for ports that read pads themselves: in play like _bits, else menu steps */
 void ob_pads_mouse_draw(const SDL_Rect *dst);
+/* where the mouse player is in the picture (pixels, 224 tall); without it the arrow is drawn from the middle of the picture */
+void ob_pads_mouse_anchor(int x, int y);
 
 /* the controller setup screen; wire these into ob_plat_hooks */
 void ob_pads_setup_open(int slot);                    /* -1: the player picks the controller by pressing a button on it */

@@ -8,6 +8,7 @@
 
 #ifdef OVERBAR_SDL
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -188,25 +189,89 @@ static uint32_t ctrl_buttons(SDL_GameController *c)
 
 /* ---- the mouse as a pad ---- */
 
-#define MOUSE_DEAD 0.12f
-
-/* the pointer's distance from the middle of the window is the stick (past a small dead zone, so it can rest), the buttons are the port's */
-uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3])
+/* Like the PC game: the pointer is read in 320x200 units from the middle of the window; inside 50 of them nothing is pressed, outside the
+ * direction is one of eight (up, up-right ... clockwise). fl is that direction (0 up, clockwise), -1 inside the dead zone. */
+static int mouse_aim(int *pdx, int *pdy)
 {
     SDL_Window *w = ob_plat_window();
-    int ww = 0, wh = 0, mx = 0, my = 0;
-    uint32_t b = 0, st;
-    float dx, dy;
-    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return 0;
+    int ww = 0, wh = 0, mx = 0, my = 0, dx, dy;
+    double ang;
+    if (pdx) *pdx = 0;
+    if (pdy) *pdy = 0;
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return -2;
     SDL_GetWindowSize(w, &ww, &wh);
-    if (ww < 2 || wh < 2) return 0;
-    st = SDL_GetMouseState(&mx, &my);
-    dx = (mx - ww / 2.0f) / (ww / 2.0f);
-    dy = (my - wh / 2.0f) / (wh / 2.0f);
-    if (dy < -MOUSE_DEAD) b |= dir[0];
-    if (dy > MOUSE_DEAD) b |= dir[1];
-    if (dx < -MOUSE_DEAD) b |= dir[2];
-    if (dx > MOUSE_DEAD) b |= dir[3];
+    if (ww < 2 || wh < 2) return -2;
+    SDL_GetMouseState(&mx, &my);
+    dx = (int)((mx - ww / 2.0) * 320.0 / ww);
+    dy = (int)((my - wh / 2.0) * 200.0 / wh);
+    if (pdx) *pdx = dx;
+    if (pdy) *pdy = dy;
+    if (dx * dx + dy * dy < 2500) return -1;
+    ang = atan2((double)dx, (double)-dy) * 180.0 / 3.14159265358979;
+    if (ang < 0) ang += 360.0;
+    return (int)((ang + 22.5) / 45.0) & 7;
+}
+
+uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3])
+{
+    static const unsigned char sect[8] = { 1, 3, 2, 6, 4, 12, 8, 9 }; /* bits: 1 up, 2 right, 4 down, 8 left */
+    int fl = mouse_aim(NULL, NULL);
+    uint32_t b = 0, st;
+    if (fl == -2) return 0;
+    if (fl >= 0) {
+        unsigned m = sect[fl];
+        if (m & 1) b |= dir[0];
+        if (m & 4) b |= dir[1];
+        if (m & 8) b |= dir[2];
+        if (m & 2) b |= dir[3];
+    }
+    st = SDL_GetMouseState(NULL, NULL);
+    if (st & SDL_BUTTON_LMASK) b |= btn[0];
+    if (st & SDL_BUTTON_RMASK) b |= btn[1];
+    if (st & SDL_BUTTON_MMASK) b |= btn[2];
+    return b;
+}
+
+/* In play the pointer steers (ob_pads_mouse_bits). Everywhere else (the game's menus, its setup screens, its pause menu) the mouse moves a
+ * selection step by step: each stretch of travel (MENU_STEP pixels) up, down, left or right is one short press of that direction, the wheel is up
+ * and down, the three buttons are the port's. The port says which it is with ob_pads_mouse_mode each frame. */
+#define MENU_STEP 18
+static int mouse_play = 1;
+static int mouse_rel;                                      /* relative mouse mode is on (the pointer is only a hand then) */
+static float macc_x, macc_y;
+static uint32_t pulse_bits, pulse_off, pulse_next;
+
+void ob_pads_mouse_mode(int play) { mouse_play = play; }
+int ob_pads_mouse_cursor(void) { return mouse_player >= 0 && mouse_play; }
+void ob_pads_mouse_motion(int dx, int dy) { macc_x += (float)dx; macc_y += (float)dy; }
+void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; }
+
+static void mouse_relative(int on)
+{
+    if (on == mouse_rel) return;
+    mouse_rel = on;
+    SDL_SetRelativeMouseMode(on ? SDL_TRUE : SDL_FALSE);
+    macc_x = macc_y = 0;
+}
+
+/* the mouse player's buttons this moment: the pointer's 8 directions in play, direction steps for the menus anywhere else */
+uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3])
+{
+    uint32_t b = 0, now, st;
+    SDL_Window *w = ob_plat_window();
+    if (mouse_play) { mouse_relative(0); return ob_pads_mouse_bits(dir, btn); }
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { mouse_relative(0); return 0; }
+    mouse_relative(1);
+    now = SDL_GetTicks();
+    if (now >= pulse_off) pulse_bits = 0;
+    if (!pulse_bits && now >= pulse_next) {
+        float ax = macc_x < 0 ? -macc_x : macc_x, ay = macc_y < 0 ? -macc_y : macc_y;
+        if (ay >= MENU_STEP && ay >= ax) pulse_bits = macc_y < 0 ? dir[0] : dir[1];
+        else if (ax >= MENU_STEP) pulse_bits = macc_x < 0 ? dir[2] : dir[3];
+        if (pulse_bits) { macc_x = macc_y = 0; pulse_off = now + 70; pulse_next = now + 140; }
+    }
+    b = pulse_bits;
+    st = SDL_GetMouseState(NULL, NULL);
     if (st & SDL_BUTTON_LMASK) b |= btn[0];
     if (st & SDL_BUTTON_RMASK) b |= btn[1];
     if (st & SDL_BUTTON_MMASK) b |= btn[2];
@@ -218,28 +283,54 @@ static uint32_t mouse_bits(void)
     uint32_t dir[4], btn[3] = { 0, 0, 0 };
     for (int i = 0; i < 4; i++) dir[i] = C.b[i].bit;
     for (int i = 0; i < 3; i++) if (C.mouse_btn[i] > 0 && C.mouse_btn[i] <= C.n) btn[i] = C.b[C.mouse_btn[i] - 1].bit;
-    return ob_pads_mouse_bits(dir, btn);
+    return ob_pads_mouse_read(dir, btn);
 }
 
 int ob_pads_mouse_player(void) { return mouse_player; }
 
-/* the small green cursor: where the player is being asked to skate to */
+/* The green arrow of the NHL 95 PC game (AimArrowFrames): it points where the player is asked to skate, drawn a quarter of the pointer's
+ * distance from the player. Frames 0x2C4 up, 0x2C5 up-right, 0x2C6 right, 0x2C9 down-right, 0x2CA down (mirrored for the left side), 0x164 at rest.
+ * O is the dark outline (0,64,0), G the fill (0,192,0); {origin x, origin y} is the point that sits on the spot. */
+static const struct { int w, h, ox, oy; const char *row[9]; } AIM[6] = {
+    { 12, 9, 4, 4, { "....O.......", "...OGO......", "..OGGGO.....", ".OGGGGGO....", "OOOOGOOOO...", "...OGO......", "...OGO......", "...OGO......", "...OOO......" } },
+    {  8, 8, 4, 3, { ".OOOOOOO", "..OGGGGO", "...OGGGO", "..OOGGGO", ".OOGOOGO", "OOGOO.OO", ".OOO...O", "..O....." } },
+    { 12, 9, 4, 4, { "....O.......", "....OO......", "....OGO.....", "OOOOOGGO....", "OGGGGGGGO...", "OOOOOGGO....", "....OGO.....", "....OO......", "....O......." } },
+    {  8, 8, 4, 4, { "..O.....", ".OOO...O", "OOGOO.OO", ".OOGOOGO", "..OOGGGO", "...OGGGO", "..OGGGGO", ".OOOOOOO" } },
+    { 12, 9, 4, 4, { "...OOO......", "...OGO......", "...OGO......", "...OGO......", "OOOOGOOOO...", ".OGGGGGO....", "..OGGGO.....", "...OGO......", "....O......." } },
+    { 12, 9, 5, 4, { "....OOO.....", "....OGO.....", "....OGO.....", ".OOOOGOOOO..", ".OGGGGGGGO..", ".OOOOGOOOO..", "....OGO.....", "....OGO.....", "....OOO....." } },
+};
+static int aim_x = -1, aim_y = -1;       /* where the player is, in picture pixels (-1: the middle of the picture) */
+
+void ob_pads_mouse_anchor(int x, int y) { aim_x = x; aim_y = y; }
+
 void ob_pads_mouse_draw(const SDL_Rect *dst)
 {
+    static const int frame[8] = { 0, 1, 2, 3, 4, 3, 2, 1 };
     SDL_Renderer *ren = ob_plat_renderer();
     SDL_Window *w = ob_plat_window();
-    int mx = 0, my = 0, r;
-    if (mouse_player < 0 || !ren || !w || S.open || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return;
-    SDL_GetMouseState(&mx, &my);
-    if (mx < dst->x || my < dst->y || mx >= dst->x + dst->w || my >= dst->y + dst->h) return;
-    r = dst->h / 56 + 2;
+    int dx, dy, fl, f, flip, c, r;
+    float sc, ax, ay;
+    if (mouse_player < 0 || !mouse_play || !ren || !w || S.open || ob_plat_overlay_open()) return;
+    fl = mouse_aim(&dx, &dy);
+    if (fl == -2) return;
+    f = fl < 0 ? 5 : frame[fl];
+    flip = fl >= 5;
+    sc = dst->h / 224.0f;                                   /* the picture is 224 lines tall; sc is the size of one picture pixel */
+    ax = dst->x + (aim_x < 0 ? dst->w / 2.0f : aim_x * sc) + (fl < 0 ? 0 : dx / 4.0f * sc);
+    ay = dst->y + (aim_y < 0 ? dst->h / 2.0f : aim_y * sc) + (fl < 0 ? 0 : dy / 4.0f * sc);
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-    SDL_Rect sh[2] = { { mx - r - 1, my - 2, 2 * r + 3, 5 }, { mx - 2, my - r - 1, 5, 2 * r + 3 } };
-    SDL_RenderFillRects(ren, sh, 2);
-    SDL_SetRenderDrawColor(ren, 64, 255, 64, 255);
-    SDL_Rect g[2] = { { mx - r, my - 1, 2 * r + 1, 3 }, { mx - 1, my - r, 3, 2 * r + 1 } };
-    SDL_RenderFillRects(ren, g, 2);
+    /* outline first, fill on top: two passes over the same cells */
+    {   SDL_Rect o[160], g[160]; int no = 0, ng = 0;
+        for (r = 0; r < AIM[f].h; r++)
+            for (c = 0; c < AIM[f].w; c++) {
+                char ch = AIM[f].row[r][c];
+                int px = flip ? -(c - AIM[f].ox) - 1 : c - AIM[f].ox;
+                SDL_Rect q = { (int)(ax + px * sc + 0.5f), (int)(ay + (r - AIM[f].oy) * sc + 0.5f), (int)(sc + 1.0f), (int)(sc + 1.0f) };
+                if (ch == 'O') o[no++] = q; else if (ch == 'G') g[ng++] = q;
+            }
+        SDL_SetRenderDrawColor(ren, 0, 64, 0, 255); SDL_RenderFillRects(ren, o, no);
+        SDL_SetRenderDrawColor(ren, 0, 192, 0, 255); SDL_RenderFillRects(ren, g, ng);
+    }
 }
 
 uint32_t ob_pads_read(int p)

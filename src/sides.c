@@ -243,7 +243,7 @@ static int apply(ob_sides *s, int owner, int local, int in)
         return 1;
     case MDRT_MENU_OK:
         if (d->team != OB_SIDES_MIDDLE && !d->ready) { d->ready = 1; changed(s); return 1; }
-        if (owner == 0 && ob_sides_all_ready(s)) commit(s);    /* the deciding machine starts the game */
+        if (owner == 0 && d->team != OB_SIDES_MIDDLE && seated(s) > 0 && ob_sides_all_ready(s)) commit(s);   /* the deciding machine starts the game (a device waiting in the middle cannot) */
         return 1;
     case MDRT_MENU_BACK:
         if (d->ready) d->ready = 0;
