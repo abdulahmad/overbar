@@ -553,10 +553,13 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     }
     (void)cols; (void)cx; (void)rowh; (void)top; (void)lbl; (void)line;
     if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
-    if (!seated(s)) foot = "Left / Right: pick a side";
-    else if (!ob_sides_all_ready(s)) foot = "Left / Right: pick a side   OK: ready";
-    else if (s->host) foot = "Press Menu button to begin";
-    else foot = "Waiting for the host to begin";
+    {   int kb = ob_sides_find(s, s->me, 0);
+        int key = kb >= 0 && s->d[kb].team != OB_SIDES_MIDDLE;      /* the keyboard has a seat: say its key */
+        if (!seated(s)) foot = "Left / Right: pick a side";
+        else if (!ob_sides_all_ready(s)) foot = key ? "Left / Right: pick a side   Enter: ready" : "Left / Right: pick a side   OK: ready";
+        else if (s->host) foot = key ? "Press Enter to begin" : "Press Menu button to begin";
+        else foot = "Waiting for the host to begin";
+    }
     ctext_c(&c, 0, LW, 208, foot, 0xFFFF00, 1);
 }
 
