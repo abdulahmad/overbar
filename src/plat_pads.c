@@ -258,10 +258,12 @@ static ob_menu_rect menu_rect[OB_MENU_ROWS];
 static SDL_Rect menu_dst;                                  /* where the picture is in the window (from the last draw) */
 static int menu_lb, menu_rb;                               /* buttons last frame, for the click edges */
 static Uint32 click_off;
+static int mouse_active;                                   /* the mouse was the last thing used: the keyboard and the pads switch it off until it moves again */
 
 void ob_pads_mouse_motion(int dx, int dy)
 {
     move_ms = SDL_GetTicks();
+    mouse_active = 1;
     if (mouse_play && mouse_rel) {
         SDL_Window *w = ob_plat_window();
         int ww = 0, wh = 0;
@@ -274,8 +276,8 @@ void ob_pads_mouse_motion(int dx, int dy)
     }
 }
 static unsigned press_latch;                                /* buttons pressed since the menu looked (bit 1 left, 2 right): a click too quick to show in the button state */
-void ob_pads_mouse_press(int button) { if (button == SDL_BUTTON_LEFT) press_latch |= 1; else if (button == SDL_BUTTON_RIGHT) press_latch |= 2; }
-void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; wheel_acc -= y; }
+void ob_pads_mouse_press(int button) { mouse_active = 1; if (button == SDL_BUTTON_LEFT) press_latch |= 1; else if (button == SDL_BUTTON_RIGHT) press_latch |= 2; }
+void ob_pads_mouse_wheel(int y) { mouse_active = 1; macc_y -= (float)y * MENU_STEP; wheel_acc -= y; }
 
 void ob_pads_menu(const ob_pad_menu *m)
 {
@@ -321,7 +323,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
             if (now >= pulse_off) pulse_bits = 0;
             if (!pulse_bits && now >= pulse_next) {
                 if (wheel_acc) { pulse_bits = wheel_acc < 0 ? dir[0] : dir[1]; wheel_acc += wheel_acc < 0 ? 1 : -1; }
-                else if (hit < 0 && menu.n > 1 && !(st & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK))) {        /* above or below the box: it scrolls */
+                else if (hit < 0 && menu.n > 1 && mouse_active && now - move_ms < 3000u && !(st & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK))) {        /* above or below the box: it scrolls (only while the mouse was moved in the last 3 seconds) */
                     int top = 1 << 30, bot = -1, left = 1 << 30, right = -1;
                     for (int i = 0; i < menu.n; i++) {
                         if (menu.row[i].y < top) top = menu.row[i].y;
@@ -332,7 +334,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
                     if (px >= left && px < right && (py < top || py >= bot)) pulse_bits = py < top ? dir[0] : dir[1];
                 }
                 if (pulse_bits) { }
-                else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700u + 12u * (Uint32)(menu.step_ms > 0 ? menu.step_ms : 0)) {
+                else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && mouse_active && now - move_ms < 700u + 12u * (Uint32)(menu.step_ms > 0 ? menu.step_ms : 0)) {
                     if (menu.grid && menu.sel >= 0 && menu.sel < menu.n) {
                         const ob_menu_rect *h = &menu.row[hit], *c = &menu.row[menu.sel];
                         int dx = (h->x + h->w / 2) - (c->x + c->w / 2), dy = (h->y + h->h / 2) - (c->y + c->h / 2);
@@ -346,7 +348,11 @@ static uint32_t menu_pointer(const uint32_t dir[4])
                         pulse_bits = px < menu.row[hit].x + menu.row[hit].w / 2.0f ? dir[2] : dir[3];
                     }
                 } else if (pr || (rb && !menu_rb)) { pulse_bits = menu.back; pend &= ~2u; }
-                if (pulse_bits) { pulse_off = now + 70; pulse_next = now + (menu.step_ms > 0 ? (Uint32)menu.step_ms : 140u); }
+                if (pulse_bits) {
+                    int hov = hit >= 0 && hit != menu.sel && !wheel_acc;        /* walking to the row under the pointer: quick, so it is selected at once */
+                    pulse_off = now + (hov ? 40 : 70);
+                    pulse_next = now + (hov ? 60u : (menu.step_ms > 0 ? (Uint32)menu.step_ms : 140u));
+                }
             }
             menu_lb = lb; menu_rb = rb;
         }
@@ -470,6 +476,7 @@ uint32_t ob_pads_read(int p)
         int ks = (m & (m - 1)) == 0 ? 0 : p;
         for (int i = 0; i < C.n; i++) if (key[ks][i] != SDL_SCANCODE_UNKNOWN && down[key[ks][i]]) b |= C.b[i].bit;
     }
+    if (b || ((c = ob_pads_controller(p)) && ctrl_buttons(c))) mouse_active = 0;    /* (the keyboard or a pad in use: the mouse's scrolling and hovering rest until it moves) */
     if (p == mouse_player || (mouse_player < 0 && !mouse_play && p == 0)) b |= mouse_bits();   /* (in the menus the mouse is pad 1 unless it plays) */
     if ((c = ob_pads_controller(p))) b |= ctrl_buttons(c);
     return b;
