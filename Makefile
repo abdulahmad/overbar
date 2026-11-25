@@ -24,7 +24,7 @@ LIB_OBJS = \
 	src/plat.o \
 	src/plat_pads.o src/osk.o src/gl.o \
 	src/sides.o src/sides_icons.o src/chat.o src/room.o src/lane.o src/save.o src/console.o \
-	src/fsdir.o src/files.o src/vdrive.o src/season.o src/season_ui.o src/serial.o src/game.o src/vfont.o src/vfont_data.o src/vmenu.o src/sfx.o src/screen.o src/r3d.o src/r3gl.o src/box.o src/box_cd.o src/box_cd_install.o src/cdimage.o \
+	src/fsdir.o src/files.o src/vdrive.o src/season.o src/season_ui.o src/serial.o src/game.o src/vfont.o src/vfont_data.o src/vmenu.o src/sfx.o src/screen.o src/r3d.o src/r3gl.o src/box.o src/box_cd.o src/box_cd_install.o src/cdimage.o src/postfx.o \
 	third_party/pulseman/menu.o
 ifeq ($(shell uname -s),Darwin)
 LIB_OBJS += src/bar_mac.o
@@ -43,7 +43,7 @@ ifeq ($(OS),Windows_NT)
 NETLIBS ?= -lws2_32
 endif
 
-all: liboverbar.a tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season tests/test_serial tests/test_cdimage
+all: liboverbar.a tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season tests/test_serial tests/test_cdimage tests/test_postfx
 
 liboverbar.a: $(LIB_OBJS)
 	$(AR) rcs $@ $(LIB_OBJS)
@@ -66,16 +66,20 @@ tests/test_serial: tests/test_serial.c liboverbar.a
 tests/test_cdimage: tests/test_cdimage.c liboverbar.a
 	$(CC) $(CFLAGS) -o $@ tests/test_cdimage.c liboverbar.a -lm
 
+tests/test_postfx: tests/test_postfx.c liboverbar.a
+	$(CC) $(CFLAGS) -o $@ tests/test_postfx.c liboverbar.a -lm
+
 tests/test_snap: tests/test_snap.c liboverbar.a
 	$(CC) $(CFLAGS) -o $@ tests/test_snap.c liboverbar.a -lm
 
-test: tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season tests/test_serial tests/test_cdimage
+test: tests/test_overbar tests/test_net tests/test_snap tests/test_sides tests/test_season tests/test_serial tests/test_cdimage tests/test_postfx
 	./tests/test_overbar
 	./tests/test_sides
 	./tests/test_season
 	./tests/test_net
 	./tests/test_snap
 	./tests/test_cdimage
+	./tests/test_postfx
 	sh tests/netsec.sh
 
 # the platform layer on SDL's dummy drivers (needs SDL2): make test-plat SDL=1
@@ -98,9 +102,9 @@ check:
 	done; rm -f check.o
 
 clean:
-	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe tests/test_net tests/test_net.exe tests/test_snap tests/test_snap.exe tests/test_sides tests/test_sides.exe tests/test_season tests/test_season.exe tests/test_serial tests/test_serial.exe tests/test_cdimage tests/test_cdimage.exe check.o tools/shots
+	rm -f $(LIB_OBJS) src/present_sdl.o liboverbar.a tests/test_overbar tests/test_overbar.exe tests/test_net tests/test_net.exe tests/test_snap tests/test_snap.exe tests/test_sides tests/test_sides.exe tests/test_season tests/test_season.exe tests/test_serial tests/test_serial.exe tests/test_cdimage tests/test_cdimage.exe tests/test_postfx tests/test_postfx.exe check.o tools/shots
 
-src/%.o: src/%.c include/overbar/overbar.h include/overbar/net.h include/overbar/sides.h include/overbar/chat.h include/overbar/room.h include/overbar/lane.h include/overbar/save.h include/overbar/files.h include/overbar/season.h include/overbar/vdrive.h include/overbar/serial.h include/overbar/console.h include/overbar/cdimage.h src/fsdir.h src/look_tables.h src/sides_icons.h
+src/%.o: src/%.c include/overbar/overbar.h include/overbar/net.h include/overbar/sides.h include/overbar/chat.h include/overbar/room.h include/overbar/lane.h include/overbar/save.h include/overbar/files.h include/overbar/season.h include/overbar/vdrive.h include/overbar/serial.h include/overbar/console.h include/overbar/cdimage.h include/overbar/postfx.h src/fsdir.h src/look_tables.h src/sides_icons.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 src/net.o: third_party/pulseman/udp.c

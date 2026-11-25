@@ -14,4 +14,5 @@ tools/shots.exe
 /build_test_net_files/
 /tests/test_serial
 /tests/test_cdimage
+/tests/test_postfx
 /test_cdimage_out/
