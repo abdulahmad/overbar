@@ -191,6 +191,7 @@ static uint32_t ctrl_buttons(SDL_GameController *c)
 
 /* Like the PC game: the pointer is read in 320x200 units from the middle of the window; inside 50 of them nothing is pressed, outside the
  * direction is one of eight (up, up-right ... clockwise). fl is that direction (0 up, clockwise), -1 inside the dead zone. */
+static float aim_acc_x, aim_acc_y;                        /* the pointer's offset from the player, in 320x200 units (mouse motion while it plays) */
 static int mouse_aim(int *pdx, int *pdy)
 {
     SDL_Window *w = ob_plat_window();
@@ -198,12 +199,10 @@ static int mouse_aim(int *pdx, int *pdy)
     double ang;
     if (pdx) *pdx = 0;
     if (pdy) *pdy = 0;
-    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return -2;
-    SDL_GetWindowSize(w, &ww, &wh);
-    if (ww < 2 || wh < 2) return -2;
-    SDL_GetMouseState(&mx, &my);
-    dx = (int)((mx - ww / 2.0) * 320.0 / ww);
-    dy = (int)((my - wh / 2.0) * 200.0 / wh);
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) return -2;
+    (void)ww; (void)wh; (void)mx; (void)my;
+    dx = (int)aim_acc_x;                                 /* the hand's travel from the player (the mouse is captured in play) */
+    dy = (int)aim_acc_y;
     if (pdx) *pdx = dx;
     if (pdy) *pdy = dy;
     if (dx * dx + dy * dy < 2500) return -1;
@@ -211,6 +210,9 @@ static int mouse_aim(int *pdx, int *pdy)
     if (ang < 0) ang += 360.0;
     return (int)((ang + 22.5) / 45.0) & 7;
 }
+
+static uint32_t mouse_start;                               /* what the mouse's fourth button presses (Start) */
+void ob_pads_mouse_start(uint32_t bits) { mouse_start = bits; }
 
 uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3])
 {
@@ -229,6 +231,7 @@ uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3])
     if (st & SDL_BUTTON_LMASK) b |= btn[0];
     if (st & SDL_BUTTON_RMASK) b |= btn[1];
     if (st & SDL_BUTTON_MMASK) b |= btn[2];
+    if (st & SDL_BUTTON_X1MASK) b |= mouse_start;
     return b;
 }
 
@@ -239,6 +242,7 @@ uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3])
 static int mouse_play = 1;
 static int mouse_rel;                                      /* relative mouse mode is on (the pointer is only a hand then) */
 static float macc_x, macc_y;
+static int rel_x, rel_y, rel_have;                         /* the pointer's last place, for its travel outside play */
 static uint32_t pulse_bits, pulse_off, pulse_next;
 
 void ob_pads_mouse_mode(int play) { mouse_play = play; }
@@ -253,14 +257,19 @@ static SDL_Rect menu_dst;                                  /* where the picture 
 static int menu_lb, menu_rb;                               /* buttons last frame, for the click edges */
 static Uint32 click_off;
 
-static float hand_x = 160, hand_y = 112;                    /* the pointer drawn while the mouse only steps a selection (relative mode hides the real one), picture pixels */
 void ob_pads_mouse_motion(int dx, int dy)
 {
-    float sc = menu_dst.h > 0 ? menu_dst.h / 224.0f : 3.0f;
-    macc_x += (float)dx; macc_y += (float)dy; move_ms = SDL_GetTicks();
-    hand_x += dx / sc; hand_y += dy / sc;
-    if (hand_x < 0) hand_x = 0; else if (hand_x > 319) hand_x = 319;
-    if (hand_y < 0) hand_y = 0; else if (hand_y > 223) hand_y = 223;
+    move_ms = SDL_GetTicks();
+    if (mouse_play && mouse_rel) {
+        SDL_Window *w = ob_plat_window();
+        int ww = 0, wh = 0;
+        if (w) SDL_GetWindowSize(w, &ww, &wh);
+        if (ww > 1 && wh > 1) {
+            aim_acc_x += dx * 320.0f / ww; aim_acc_y += dy * 200.0f / wh;
+            if (aim_acc_x < -160) aim_acc_x = -160; else if (aim_acc_x > 160) aim_acc_x = 160;
+            if (aim_acc_y < -100) aim_acc_y = -100; else if (aim_acc_y > 100) aim_acc_y = 100;
+        }
+    }
 }
 static unsigned press_latch;                                /* buttons pressed since the menu looked (bit 1 left, 2 right): a click too quick to show in the button state */
 void ob_pads_mouse_press(int button) { if (button == SDL_BUTTON_LEFT) press_latch |= 1; else if (button == SDL_BUTTON_RIGHT) press_latch |= 2; }
@@ -268,7 +277,7 @@ void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; wheel_acc -= y
 
 void ob_pads_menu(const ob_pad_menu *m)
 {
-    if (!m || m->n <= 0 || m->n > OB_MENU_ROWS) { menu_on = 0; return; }
+    if (!m || m->n <= 0 || m->n > OB_MENU_ROWS) { menu_on = 0; ob_pointer_hand_set(2, 0); return; }
     menu = *m;
     for (int i = 0; i < m->n; i++) menu_rect[i] = m->row[i];
     menu.row = menu_rect;
@@ -294,12 +303,13 @@ static uint32_t menu_pointer(const uint32_t dir[4])
     uint32_t b = 0;
     mouse_relative(0);
     macc_x = macc_y = 0;
-    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS) || menu_dst.h <= 0) { menu_lb = menu_rb = 0; wheel_acc = 0; return 0; }
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS) || menu_dst.h <= 0) { menu_lb = menu_rb = 0; wheel_acc = 0; ob_pointer_hand_set(2, 0); return 0; }
     st = SDL_GetMouseState(&mx, &my);
     {   float pw = menu.w > 0 ? (float)menu.w : 320.0f, px = (mx - menu_dst.x) * pw / menu_dst.w, py = (my - menu_dst.y) * 224.0f / menu_dst.h;   /* (the picture fills dst, however wide the pixels are) */
         for (int i = 0; i < menu.n; i++)
             if (px >= menu.row[i].x && px < menu.row[i].x + menu.row[i].w && py >= menu.row[i].y && py < menu.row[i].y + menu.row[i].h) { hit = i; break; }
         if (hit != menu_hover) { menu_hover = hit; menu_steps = 0; }
+        ob_pointer_hand_set(2, hit >= 0);                              /* a hand over a row that can be clicked */
         {   int lb = (st & SDL_BUTTON_LMASK) != 0, rb = (st & SDL_BUTTON_RMASK) != 0, pl, pr;
             static unsigned pend; static Uint32 pend_ms;           /* a click waits a moment for its turn (a step in progress) */
             if (press_latch) { pend |= press_latch; pend_ms = now; press_latch = 0; }
@@ -309,6 +319,17 @@ static uint32_t menu_pointer(const uint32_t dir[4])
             if (now >= pulse_off) pulse_bits = 0;
             if (!pulse_bits && now >= pulse_next) {
                 if (wheel_acc) { pulse_bits = wheel_acc < 0 ? dir[0] : dir[1]; wheel_acc += wheel_acc < 0 ? 1 : -1; }
+                else if (hit < 0 && menu.n > 1 && !(st & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK))) {        /* above or below the box: it scrolls */
+                    int top = 1 << 30, bot = -1, left = 1 << 30, right = -1;
+                    for (int i = 0; i < menu.n; i++) {
+                        if (menu.row[i].y < top) top = menu.row[i].y;
+                        if (menu.row[i].y + menu.row[i].h > bot) bot = menu.row[i].y + menu.row[i].h;
+                        if (menu.row[i].x < left) left = menu.row[i].x;
+                        if (menu.row[i].x + menu.row[i].w > right) right = menu.row[i].x + menu.row[i].w;
+                    }
+                    if (px >= left && px < right && (py < top || py >= bot)) pulse_bits = py < top ? dir[0] : dir[1];
+                }
+                if (pulse_bits) { }
                 else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700u + 12u * (Uint32)(menu.step_ms > 0 ? menu.step_ms : 0)) {
                     if (menu.grid && menu.sel >= 0 && menu.sel < menu.n) {
                         const ob_menu_rect *h = &menu.row[hit], *c = &menu.row[menu.sel];
@@ -330,6 +351,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
     }
     (void)click_off;
     b = pulse_bits;
+    if (st & SDL_BUTTON_X1MASK) b |= mouse_start;
     return b;
 }
 
@@ -338,10 +360,19 @@ uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3])
 {
     uint32_t b = 0, now, st;
     SDL_Window *w = ob_plat_window();
-    if (mouse_play) { mouse_relative(0); return ob_pads_mouse_bits(dir, btn); }
+    if (mouse_play) {                                      /* in play the mouse is captured and steers from the player */
+        if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { mouse_relative(0); return 0; }
+        if (!mouse_rel) { aim_acc_x = aim_acc_y = 0; mouse_relative(1); }
+        return ob_pads_mouse_bits(dir, btn);
+    }
     if (menu_on) return menu_pointer(dir);
-    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { mouse_relative(0); return 0; }
-    mouse_relative(1);
+    mouse_relative(0);                                     /* (no capture outside play: the pointer stays free) */
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { rel_have = 0; return 0; }
+    {   int mx = 0, my = 0;                                /* the travel of the pointer itself steps the selection */
+        SDL_GetMouseState(&mx, &my);
+        if (rel_have) { macc_x += (float)(mx - rel_x); macc_y += (float)(my - rel_y); }
+        rel_x = mx; rel_y = my; rel_have = 1;
+    }
     now = SDL_GetTicks();
     if (now >= pulse_off) pulse_bits = 0;
     if (!pulse_bits && now >= pulse_next) {
@@ -355,6 +386,7 @@ uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3])
     if (st & SDL_BUTTON_LMASK) b |= btn[0];
     if (st & SDL_BUTTON_RMASK) b |= btn[1];
     if (st & SDL_BUTTON_MMASK) b |= btn[2];
+    if (st & SDL_BUTTON_X1MASK) b |= mouse_start;
     return b;
 }
 
@@ -362,6 +394,7 @@ static uint32_t mouse_bits(void)
 {
     uint32_t dir[4], btn[3] = { 0, 0, 0 };
     for (int i = 0; i < 4; i++) dir[i] = C.b[i].bit;
+    for (int i = 0; i < C.n; i++) if (C.b[i].name && !strcmp(C.b[i].name, "start")) mouse_start = C.b[i].bit;   /* (button 4 is Start) */
     for (int i = 0; i < 3; i++) if (C.mouse_btn[i] > 0 && C.mouse_btn[i] <= C.n) btn[i] = C.b[C.mouse_btn[i] - 1].bit;
     return ob_pads_mouse_read(dir, btn);
 }
@@ -391,21 +424,6 @@ void ob_pads_mouse_draw(const SDL_Rect *dst)
     SDL_Window *w = ob_plat_window();
     int dx, dy, fl, f, flip, c, r;
     float sc, ax, ay;
-    if (ren && w && mouse_rel && !mouse_play && !menu_on && !S.open && !ob_plat_overlay_open()) {   /* a white arrow where the hand has moved to */
-        static const char *HAND[11] = { "O.......", "OO......", "OWO.....", "OWWO....", "OWWWO...", "OWWWWO..", "OWWWWWO.", "OWWWOOOO", "OWOWO...", "OO.OWO..", "O..OOO.." };
-        float hs = dst->h / 224.0f; int hr, hc;
-        SDL_Rect o[96], wf[96]; int no = 0, nf = 0;
-        for (hr = 0; hr < 11; hr++)
-            for (hc = 0; hc < 8; hc++) {
-                char ch = HAND[hr][hc];
-                SDL_Rect q = { (int)(dst->x + (hand_x + hc) * hs), (int)(dst->y + (hand_y + hr) * hs), (int)(hs + 1.0f), (int)(hs + 1.0f) };
-                if (ch == 'O') o[no++] = q; else if (ch == 'W') wf[nf++] = q;
-            }
-        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
-        SDL_SetRenderDrawColor(ren, 0, 0, 0, 255); SDL_RenderFillRects(ren, o, no);
-        SDL_SetRenderDrawColor(ren, 255, 255, 255, 255); SDL_RenderFillRects(ren, wf, nf);
-        return;
-    }
     if (mouse_player < 0 || !mouse_play || !ren || !w || S.open || ob_plat_overlay_open()) return;
     fl = mouse_aim(&dx, &dy);
     if (fl == -2) return;

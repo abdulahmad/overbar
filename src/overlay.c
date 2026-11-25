@@ -156,9 +156,9 @@ static void go_page(ob_host *h, int page)
     ob_overlay_build(h);
 }
 
-static int pointer_hand[2];
-void ob_pointer_hand_set(int who, int on) { if (who >= 0 && who < 2) pointer_hand[who] = on != 0; }
-int ob_pointer_hand(int who) { return who >= 0 && who < 2 && pointer_hand[who]; }
+static int pointer_hand[3];
+void ob_pointer_hand_set(int who, int on) { if (who >= 0 && who < 3) pointer_hand[who] = on != 0; }
+int ob_pointer_hand(int who) { return who >= 0 && who < 3 && pointer_hand[who]; }
 
 int ob_overlay_pointer(ob_host *h, int x, int y, int bw, int bh, int what)
 {
