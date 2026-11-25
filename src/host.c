@@ -387,6 +387,7 @@ int ob_host_save_ini(const ob_host *h)
     fprintf(f, "volume=%d\n", h->volume);
     fprintf(f, "mute=%s\n", h->mute ? "on" : "off");
     fprintf(f, "menu_sounds=%s\n", h->menu_sounds ? "on" : "off");
+    if (h->widescreen_ok) fprintf(f, "widescreen=%s\n", h->widescreen ? "16:9" : "4:3");
     fprintf(f, "online_name=%s\nonline_role=%s\nonline_address=%s\nonline_port=%d\nonline_delay=%d\nonline_here=%d\nonline_players=%d\n",
             h->online.name, net_role_name[h->online.role % 3], h->online.addr, h->online.port, h->online.delay,
             h->online.here, h->online.all);
@@ -424,6 +425,7 @@ int ob_host_load_ini(ob_host *h, const char *path)
         else if (!strcmp(k, "volume")) h->volume = atoi(v);
         else if (!strcmp(k, "mute")) h->mute = !strcmp(v, "on");
         else if (!strcmp(k, "menu_sounds")) h->menu_sounds = strcmp(v, "off") != 0;
+        else if (!strcmp(k, "widescreen")) h->widescreen = !strcmp(v, "16:9");
         else if (!strcmp(k, "online_name")) snprintf(h->online.name, sizeof h->online.name, "%.*s", OB_NET_NAME, v);
         else if (!strcmp(k, "online_role")) h->online.role = name_index(v, net_role_name, 3, 0);
         else if (!strcmp(k, "online_address")) snprintf(h->online.addr, sizeof h->online.addr, "%.*s", 95, v);
@@ -527,6 +529,7 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
     case OB_ID_VOLUME: h->volume = value; break;
     case OB_ID_MUTE: h->mute = value; break;
     case OB_ID_MENU_SOUNDS: h->menu_sounds = value != 0; break;
+    case OB_ID_WIDESCREEN: h->widescreen = value != 0; break;
     case OB_ID_CAP_SECONDS: h->replay_secs_index = value; break;
     case OB_ID_CAP_GIFSCALE: h->gif_scale = value; break;
     case OB_ID_CAP_RECORD: h->recording = !h->recording; break;

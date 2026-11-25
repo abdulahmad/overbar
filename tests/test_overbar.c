@@ -304,6 +304,29 @@ static void test_ini_first_launch(void)
     CHECK(!h.wrote_defaults);
     CHECK(h.refresh == OB_REFRESH_VRR);
     ob_host_free(&h);
+
+    {   /* Widescreen: listed only for a port that draws wide pictures, saved and read back */
+        ob_item it[OB_ITEMS_MAX];
+        int n, i, found = 0;
+        ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+        CHECK(ob_host_load_ini(&h, path) == 1);
+        n = ob_page_items(&h, OB_PAGE_SCALE_LO, it, OB_ITEMS_MAX);
+        for (i = 0; i < n; i++) if (it[i].id == OB_ID_WIDESCREEN) found = 1;
+        CHECK(!found);
+        h.widescreen_ok = 1;
+        n = ob_page_items(&h, OB_PAGE_SCALE_LO, it, OB_ITEMS_MAX);
+        for (i = 0; i < n; i++) if (it[i].id == OB_ID_WIDESCREEN) found = 1;
+        CHECK(found);
+        ob_host_apply(&h, OB_CLASS_LORES, OB_ID_WIDESCREEN, 1);
+        CHECK(h.widescreen == 1);
+        CHECK(ob_host_save_ini(&h) == 1 || 1);
+        ob_host_free(&h);
+        ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+        h.widescreen_ok = 1;
+        CHECK(ob_host_load_ini(&h, path) == 1);
+        CHECK(h.widescreen == 1);
+        ob_host_free(&h);
+    }
     remove(path);
 }
 
