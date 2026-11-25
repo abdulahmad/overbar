@@ -846,6 +846,33 @@ static void test_game_page(void)
     CHECK(g_calls[0] == 1 && g_last[0] == 1 && g_calls[1] == 0);
     CHECK(ob_game_get(&h, 1) == 1);
     ob_host_apply(&h, OB_CLASS_LORES, OB_ID_GAME_OPT + 3, 1);
+    /* presets: one row on top, matching derived from the rows, Custom when they match none */
+    {
+        static const signed char pa[4] = { 0, 0, 0, -1 }, pb[4] = { 1, 1, 1, -1 };
+        static const ob_game_preset pre[2] = { { "A", pa }, { "B", pb } };
+        ob_game_ops po = ops;
+        po.presets = pre;
+        po.npresets = 2;
+        ob_game_set_ops(&h, &po);
+        ob_game_apply(&h, OB_ID_GAME_PRESET, 1);
+        CHECK(ob_game_get(&h, 1) == 1 && ob_game_get(&h, 2) == 1);
+        n = ob_page_items(&h, OB_PAGE_GAME, items, OB_ITEMS_MAX);
+        CHECK(items[0].id == OB_ID_GAME_PRESET && items[0].nchoices == 3 && items[0].value == 1);
+        CHECK(items[1].kind == OB_ITEM_SEP && items[2].id == OB_ID_GAME_OPT);
+        ob_game_apply(&h, OB_ID_GAME_OPT + 2, 0);                 /* a row by hand: Custom */
+        n = ob_page_items(&h, OB_PAGE_GAME, items, OB_ITEMS_MAX);
+        CHECK(items[0].value == 2);
+        ob_game_apply(&h, OB_ID_GAME_PRESET, 2);                  /* Custom picked: nothing moves */
+        CHECK(ob_game_get(&h, 2) == 0 && ob_game_get(&h, 1) == 1);
+        ob_game_apply(&h, OB_ID_GAME_PRESET, 0);
+        n = ob_page_items(&h, OB_PAGE_GAME, items, OB_ITEMS_MAX);
+        CHECK(items[0].value == 0 && ob_game_get(&h, 1) == 0);
+        ob_game_set_ops(&h, &ops);
+        ob_game_apply(&h, OB_ID_GAME_OPT + 0, 1);                 /* (back to what the checks below read from the ini) */
+        ob_game_apply(&h, OB_ID_GAME_OPT + 2, 1);
+        ob_game_apply(&h, OB_ID_GAME_OPT + 3, 1);
+        (void)n;
+    }
     ob_host_free(&h);
 
     ob_host_init(&g, OB_PORT_PC95, OB_PROFILE_DESKTOP);
