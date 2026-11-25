@@ -27,8 +27,9 @@ void ob_framegen_free(ob_framegen *g);
 int ob_framegen_motion(ob_framegen *g, const uint32_t *a, const uint32_t *b, int w, int h, float t, float *flow, float *mask);
 
 /* the in-between drawn from the motion found at w x h onto pictures A and B of W x H (any multiple: the motion is
- * scaled up), out W x H ARGB */
-void ob_framegen_draw(const uint32_t *A, const uint32_t *B, int W, int H, const float *flow, const float *mask, int w, int h, uint32_t *out);
+ * scaled up), out W x H ARGB. g: its threads (NULL: the caller's alone) */
+void ob_framegen_draw(ob_framegen *g, const uint32_t *A, const uint32_t *B, int W, int H, const float *flow, const float *mask, int w, int h,
+                      uint32_t *out);
 
 /* (tests) the network's own output for a and b at t, w x h ARGB, as its graph draws it */
 int ob_framegen_run(ob_framegen *g, const uint32_t *a, const uint32_t *b, int w, int h, float t, uint32_t *out);

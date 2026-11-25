@@ -63,7 +63,7 @@ static void test_framegen(void)
     mx /= (double)(W - 16) * (H - 16);
     printf("  motion: a's dx %.2f (want -3)\n", mx);
     CHECK(fabs(mx + 3) < 1.0);
-    ob_framegen_draw(a, b, W, H, flow, mask, W, H, drawn);
+    ob_framegen_draw(g, a, b, W, H, flow, mask, W, H, drawn);
     CHECK(diff(drawn, got, W, H, 0) < 0.05);
     /* at 2x from the same motion */
     static uint32_t A2[4 * W * H], B2[4 * W * H], out2[4 * W * H], want2[4 * W * H];
@@ -72,7 +72,7 @@ static void test_framegen(void)
         B2[y * 2 * W + x] = scene(x / 2, y / 2, 6);
         want2[y * 2 * W + x] = want[y / 2 * W + x / 2];
     }
-    ob_framegen_draw(A2, B2, 2 * W, 2 * H, flow, mask, W, H, out2);
+    ob_framegen_draw(NULL, A2, B2, 2 * W, 2 * H, flow, mask, W, H, out2);
     CHECK(diff(out2, want2, 2 * W, 2 * H, 16) < 6.0);
     ob_framegen_free(g);
     CHECK(ob_framegen_load("no/such/folder", 1) == NULL);

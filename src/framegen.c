@@ -784,33 +784,50 @@ int ob_framegen_motion(ob_framegen *g, const uint32_t *a, const uint32_t *b, int
 /* bilinear on a w x h plane at a place in its own pixels (half-pixel centres, edges repeated) */
 #define up sample
 
-void ob_framegen_draw(const uint32_t *A, const uint32_t *B, int W, int H, const float *flow, const float *mask, int w, int h, uint32_t *out)
+typedef struct {
+    const uint32_t *A, *B;
+    int W, H, w, h;
+    const float *flow, *mask;
+    uint32_t *out;
+} draw_job;
+
+static void draw_row(void *arg, int y)
 {
+    const draw_job *d = arg;
+    const uint32_t *A = d->A, *B = d->B;
+    int W = d->W, H = d->H, w = d->w, h = d->h;
+    const float *flow = d->flow, *mask = d->mask;
     float kx = (float)w / W, ky = (float)h / H, sx = (float)W / w, sy = (float)H / h;
     size_t hw = (size_t)w * h;
-    for (int y = 0; y < H; y++) {
-        float fy = (y + 0.5f) * ky - 0.5f;
-        for (int x = 0; x < W; x++) {
-            float fx = (x + 0.5f) * kx - 0.5f;
-            float ax = x + up(flow, w, h, fx, fy) * sx, ay = y + up(flow + hw, w, h, fx, fy) * sy;
-            float bx = x + up(flow + 2 * hw, w, h, fx, fy) * sx, by = y + up(flow + 3 * hw, w, h, fx, fy) * sy;
-            float m = up(mask, w, h, fx, fy);
-            ax = ax < 0 ? 0 : ax > W - 1 ? (float)(W - 1) : ax; ay = ay < 0 ? 0 : ay > H - 1 ? (float)(H - 1) : ay;
-            bx = bx < 0 ? 0 : bx > W - 1 ? (float)(W - 1) : bx; by = by < 0 ? 0 : by > H - 1 ? (float)(H - 1) : by;
-            float ch[3] = { 0, 0, 0 };
-            for (int k = 0; k < 2; k++) {
-                const uint32_t *s = k ? B : A;
-                float px = k ? bx : ax, py = k ? by : ay, wt = k ? 1 - m : m;
-                int x0 = (int)px, y0 = (int)py, x1 = x0 + 1 < W ? x0 + 1 : x0, y1 = y0 + 1 < H ? y0 + 1 : y0;
-                float lx = px - x0, ly = py - y0;
-                uint32_t p00 = s[y0 * W + x0], p01 = s[y0 * W + x1], p10 = s[y1 * W + x0], p11 = s[y1 * W + x1];
-                for (int c = 0; c < 3; c++) {
-                    int sh = 16 - 8 * c;
-                    float v = ((p00 >> sh & 255) * (1 - lx) + (p01 >> sh & 255) * lx) * (1 - ly) + ((p10 >> sh & 255) * (1 - lx) + (p11 >> sh & 255) * lx) * ly;
-                    ch[c] += v * wt;
-                }
+    float fy = (y + 0.5f) * ky - 0.5f;
+    for (int x = 0; x < W; x++) {
+        float fx = (x + 0.5f) * kx - 0.5f;
+        float ax = x + up(flow, w, h, fx, fy) * sx, ay = y + up(flow + hw, w, h, fx, fy) * sy;
+        float bx = x + up(flow + 2 * hw, w, h, fx, fy) * sx, by = y + up(flow + 3 * hw, w, h, fx, fy) * sy;
+        float m = up(mask, w, h, fx, fy);
+        ax = ax < 0 ? 0 : ax > W - 1 ? (float)(W - 1) : ax; ay = ay < 0 ? 0 : ay > H - 1 ? (float)(H - 1) : ay;
+        bx = bx < 0 ? 0 : bx > W - 1 ? (float)(W - 1) : bx; by = by < 0 ? 0 : by > H - 1 ? (float)(H - 1) : by;
+        float ch[3] = { 0, 0, 0 };
+        for (int k = 0; k < 2; k++) {
+            const uint32_t *s = k ? B : A;
+            float px = k ? bx : ax, py = k ? by : ay, wt = k ? 1 - m : m;
+            int x0 = (int)px, y0 = (int)py, x1 = x0 + 1 < W ? x0 + 1 : x0, y1 = y0 + 1 < H ? y0 + 1 : y0;
+            float lx = px - x0, ly = py - y0;
+            uint32_t p00 = s[y0 * W + x0], p01 = s[y0 * W + x1], p10 = s[y1 * W + x0], p11 = s[y1 * W + x1];
+            for (int c = 0; c < 3; c++) {
+                int sh = 16 - 8 * c;
+                float v = ((p00 >> sh & 255) * (1 - lx) + (p01 >> sh & 255) * lx) * (1 - ly) + ((p10 >> sh & 255) * (1 - lx) + (p11 >> sh & 255) * lx) * ly;
+                ch[c] += v * wt;
             }
-            out[y * W + x] = argb(ch[0] / 255, ch[1] / 255, ch[2] / 255);
         }
+        d->out[y * W + x] = argb(ch[0] / 255, ch[1] / 255, ch[2] / 255);
     }
+}
+
+void ob_framegen_draw(ob_framegen *g, const uint32_t *A, const uint32_t *B, int W, int H, const float *flow, const float *mask, int w, int h,
+                      uint32_t *out)
+{
+    draw_job d = { A, B, W, H, w, h, flow, mask, out };
+    if (g) pool_run(&g->p, draw_row, &d, H);
+    else for (int y = 0; y < H; y++) draw_row(&d, y);
 }
