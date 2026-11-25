@@ -213,12 +213,51 @@ uint32_t ob_pads_mouse_bits(const uint32_t dir[4], const uint32_t btn[3])
     return b;
 }
 
+/* In play the pointer steers (ob_pads_mouse_bits). Everywhere else (the game's menus, its setup screens, its pause menu) the mouse moves a
+ * selection step by step: each stretch of travel (MENU_STEP pixels) up, down, left or right is one short press of that direction, the wheel is up
+ * and down, the three buttons are the port's. The port says which it is with ob_pads_mouse_mode each frame. */
+#define MENU_STEP 18
+static int mouse_play = 1;
+static int mouse_rel;                                      /* relative mouse mode is on (the pointer is only a hand then) */
+static float macc_x, macc_y;
+static uint32_t pulse_bits, pulse_off, pulse_next;
+
+void ob_pads_mouse_mode(int play) { mouse_play = play; }
+int ob_pads_mouse_cursor(void) { return mouse_player >= 0 && mouse_play; }
+void ob_pads_mouse_motion(int dx, int dy) { macc_x += (float)dx; macc_y += (float)dy; }
+void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; }
+
+static void mouse_relative(int on)
+{
+    if (on == mouse_rel) return;
+    mouse_rel = on;
+    SDL_SetRelativeMouseMode(on ? SDL_TRUE : SDL_FALSE);
+    macc_x = macc_y = 0;
+}
+
 static uint32_t mouse_bits(void)
 {
-    uint32_t dir[4], btn[3] = { 0, 0, 0 };
+    uint32_t dir[4], btn[3] = { 0, 0, 0 }, b = 0, now, st;
+    SDL_Window *w = ob_plat_window();
     for (int i = 0; i < 4; i++) dir[i] = C.b[i].bit;
     for (int i = 0; i < 3; i++) if (C.mouse_btn[i] > 0 && C.mouse_btn[i] <= C.n) btn[i] = C.b[C.mouse_btn[i] - 1].bit;
-    return ob_pads_mouse_bits(dir, btn);
+    if (mouse_play) { mouse_relative(0); return ob_pads_mouse_bits(dir, btn); }
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_INPUT_FOCUS)) { mouse_relative(0); return 0; }
+    mouse_relative(1);
+    now = SDL_GetTicks();
+    if (now >= pulse_off) pulse_bits = 0;
+    if (!pulse_bits && now >= pulse_next) {
+        float ax = macc_x < 0 ? -macc_x : macc_x, ay = macc_y < 0 ? -macc_y : macc_y;
+        if (ay >= MENU_STEP && ay >= ax) pulse_bits = macc_y < 0 ? dir[0] : dir[1];
+        else if (ax >= MENU_STEP) pulse_bits = macc_x < 0 ? dir[2] : dir[3];
+        if (pulse_bits) { macc_x = macc_y = 0; pulse_off = now + 70; pulse_next = now + 140; }
+    }
+    b = pulse_bits;
+    st = SDL_GetMouseState(NULL, NULL);
+    if (st & SDL_BUTTON_LMASK) b |= btn[0];
+    if (st & SDL_BUTTON_RMASK) b |= btn[1];
+    if (st & SDL_BUTTON_MMASK) b |= btn[2];
+    return b;
 }
 
 int ob_pads_mouse_player(void) { return mouse_player; }
@@ -229,7 +268,7 @@ void ob_pads_mouse_draw(const SDL_Rect *dst)
     SDL_Renderer *ren = ob_plat_renderer();
     SDL_Window *w = ob_plat_window();
     int mx = 0, my = 0, r;
-    if (mouse_player < 0 || !ren || !w || S.open || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return;
+    if (mouse_player < 0 || !mouse_play || !ren || !w || S.open || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return;
     SDL_GetMouseState(&mx, &my);
     if (mx < dst->x || my < dst->y || mx >= dst->x + dst->w || my >= dst->y + dst->h) return;
     r = dst->h / 56 + 2;
