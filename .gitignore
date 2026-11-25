@@ -17,3 +17,4 @@ tools/shots.exe
 /tests/test_postfx
 /tests/test_snap
 /test_cdimage_out/
+tests/test_framegen

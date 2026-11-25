@@ -239,10 +239,10 @@ static void test_handheld_detect_and_present(void)
     CHECK(ob_present_pick(OB_PROFILE_DESKTOP, 0, 0) == OB_PRESENT_SDL);
     CHECK(ob_look_supported(OB_MODE_SHARP, OB_PRESENT_SDL));
     CHECK(ob_look_supported(OB_MODE_CRT, OB_PRESENT_SDL));
-    CHECK(!ob_look_supported(OB_MODE_MISTER, OB_PRESENT_SDL));
+    CHECK(ob_look_supported(OB_MODE_MISTER, OB_PRESENT_SDL));     /* (on the CPU) */
     CHECK(ob_look_supported(OB_MODE_MISTER, OB_PRESENT_GLES2));
     CHECK(ob_look_fallback_note(OB_MODE_CRT, OB_PRESENT_SDL) == NULL);
-    CHECK(ob_look_fallback_note(OB_MODE_MISTER, OB_PRESENT_SDL) != NULL);
+    CHECK(ob_look_fallback_note(OB_MODE_MISTER, OB_PRESENT_SDL) == NULL);
     CHECK(ob_look_fallback_note(OB_MODE_SHARP, OB_PRESENT_SDL) == NULL);
 
     ob_host_init(&h, OB_PORT_SNES, OB_PROFILE_HANDHELD);
@@ -251,9 +251,9 @@ static void test_handheld_detect_and_present(void)
     CHECK(h.present == OB_PRESENT_SDL);
     CHECK(ob_filemenu_wanted(1, 0, 1) == 0);
     ob_host_apply(&h, OB_CLASS_LORES, OB_ID_SCALE_MODE, OB_MODE_MISTER);
-    CHECK(h.fallback_note != NULL);
+    CHECK(h.fallback_note == NULL);
     n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);
-    CHECK(ob_items_contain(items, n, OB_ID_PRESENT_NOTE));
+    CHECK(!ob_items_contain(items, n, OB_ID_PRESENT_NOTE));
     CHECK(ob_items_contain(items, n, OB_ID_MISTER_H));
     ob_host_set_present(&h, 1, 0);
     CHECK(h.present == OB_PRESENT_GLES2);

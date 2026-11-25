@@ -1073,7 +1073,48 @@ static int screen_present(void)
         px = n;
         cap = (long)ww * wh;
     }
-    if (!ob_screen_draw(px, ww, wh, ww)) return 0;
+    int pw, ph, lines;
+    const uint32_t *pic = ob_screen_picture(&pw, &ph, &lines);
+    if (pic) {                                             /* a console-sized picture (a movie): drawn like the game's, through the look */
+        const ob_look *look = P.hk.cls == OB_CLASS_HIRES ? &P.host->hires : &P.host->lores;
+        static uint32_t *half, *ntsc;
+        static long half_cap, ntsc_cap;
+        int f = lines > 0 && ph % lines == 0 ? ph / lines : 1, sw = pw, sh = ph;
+        if (f == 2 && look->mode != OB_MODE_SHARP && pw % 2 == 0) {   /* (a 2x picture: the scanline looks want its lines) */
+            if ((long)pw * ph / 4 > half_cap) { free(half); half = (uint32_t *)malloc((size_t)pw * ph); half_cap = half ? (long)pw * ph / 4 : 0; }
+            if (half) {
+                sw = pw / 2; sh = ph / 2;
+                for (int y = 0; y < sh; y++) for (int x = 0; x < sw; x++) {
+                    const uint32_t *q = pic + (size_t)2 * y * pw + 2 * x;
+                    uint32_t o = 0xFF000000u;
+                    for (int k = 0; k < 24; k += 8) o |= (((q[0] >> k & 255) + (q[1] >> k & 255) + (q[pw] >> k & 255) + (q[pw + 1] >> k & 255) + 2) / 4) << k;
+                    half[y * sw + x] = o;
+                }
+                pic = half;
+            }
+        }
+        if (look->ntsc) {
+            if ((long)sw * sh > ntsc_cap) { free(ntsc); ntsc = (uint32_t *)malloc((size_t)sw * sh * 4); ntsc_cap = ntsc ? (long)sw * sh : 0; }
+            if (ntsc) { ob_ntsc_apply(ntsc, pic, sw, sh, sw); pic = ntsc; }
+        }
+        ob_view_in in;
+        ob_view_out out;
+        ob_view_from_host(P.host, P.hk.cls, pw / f, ph / f, ww, wh, &in);   /* (the console's size: its shape on screen) */
+        ob_view(&in, &out);
+        for (long i = 0; i < (long)ww * wh; i++) px[i] = 0xFF000000u;
+        uint32_t *lp = NULL;
+        int dw = 0, dh = 0;
+        if (out.blit_w > 0 && out.blit_h > 0 && ob_render_cpu(look, P.hk.cls, pic, sw, sh, sw, out.blit_w, out.blit_h, &lp, &dw, &dh) && lp)
+            for (int y = 0; y < out.blit_h; y++) {
+                int dy = out.blit_y + y, sy = y * dh / out.blit_h;
+                if (dy < 0 || dy >= wh) continue;
+                for (int x = 0; x < out.blit_w; x++) {
+                    int dx = out.blit_x + x;
+                    if (dx >= 0 && dx < ww) px[(long)dy * ww + dx] = lp[(long)sy * dw + x * dw / out.blit_w];
+                }
+            }
+        ob_screen_draw_over(px, ww, wh, ww);
+    } else if (!ob_screen_draw(px, ww, wh, ww)) return 0;
     if (tex && (tw != ww || th != wh)) { SDL_DestroyTexture(tex); tex = NULL; }
     if (!tex && (tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ww, wh))) SDL_SetTextureScaleMode(tex, SDL_ScaleModeLinear);
     tw = ww; th = wh;

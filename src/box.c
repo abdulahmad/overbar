@@ -1105,7 +1105,7 @@ int ob_box_open(int mode)
     V.up = 0; B.kb = -1; hover = -1; B.fade = 0; B.fade_dir = 0; B.down = B.dragging = 0;
     B.up = 1;
     B.last = bx_now();
-    ob_screen s = { draw, input, NULL };
+    ob_screen s = { draw, input, NULL, NULL };
     ob_screen_show(&s);
     K.up = 0; K.dir = 0;
     if (K.built && K.root >= 0 && K.root < BX_S->nnodes && !strcmp(BX_S->nodes[K.root].name, "book.root")) BX_S->nodes[K.root].vis = 0;

@@ -32,16 +32,25 @@ typedef struct ob_screen_ev {
 } ob_screen_ev;
 
 typedef struct ob_screen {
-    /* draw the whole window: px is w x h (pitch in pixels), opaque ARGB */
+    /* draw the whole window: px is w x h (pitch in pixels), opaque ARGB. With picture set, px already holds the
+     * picture drawn through the player's look, and draw only adds what goes over it (it may be NULL) */
     void (*draw)(void *ud, uint32_t *px, int w, int h, int pitch);
     void (*input)(void *ud, const ob_screen_ev *e);
     void *ud;
+    /* optional: a console-sized picture (a movie's frame) the layer draws like the game's own, through the look
+     * (Sharp, CRT, MiSTer ...) and the view: w x h ARGB; lines is how many lines the console drew (h, or h / 2 for a
+     * picture made at 2x: the scanline looks then take it at that). NULL: nothing to show yet */
+    const uint32_t *(*picture)(void *ud, int *w, int *h, int *lines);
 } ob_screen;
 
 void ob_screen_show(const ob_screen *s);     /* puts it up (copied); NULL takes it down */
 int ob_screen_up(void);
 /* the layer and ports that draw themselves: 1 if a screen is up and was drawn */
 int ob_screen_draw(uint32_t *px, int w, int h, int pitch);
+/* the screen's picture (see picture above), NULL none: hosts that draw the look themselves use it, then
+ * ob_screen_draw_over */
+const uint32_t *ob_screen_picture(int *w, int *h, int *lines);
+void ob_screen_draw_over(uint32_t *px, int w, int h, int pitch);
 void ob_screen_input(const ob_screen_ev *e);
 /* a plain look that shows a picture of the window's own size as it is (for ob_gl_render / ob_render_cpu) */
 struct ob_look;
