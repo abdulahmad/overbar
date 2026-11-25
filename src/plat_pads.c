@@ -286,7 +286,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
     macc_x = macc_y = 0;
     if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS) || menu_dst.h <= 0) { menu_lb = menu_rb = 0; wheel_acc = 0; return 0; }
     st = SDL_GetMouseState(&mx, &my);
-    {   float sc = menu_dst.h / 224.0f, px = (mx - (menu_dst.x + menu_dst.w / 2.0f)) / sc + (menu.w > 0 ? menu.w : 320) / 2.0f, py = (my - menu_dst.y) / sc;
+    {   float pw = menu.w > 0 ? (float)menu.w : 320.0f, px = (mx - menu_dst.x) * pw / menu_dst.w, py = (my - menu_dst.y) * 224.0f / menu_dst.h;   /* (the picture fills dst, however wide the pixels are) */
         for (int i = 0; i < menu.n; i++)
             if (px >= menu.row[i].x && px < menu.row[i].x + menu.row[i].w && py >= menu.row[i].y && py < menu.row[i].y + menu.row[i].h) { hit = i; break; }
         if (hit != menu_hover) { menu_hover = hit; menu_steps = 0; }
