@@ -382,7 +382,7 @@ void ob_overlay_draw(ob_host *h, uint32_t *px, int w, int hgt, int pitch)
         const mdrt_menu *gm = &h->overlay;
         int id = gm->sel >= 0 && gm->sel < gm->count ? gm->items[gm->sel].id : 0, oi = id - OB_ID_GAME_OPT;
         const char *hp = oi >= 0 && oi < h->game_ops.nopts ? ob_game_help(oi) : NULL;
-        snprintf(h->overlay.subtitle, sizeof h->overlay.subtitle, "%s", hp ? hp : "");
+        snprintf(h->overlay.subtitle, sizeof h->overlay.subtitle, "%s%s", hp && h->overlay_vec ? "\x01" : "", hp ? hp : "");
     }
     if (h->overlay_vec) {                       /* vector type: straight alpha, the shade is in the buffer itself */
         for (y = 0; y < hgt; y++) memset(px + (size_t)y * pitch, 0, (size_t)w * 4);

@@ -26,7 +26,7 @@ static void geometry(int w, int h, geom *g)
     g->rowh = 30 * g->s;
     g->listw = w - 2 * g->x0;
     if (g->listw > 560 * g->s) g->listw = 560 * g->s;
-    g->bot = h - 64 * g->s;
+    g->bot = h - 100 * g->s;                           /* (two lines of a row's description fit between the list and the hints) */
     g->rows = (int)((g->bot - g->top) / g->rowh);
     if (g->rows < 1) g->rows = 1;
 }
@@ -180,7 +180,8 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
         fitv(buf, sizeof buf, m->title, OB_VF_MEDIUM, 15 * s, g.listw);
         if (!name || !*name) ob_vf_draw(px, w, h, pitch, x0, 100 * s, OB_VF_LIGHT, 40 * s, 0xFFFFFF, 255, buf, 0, 3);
         else if (sub) ob_vf_draw(px, w, h, pitch, x0 + 2 * s, 152 * s, OB_VF_MEDIUM, 15 * s, DIM, 255, buf, 1.5f * s, 1);
-        if (strpbrk(m->subtitle, "[{")) hints(px, w, h, pitch, x0 + 2 * s, hy, s, m->subtitle, 1);
+        if (m->subtitle[0] == '\x01') { }                  /* (a row's description: below the list) */
+        else if (strpbrk(m->subtitle, "[{")) hints(px, w, h, pitch, x0 + 2 * s, hy, s, m->subtitle, 1);
         else if (m->subtitle[0]) {
             fitv(buf, sizeof buf, m->subtitle, OB_VF_REGULAR, 13 * s, g.listw);
             ob_vf_draw(px, w, h, pitch, x0 + 2 * s, hy + 5 * s, OB_VF_REGULAR, 13 * s, MUTE, 255, buf, 0, 1);
@@ -237,6 +238,24 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
                 int px_y = (int)(yy / ih * m->image_h), px_x = (int)(xx / iw * m->image_w), X = (int)ix + xx, Y = (int)iy + yy;
                 if (X >= 0 && X < w && Y >= 0 && Y < h) px[Y * pitch + X] = 0xFF000000u | (m->image[px_y * m->image_pitch + px_x] & 0xFFFFFFu);
             }
+    }
+    if (m->subtitle[0] == '\x01') {                       /* the highlighted row's description, wrapped on two lines (the second shortened if it still does not fit) */
+        const char *t = m->subtitle + 1;
+        char l1[200], l2[200];
+        size_t n = strlen(t), cut = n;
+        float room = w - 2 * x0 > g.listw ? g.listw : w - 2 * x0;
+        l2[0] = 0;
+        snprintf(l1, sizeof l1, "%s", t);
+        if (ob_vf_width(OB_VF_REGULAR, 13 * s, l1, 0) > room) {
+            size_t k = n;
+            while (k > 1 && (t[k] != ' ' || ob_vf_width(OB_VF_REGULAR, 13 * s, (snprintf(l1, sizeof l1, "%.*s", (int)k, t), l1), 0) > room)) k--;
+            if (k <= 1) k = n;
+            cut = k;
+            snprintf(l1, sizeof l1, "%.*s", (int)cut, t);
+            fitv(l2, sizeof l2, t + cut + (t[cut] == ' '), OB_VF_REGULAR, 13 * s, room);
+        }
+        ob_vf_draw(px, w, h, pitch, x0 + 2 * s, g.bot + 6 * s, OB_VF_REGULAR, 13 * s, MUTE, 255, l1, 0, 1);
+        if (l2[0]) ob_vf_draw(px, w, h, pitch, x0 + 2 * s, g.bot + 22 * s, OB_VF_REGULAR, 13 * s, MUTE, 255, l2, 0, 1);
     }
     if (m->message[0]) {
         fitv(buf, sizeof buf, m->message, OB_VF_REGULAR, 13 * s, w - 2 * x0);
