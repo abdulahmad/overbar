@@ -450,24 +450,42 @@ static void cicon(cv *c, int kind, int x, int y)
     const ob_icon *ic = &ob_icons[kind];
     int j, i;
     for (j = 0; j < ic->h; j++)
-        for (i = 0; i < ic->w; i++)
-            if (ic->rows[j][i] != '.') cfill(c, x + i, y + j, 1, 1, icon_rgb(ic->rows[j][i]));
+        for (i = 0; i < ic->w; i++) {
+            char l = ic->rows[j][i];
+            if (l == '.') continue;
+            if (ic->keys) {
+                const char *k = strchr(ic->keys, l);
+                if (!k) continue;
+                cfill(c, x + i, y + j, 1, 1, ic->rgb[k - ic->keys]);
+            } else
+                cfill(c, x + i, y + j, 1, 1, icon_rgb(l));
+        }
 }
 
-/* the star (15 game pixels): an outline, or filled when the device is ready */
-static void cstar(cv *c, int x, int y, int on)
+/* the star (37 x 21 game pixels, from the game's own screen): an outline in rgb with its dark shadow, filled when the device is ready */
+static void cstar(cv *c, int x, int y, uint32_t rgb, int on)
 {
-    static const char *const r[15] = {
-        ".......1.......", ".......1.......", "......111......", "......111......", ".....11111.....", "111111111111111", ".1111111111111.",
-        "..11111111111..", "...111111111...", "...111111111...", "..1111...1111..", "..111.....111..", ".111.......111.", ".11.........11.", "11...........11" };
-    int j, i;
-    for (j = 0; j < 15; j++)
-        for (i = 0; i < 15; i++) {
-            int edge;
-            if (r[j][i] != '1') continue;
-            edge = j == 0 || i == 0 || j == 14 || i == 14 || r[j - 1][i] != '1' || r[j + 1][i] != '1' || r[j][i - 1] != '1' || r[j][i + 1] != '1';
-            if (on) cfill(c, x + i, y + j, 1, 1, edge ? 0xC08000 : 0xF8D830);   /* filled: ready */
-            else if (edge) cfill(c, x + i, y + j, 1, 1, 0x28A8FF);              /* the outline only */
+    char in[21][37];                                             /* 0: the star's own pixel, 1: not reached from outside (inside), 2: outside */
+    int j, i, w = ob_star_w, h = ob_star_h, again = 1;
+    for (j = 0; j < h; j++)
+        for (i = 0; i < w; i++) in[j][i] = ob_star_rows[j][i] != '.' ? 0 : 1;
+    while (on && again) {
+        again = 0;
+        for (j = 0; j < h; j++)
+            for (i = 0; i < w; i++) {
+                if (in[j][i] != 1) continue;
+                if (j == 0 || i == 0 || j == h - 1 || i == w - 1 || in[j - 1][i] == 2 || in[j + 1][i] == 2 || in[j][i - 1] == 2 || in[j][i + 1] == 2) {
+                    in[j][i] = 2;
+                    again = 1;
+                }
+            }
+    }
+    for (j = 0; j < h; j++)
+        for (i = 0; i < w; i++) {
+            char l = ob_star_rows[j][i];
+            if (l == 'c') cfill(c, x + i, y + j, 1, 1, rgb);
+            else if (l == 's') cfill(c, x + i, y + j, 1, 1, 0x240024);
+            else if (on && in[j][i] == 1) cfill(c, x + i, y + j, 1, 1, rgb);
         }
 }
 
@@ -517,44 +535,45 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
         for (y = 0; y < h; y++)
             for (x = 0; x < w; x++) px[(size_t)y * pitch + x] = ((x / c.s) * 2 + (y / c.s)) % 56 < 9 ? 0xFF0000A2u : 0xFF0000B6u;
     }
-    cplate(&c, 14, 8, 292, 46, 0x000000, 0, NULL);
-    ctext_c(&c, 14, 292, 22, "CONTROLLER SETUP", 0xFFFFFF, 2);
-    cx[0] = 77; cx[1] = 160; cx[2] = 243;
+    /* the title's box (a dark shadow round it, as on the game's screen) */
+    {
+        int x0 = c.ox + 17 * c.s, y0 = c.oy + 8 * c.s, x1 = c.ox + 303 * c.s, y1 = c.oy + 56 * c.s, x, y;
+        for (y = y0 < 0 ? 0 : y0; y < y1 && y < h; y++)
+            for (x = x0 < 0 ? 0 : x0; x < x1 && x < w; x++) {
+                uint32_t v = px[(size_t)y * pitch + x];
+                px[(size_t)y * pitch + x] = 0xFF000000u | (((v >> 16 & 255) * 5 / 8) << 16) | (((v >> 8 & 255) * 5 / 8) << 8) | ((v & 255) * 5 / 8);
+            }
+    }
+    cplate(&c, 17, 8, 286, 48, 0x000000, 0, NULL);
+    ctext_c(&c, 20, 280, 24, "CONTROLLER SETUP", 0xFFFFFF, 2);
     for (t = 0; t < 2 && t < teams; t++) {
-        int x = t == 0 ? 14 : 180;
-        if (k->team && k->team_w > 0) {                /* the game's own banner for the team */
-            k->team(k->ud, px, w, h, pitch, c.ox + (x + (126 - k->team_w) / 2) * c.s, c.oy + 62 * c.s, t, c.s);
-            continue;
-        }
-        cplate(&c, x, 60, 126, 20, 0x00005C, col2[t], s->team[t]);
+        int x = t == 0 ? 20 : 212;
+        if (k->team && k->team_w > 0) k->team(k->ud, px, w, h, pitch, c.ox + x * c.s, c.oy + 56 * c.s, t, c.s);   /* the game's own banner */
+        else cplate(&c, x, 56, 88, 16, 0x00005C, col2[t], s->team[t]);
+        if (on_team(s, t) >= s->g.per_team) ctext_c(&c, x, 88, 75, "TEAM FULL", 0xFFFF00, 1);
     }
-    if (teams == 1) { (void)0; }
-    /* each column's devices */
+    /* each column's devices: the controller, and the player's star beside it (on the middle of the screen's side) */
     for (i = 0; i < s->n; i++) {
         const ob_sides_device *d = &s->d[i];
-        int col = teams == 1 ? (d->team == OB_SIDES_MIDDLE ? 0 : 1) : d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 ? 0 : 2;
-        per[col]++;
+        per[d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2]++;
     }
     for (i = 0; i < s->n; i++) {
+        static const uint32_t starrgb[4] = { 0xB6496D, 0x0092FF, 0x24B66D, 0xFFDB24 };
         const ob_sides_device *d = &s->d[i];
-        int col = teams == 1 ? (d->team == OB_SIDES_MIDDLE ? 0 : 1) : d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 ? 0 : 2;
-        int kind = kind_of(d->name), x, y, ih = ob_icons[kind].h, iw = ob_icons[kind].w;
-        rowh = per[col] > 3 ? 120 / per[col] : 40;
-        lbl = rowh >= 36;
-        y = top + at[col]++ * rowh;
-        x = cx[col] - iw / 2 + 8;
-        cstar(&c, x - 20, y + (ih - 15) / 2, d->ready);
-        cicon(&c, kind, x, y);
-        if (lbl) {
-            snprintf(line, sizeof line, "%.20s", d->name);
-            ctext_c(&c, cx[col] - 60 + 8, 120, y + ih + 2, line, d->ready ? 0xA0FFA0 : 0xFFFFFF, 1);
-        }
+        int col = d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2;
+        int kind = kind_of(d->name), n = per[col], sp = n <= 2 ? 60 : 120 / n, px0, py0, sx;
+        if (sp < 28) sp = 28;
+        py0 = 120 + (at[col]++ * 2 - (n - 1)) * sp / 2;
+        px0 = col == 0 ? 45 : col == 2 ? 237 : 158;
+        sx = col == 0 ? px0 + 36 : px0 - 36;
+        cstar(&c, sx, py0 + 2, starrgb[i & 3], d->ready);
+        cicon(&c, kind, px0 + (40 - ob_icons[kind].w) / 2, py0 + (27 - ob_icons[kind].h) / 2);
     }
-    (void)cols;
+    (void)cols; (void)cx; (void)rowh; (void)top; (void)lbl; (void)line;
     if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
     if (!seated(s)) foot = "Left / Right: pick a side";
     else if (!ob_sides_all_ready(s)) foot = "Left / Right: pick a side   OK: ready";
-    else if (s->host) foot = "Press OK to begin";
+    else if (s->host) foot = "Press Menu button to begin";
     else foot = "Waiting for the host to begin";
-    ctext_c(&c, 0, LW, 206, foot, 0xFFE020, 1);
+    ctext_c(&c, 0, LW, 208, foot, 0xFFFF00, 1);
 }
