@@ -463,8 +463,13 @@ uint32_t ob_pads_read(int p)
     uint32_t b = 0;
     SDL_GameController *c;
     if (p < 0 || p >= C.players || setup || S.open) return 0;
-    if (kbd_mask & (1u << p))
-        for (int i = 0; i < C.n; i++) if (key[p][i] != SDL_SCANCODE_UNKNOWN && down[key[p][i]]) b |= C.b[i].bit;
+    if (kbd_mask & (1u << p)) {
+        /* the select-sides screen seats the one keyboard on one side: it plays with the first player's keys wherever it sits (the second
+         * player's keys, or none for a third, are for two on one keyboard) */
+        unsigned m = kbd_mask & ((1u << C.players) - 1u);
+        int ks = (m & (m - 1)) == 0 ? 0 : p;
+        for (int i = 0; i < C.n; i++) if (key[ks][i] != SDL_SCANCODE_UNKNOWN && down[key[ks][i]]) b |= C.b[i].bit;
+    }
     if (p == mouse_player || (mouse_player < 0 && !mouse_play && p == 0)) b |= mouse_bits();   /* (in the menus the mouse is pad 1 unless it plays) */
     if ((c = ob_pads_controller(p))) b |= ctrl_buttons(c);
     return b;
