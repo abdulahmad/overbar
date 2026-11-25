@@ -73,6 +73,7 @@ int ob_pads_mouse_cursor(void);                 /* 1: the green cursor is the po
 int ob_pads_mouse_playing(void);                           /* the port said the game is playing (ob_pads_mouse_mode) */
 void ob_pads_mouse_motion(int dx, int dy);
 void ob_pads_mouse_wheel(int y);
+void ob_pads_mouse_press(int button);                      /* a button went down (the platform layer feeds it) */
 /* The mouse as a pad: the player it was given on the screen (-1: none). It steers like NHL 95 PC: the pointer's distance from the
  * middle of the window is the stick, the buttons are cfg.mouse_btn. ob_pads_mouse_draw draws the small green cursor; call it
  * where the port draws over the picture (ob_pads_setup_draw's place). */
