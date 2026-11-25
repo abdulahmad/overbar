@@ -544,13 +544,13 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
                 px[(size_t)y * pitch + x] = 0xFF000000u | (((v >> 16 & 255) * 5 / 8) << 16) | (((v >> 8 & 255) * 5 / 8) << 8) | ((v & 255) * 5 / 8);
             }
     }
-    cplate(&c, 20, 11, 280, 42, 0x000000, 0, NULL);
-    ctext_c(&c, 20, 280, 23, "CONTROLLER SETUP", 0xFFFFFF, 2);
+    cplate(&c, 17, 8, 286, 48, 0x000000, 0, NULL);
+    ctext_c(&c, 20, 280, 24, "CONTROLLER SETUP", 0xFFFFFF, 2);
     for (t = 0; t < 2 && t < teams; t++) {
         int x = t == 0 ? 20 : 212;
         if (k->team && k->team_w > 0) k->team(k->ud, px, w, h, pitch, c.ox + x * c.s, c.oy + 56 * c.s, t, c.s);   /* the game's own banner */
         else cplate(&c, x, 56, 88, 16, 0x00005C, col2[t], s->team[t]);
-        if (on_team(s, t) >= s->g.per_team) ctext_c(&c, x, 88, 74, "TEAM FULL", 0xFFE020, 1);
+        if (on_team(s, t) >= s->g.per_team) ctext_c(&c, x, 88, 75, "TEAM FULL", 0xFFFF00, 1);
     }
     /* each column's devices: the controller, and the player's star beside it (on the middle of the screen's side) */
     for (i = 0; i < s->n; i++) {
@@ -575,5 +575,5 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     else if (!ob_sides_all_ready(s)) foot = "Left / Right: pick a side   OK: ready";
     else if (s->host) foot = "Press Menu button to begin";
     else foot = "Waiting for the host to begin";
-    ctext_c(&c, 0, LW, 206, foot, 0xFFE020, 1);
+    ctext_c(&c, 0, LW, 208, foot, 0xFFFF00, 1);
 }
