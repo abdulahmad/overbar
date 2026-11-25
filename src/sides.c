@@ -451,14 +451,11 @@ static void cicon(cv *c, int kind, int x, int y)
     int j, i;
     for (j = 0; j < ic->h; j++)
         for (i = 0; i < ic->w; i++) {
-            char l = ic->rows[j][i];
-            if (l == '.') continue;
-            if (ic->keys) {
-                const char *k = strchr(ic->keys, l);
-                if (!k) continue;
-                cfill(c, x + i, y + j, 1, 1, ic->rgb[k - ic->keys]);
-            } else
-                cfill(c, x + i, y + j, 1, 1, icon_rgb(l));
+            if (ic->px) {
+                uint32_t v = ic->px[j * ic->w + i];
+                if (v >> 24) cfill(c, x + i, y + j, 1, 1, v & 0xFFFFFF);
+            } else if (ic->rows[j][i] != '.')
+                cfill(c, x + i, y + j, 1, 1, icon_rgb(ic->rows[j][i]));
         }
 }
 

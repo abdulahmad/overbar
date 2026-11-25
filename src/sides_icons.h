@@ -10,10 +10,9 @@
 enum { OB_ICON_PAD, OB_ICON_KEYBOARD, OB_ICON_MOUSE, OB_ICONS };
 
 typedef struct ob_icon {
-    const char *const *rows;        /* one string per row, one letter per game pixel */
+    const char *const *rows;        /* one string per row, one letter per game pixel (NULL when px is) */
     int w, h;
-    const char *keys;               /* with rgb: the letters this icon names exact colours by (NULL: the shared letters) */
-    const uint32_t *rgb;
+    const uint32_t *px;             /* or the pixels, ARGB, row by row (0: nothing) */
 } ob_icon;
 
 extern const ob_icon ob_icons[OB_ICONS];

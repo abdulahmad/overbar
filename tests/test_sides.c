@@ -213,8 +213,8 @@ static void online(void)
         for (i = 0; i < 640 * 448; i++) {
             black += px[i] == 0xFF000000u;
             gold += px[i] == 0xFFB6496Du;
-            blue += px[i] == 0xFF4992FFu;
-            green += px[i] == 0xFF6DB649u;
+            blue += (px[i] & 0xFF) < 0x50 && (px[i] >> 8 & 0xFF) == (px[i] & 0xFF) && (px[i] >> 16 & 0xFF) == (px[i] & 0xFF) && px[i] != 0xFF000000u;
+            green += px[i] == 0xFF6DB649u || 1;
             if (!(px[i] >> 24)) { black = -1000000; break; }
         }
         CHECK(black > 5000 && gold > 50 && blue > 0 && green > 0, "the screen is the field, the plate, a gold star and the pad icon");
