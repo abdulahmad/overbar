@@ -34,6 +34,9 @@ const ART = {
 // genManualBack, genCartTop and genCartBack exist only there (without them the manual's back is plain and the cartridge draws its own top strip and back plate)
 for (const k of ['genFront', 'genSpine', 'genBack', 'genManual', 'genCartFlat', 'genManualBack', 'genCartTop', 'genCartBack'])
   if (fs.existsSync(path.join(M, 'models/art/' + k + '.jpg'))) ART[k] = 'models/art/' + k + '.jpg';
+// the pack-ins (models/art/pk<Name>F/B, the milk cap pkCapF.png) and the console's licence screen (genTmss.png, read by the port's code)
+if (fs.existsSync(path.join(M, 'models/art')))
+  for (const f of fs.readdirSync(path.join(M, 'models/art'))) { const m = /^(pk\w+|genTmss)\.(jpg|png)$/.exec(f); if (m) ART[m[1]] = 'models/art/' + f; }
 for (let i = 1; i <= 4; i++) ART['disk' + i] = A + 'disk' + i + '.png';
 const man = fs.readdirSync(path.join(M, A + 'web')).filter(f => /^man-\d+\.jpg$/.test(f)).sort();
 const tech = fs.readdirSync(path.join(M, A + 'web')).filter(f => /^tech-\d+\.jpg$/.test(f)).sort();
@@ -61,6 +64,16 @@ let gen = rd('src/gen3d.js');
 // hand the models the extra scans (a mockup whose gen3d.js already does is left as it is)
 if (!gen.includes('genManualBack')) gen = patch(gen, 'manual:A.genManual})', 'manual:A.genManual,manualBack:A.genManualBack})');
 if (!gen.includes('genCartTop')) gen = patch(gen, 'makeCart({labelFlat:A.genCartFlat})', 'makeCart({labelFlat:A.genCartFlat,labelStrip:A.genCartTop,backPlate:A.genCartBack})');
+// the TV: the Hitachi CT2087B model with its remote in place of the mockup's stand-in box; the pack-ins (hidden until the port shows them)
+{
+  const a = gen.indexOf('tv=new T.Group();'), e = 'tv.add(knob2);', b = gen.indexOf(e);
+  if (a < 0 || b < a) throw new Error('patch point missing: the TV');
+  gen = gen.slice(0, a) + "tv=GENMODELS.makeTV({});tv.position.set(DX-11,-8.2,-1.5);scene.add(tv);const TP=tv.userData.parts;tvScreen=TP.screen;tvKnob=TP.door;tvKnob.userData.id='tvpw';tvKnob.userData.label='TV power';" +
+    "tvTex=canvasTex(512,384,(g,w,h)=>{g.fillStyle='#030303';g.fillRect(0,0,w,h)});tvCtx=tvTex._c.getContext('2d');tvScreen.material.map=tvTex;" +
+    "const tvRemote=GENMODELS.makeRemote();tvRemote.position.set(DX-3.5,-8.2,6.5);tvRemote.rotation.y=.35;tvRemote.userData.id='tvpw';tvRemote.userData.label='TV power';scene.add(tvRemote);" +
+    "const PK=[['pk4way',3.9,5.75],['pkFifa',3.9,5.75],['pkPoster',4.13,5.78,.03],['pkHint',2.7,4.2,.11],['pkReg',5.75,3.73],['pkWear',5.75,3.86],['pkOffer',2.5,3.5],['pkCard',2.5,3.5],['pkCap',1.84,1.84,.05,1]]" +
+    ".map((d,i)=>{const c=GENMODELS.makeCard({w:d[1],h:d[2],t:d[3],round:d[4],front:A[d[0]+'F'],back:A[d[0]+'B']});c.visible=false;scene.add(c);return c});window.__TVX={TP,tvRemote,PK};" + gen.slice(b + e.length);
+}
 gen = patch(gen, 'return {enter,back,state', 'window.__GEN={get scene(){return scene},get caseG(){return caseG},get cart(){return cart},get tv(){return tv},get tvScreen(){return tvScreen},get tvKnob(){return tvKnob},get con(){return con},get pads(){return pads},get tap(){return tap},get CP(){return CP},get NP(){return NP},get cam(){return cam}};return {enter,back,state');
 
 let html = rd('src/src.html');
@@ -92,6 +105,7 @@ function dump(which, uriKey) {
   } else {
     ['caseG', 'cart', 'tv', 'tvScreen', 'tvKnob', 'con', 'tap'].forEach(k => name(W[k], k));
     W.pads.forEach((p, i) => name(p, 'pad' + i));
+    if (window.__TVX) { for (const k in window.__TVX.TP) name(window.__TVX.TP[k], 'tv.' + k); name(window.__TVX.tvRemote, 'tvRemote'); window.__TVX.PK.forEach((c, i) => name(c, 'pk' + i)); }
     for (const k in W.CP) name(W.CP[k], 'case.' + k);
     for (const k in W.NP) { if (Array.isArray(W.NP[k])) W.NP[k].forEach((o, i) => name(o, 'con.' + k + i)); else name(W.NP[k], 'con.' + k); }
   }
