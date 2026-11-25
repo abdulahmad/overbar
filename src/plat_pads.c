@@ -253,7 +253,15 @@ static SDL_Rect menu_dst;                                  /* where the picture 
 static int menu_lb, menu_rb;                               /* buttons last frame, for the click edges */
 static Uint32 click_off;
 
-void ob_pads_mouse_motion(int dx, int dy) { macc_x += (float)dx; macc_y += (float)dy; move_ms = SDL_GetTicks(); }
+static float hand_x = 160, hand_y = 112;                    /* the pointer drawn while the mouse only steps a selection (relative mode hides the real one), picture pixels */
+void ob_pads_mouse_motion(int dx, int dy)
+{
+    float sc = menu_dst.h > 0 ? menu_dst.h / 224.0f : 3.0f;
+    macc_x += (float)dx; macc_y += (float)dy; move_ms = SDL_GetTicks();
+    hand_x += dx / sc; hand_y += dy / sc;
+    if (hand_x < 0) hand_x = 0; else if (hand_x > 319) hand_x = 319;
+    if (hand_y < 0) hand_y = 0; else if (hand_y > 223) hand_y = 223;
+}
 static unsigned press_latch;                                /* buttons pressed since the menu looked (bit 1 left, 2 right): a click too quick to show in the button state */
 void ob_pads_mouse_press(int button) { if (button == SDL_BUTTON_LEFT) press_latch |= 1; else if (button == SDL_BUTTON_RIGHT) press_latch |= 2; }
 void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; wheel_acc -= y; }
@@ -383,6 +391,21 @@ void ob_pads_mouse_draw(const SDL_Rect *dst)
     SDL_Window *w = ob_plat_window();
     int dx, dy, fl, f, flip, c, r;
     float sc, ax, ay;
+    if (ren && w && mouse_rel && !mouse_play && !menu_on && !S.open && !ob_plat_overlay_open()) {   /* a white arrow where the hand has moved to */
+        static const char *HAND[11] = { "O.......", "OO......", "OWO.....", "OWWO....", "OWWWO...", "OWWWWO..", "OWWWWWO.", "OWWWOOOO", "OWOWO...", "OO.OWO..", "O..OOO.." };
+        float hs = dst->h / 224.0f; int hr, hc;
+        SDL_Rect o[96], wf[96]; int no = 0, nf = 0;
+        for (hr = 0; hr < 11; hr++)
+            for (hc = 0; hc < 8; hc++) {
+                char ch = HAND[hr][hc];
+                SDL_Rect q = { (int)(dst->x + (hand_x + hc) * hs), (int)(dst->y + (hand_y + hr) * hs), (int)(hs + 1.0f), (int)(hs + 1.0f) };
+                if (ch == 'O') o[no++] = q; else if (ch == 'W') wf[nf++] = q;
+            }
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 255); SDL_RenderFillRects(ren, o, no);
+        SDL_SetRenderDrawColor(ren, 255, 255, 255, 255); SDL_RenderFillRects(ren, wf, nf);
+        return;
+    }
     if (mouse_player < 0 || !mouse_play || !ren || !w || S.open || ob_plat_overlay_open()) return;
     fl = mouse_aim(&dx, &dy);
     if (fl == -2) return;

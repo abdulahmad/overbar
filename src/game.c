@@ -278,3 +278,7 @@ void ob_game_session_end(ob_host *h)
             notify(h, i);
         }
 }
+
+static const char *const *game_help;
+void ob_game_set_help(const char *const *help) { game_help = help; }
+const char *ob_game_help(int index) { return game_help && index >= 0 ? game_help[index] : NULL; }
