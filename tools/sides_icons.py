@@ -1,16 +1,10 @@
 import json,os
 HERE=os.path.dirname(__file__)
 # the controller: exact pixels cut from Abdul's pixel-perfect capture of the NHL 94 Genesis controller-setup screen (tools/sides_pad.json,
-# 40 x 27, null = clear), one letter per distinct colour
+# 40 x 27, null = clear; the median of the three controllers on that screen)
 _pj=json.load(open(os.path.join(HERE,'sides_pad.json')))
-_keys='abcdefghijklmnopqrstuvwxyz'
-_cols=[]
-for r in _pj:
-    for c in r:
-        if c and tuple(c) not in _cols: _cols.append(tuple(c))
-pad=[''.join('.' if c is None else _keys[_cols.index(tuple(c))] for c in r) for r in _pj]
-pad_keys=_keys[:len(_cols)]
-pad_rgb=['0x%02X%02X%02X'%c for c in _cols]
+pad=None
+pad_px=[0 if c is None else 0xFF000000|c[0]<<16|c[1]<<8|c[2] for r in _pj for c in r]
 star=open(os.path.join(HERE,'sides_star.txt')).read().split()
 def grid(w,h): return [['.']*w for _ in range(h)]
 # keyboard 40x23
@@ -67,24 +61,24 @@ for x in range(2,W-2):
     if m[11][x] in '12': m[11][x]='0'
 for y in range(4,9): m[y][cx-1]='0'
 for y in range(5,9): m[y][cx-1]='4'; m[y][cx]='3'
-# shading like the controller's: a grey body, a lighter rim up and to the left (light from the top left), a darker rim down and to the right
-def _near(g,x,y,dx,dy,n):
-    for k in range(1,n+1):
-        xx,yy=x+dx*k,y+dy*k
-        if not(0<=xx<W and 0<=yy<H) or g[yy][xx]=='0': return True
-    return False
-base=[r[:] for r in m]
+mouse_px=[]
+def _g(v): return max(0,min(255,int(v)))
 for y in range(H):
     for x in range(W):
-        if base[y][x] in '12':
-            if _near(base,x,y,-1,0,1) or _near(base,x,y,0,-1,1): m[y][x]='3'
-            elif _near(base,x,y,1,0,1) or _near(base,x,y,0,1,1): m[y][x]='1'
-            else: m[y][x]='2'
-for y in range(H):
-    for x in range(W):
-        if base[y][x] in '12' and m[y][x]=='3' and _near(base,x,y,-1,-1,1) : m[y][x]='4'
-for y in range(5,9): m[y][cx-1]='4'; m[y][cx]='3'   # the wheel
-mouse=[''.join(r) for r in m]
+        c=m[y][x]
+        if c=='.': mouse_px.append(0); continue
+        if c=='0': mouse_px.append(0xFF000000); continue
+        # a grey body lit from the top left like the controller's: the ellipse's own surface, a lighter rim catching the light, a darker one away from it
+        import math
+        nx=(x-(W-1)/2)/(W/2); ny=(y-(H-1)/2)/(H/2); nz=math.sqrt(max(0.0,1-nx*nx-ny*ny))
+        d=max(0.0,(-0.45*nx-0.55*ny+0.70*nz))
+        v=0x16+0x22*d
+        if c=='2' and (m[y][x-1]=='0' or m[y-1][x]=='0'): v+=0x0C     # the rim up and to the left
+        if c=='2' and (m[y][x+1]=='0' or m[y+1][x]=='0'): v-=0x06     # and the rim away from the light
+        if y==12 and c in '12': v+=0x0A                               # the lit edge of the lower shell, under the buttons' gap
+        if c in '34': v=0x58 if c=='4' else 0x40                          # the wheel
+        v=_g(v); mouse_px.append(0xFF000000|v<<16|v<<8|v)
+
 def cdef(name,rows):
     s='static const char *const %s[] = {\n'%name
     for r in rows: s+='    "%s",\n'%r
@@ -101,18 +95,21 @@ out='''/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 #include "sides_icons.h"
 
 '''
-out+=cdef('pad_rows',pad)+cdef('kbd_rows',kb)+cdef('mouse_rows',mouse)+cdef('star_rows',star)
-out+='static const char pad_keys[] = "%s";\nstatic const uint32_t pad_rgb[] = { %s };\n'%(pad_keys,', '.join(pad_rgb))
+def pdef(name,px,w):
+    t='static const uint32_t %s[] = {\n'%name
+    for i in range(0,len(px),w): t+='    '+', '.join('0x%08X'%v for v in px[i:i+w])+',\n'
+    return t+'};\n'
+out+=cdef('kbd_rows',kb)+cdef('star_rows',star)+pdef('pad_px',pad_px,40)+pdef('mouse_px',mouse_px,18)
 out+='''
 const ob_icon ob_icons[OB_ICONS] = {
-    { pad_rows, %d, %d, pad_keys, pad_rgb },
-    { kbd_rows, %d, %d, NULL, NULL },
-    { mouse_rows, %d, %d, NULL, NULL },
+    { NULL, %d, %d, pad_px },
+    { kbd_rows, %d, %d, NULL },
+    { NULL, %d, %d, mouse_px },
 };
 
 /* the star: c the outline (any colour), s its shadow */
 const char *const *const ob_star_rows = star_rows;
 const int ob_star_w = %d, ob_star_h = %d;
-'''%(len(pad[0]),len(pad),len(kb[0]),len(kb),len(mouse[0]),len(mouse),len(star[0]),len(star))
+'''%(40,27,len(kb[0]),len(kb),W,H,len(star[0]),len(star))
 open(__import__('os').path.join(__import__('os').path.dirname(__file__),'..','src','sides_icons.c'),'w').write(out)
 
