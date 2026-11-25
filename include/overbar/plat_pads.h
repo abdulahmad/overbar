@@ -79,13 +79,12 @@ int ob_pads_mouse_player(void);
 uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3]);   /* for ports that read pads themselves: in play like _bits, else menu steps */
 void ob_pads_mouse_draw(const SDL_Rect *dst);
 
-/* A menu the port can point at: its rows as rectangles on the 320x224 picture (x from the picture's left edge, centred in the window if the
- * picture is wider), sel the selected row, lr when a row's options change with left / right (a click left of its middle is left, right of it
+/* A menu the port can point at: its rows as rectangles on the picture (224 tall, w wide: 320 or 256; x from its left edge), sel the selected row, lr when a row's options change with left / right (a click left of its middle is left, right of it
  * right), ok and back the port's buttons for a click and a right click. Call every frame; ob_pads_menu(NULL) says there is none
  * (the mouse then steps the selection like ob_pads_mouse_mode says). */
 #define OB_MENU_ROWS 16
 typedef struct { int x, y, w, h; } ob_menu_rect;
-typedef struct { const ob_menu_rect *row; int n, sel, lr; uint32_t ok, back; } ob_pad_menu;
+typedef struct { const ob_menu_rect *row; int n, sel, lr; uint32_t ok, back; int w; } ob_pad_menu;   /* w: the picture's width (0: 320) */
 void ob_pads_menu(const ob_pad_menu *m);
 /* where the mouse player is: picture pixels (224 tall) from the middle of the picture; 0, 0 draws the arrow from the middle */
 void ob_pads_mouse_anchor(int x, int y);
