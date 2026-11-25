@@ -651,6 +651,11 @@ static void test_keys(void)
     uint32_t now;
     if (!tk_init) test_parse();
     now = SDL_GetTicks() - tk_t0;
+    {   /* OVERBAR_TEST_SIDES=ms: opens the select-sides screen then */
+        static int sides_done;
+        const char *at = getenv("OVERBAR_TEST_SIDES");
+        if (at && !sides_done && now >= (uint32_t)atoi(at)) { sides_done = 1; ob_pads_sides_open(); }
+    }
     for (int i = 0; i < tk_n; i++) {
         SDL_Event e;
         if (!tk[i].done && now >= tk[i].at) {
@@ -731,7 +736,7 @@ void ob_plat_pump(void)
     int captured, pass;
     cursor_update();
     if (dev_dirty) { dev_dirty = 0; ob_plat_devices_refresh(); }
-    if (getenv("OVERBAR_TEST_KEYS")) test_keys();
+    if (getenv("OVERBAR_TEST_KEYS") || getenv("OVERBAR_TEST_SIDES")) test_keys();
     while (SDL_PollEvent(&e)) {
         note_input(&e);
         if (P.hk.event && P.hk.event(&e)) continue;
