@@ -70,6 +70,7 @@ int ob_pads_sides_active(void);
  * selection instead. The port says which, every frame, with ob_pads_mouse_mode. ob_pads_mouse_motion / _wheel are fed by the platform layer. */
 void ob_pads_mouse_mode(int play);
 int ob_pads_mouse_cursor(void);                 /* 1: the green cursor is the pointer now */
+int ob_pads_mouse_playing(void);                           /* the port said the game is playing (ob_pads_mouse_mode) */
 void ob_pads_mouse_motion(int dx, int dy);
 void ob_pads_mouse_wheel(int y);
 /* The mouse as a pad: the player it was given on the screen (-1: none). It steers like NHL 95 PC: the pointer's distance from the

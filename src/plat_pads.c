@@ -242,6 +242,7 @@ static float macc_x, macc_y;
 static uint32_t pulse_bits, pulse_off, pulse_next;
 
 void ob_pads_mouse_mode(int play) { mouse_play = play; }
+int ob_pads_mouse_playing(void) { return mouse_play; }
 int ob_pads_mouse_cursor(void) { return mouse_player >= 0 && mouse_play; }
 static int wheel_acc;                                      /* wheel clicks not yet used (up is minus) */
 static Uint32 move_ms;                                     /* when the pointer last moved or clicked */
