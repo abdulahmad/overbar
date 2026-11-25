@@ -376,7 +376,7 @@ uint32_t ob_sides_hotkeys_filter(uint32_t in, const ob_sides_hotkey *key, int n,
 
 /* The screen is laid out on the console's 320 x 224 and drawn at the largest whole-number scale that fits the picture,
  * centred, with the NHL 94 Rewind look: a blue field, a CONTROLLER SETUP plate, a plate for each team, each device as its
- * icon in the team's column (the middle when it has none) with a star that fills when it is ready. A game gives its own art
+ * icon in the team's column (the middle when it has none) with an empty star beside it (READY under the icon once it is ready). A game gives its own art
  * through ob_sides_skin (the field, its font, the team colours); without them it is drawn with Overbar's. */
 #define LW 320
 #define LH 224
@@ -462,30 +462,15 @@ static void cicon(cv *c, int kind, int x, int y)
         }
 }
 
-/* the star (37 x 21 game pixels, from the game's own screen): an outline in rgb with its dark shadow, filled when the device is ready */
-static void cstar(cv *c, int x, int y, uint32_t rgb, int on)
+/* the star (37 x 21 game pixels, from the game's own screen): always empty, an outline in rgb with its dark shadow */
+static void cstar(cv *c, int x, int y, uint32_t rgb)
 {
-    char in[21][37];                                             /* 0: the star's own pixel, 1: not reached from outside (inside), 2: outside */
-    int j, i, w = ob_star_w, h = ob_star_h, again = 1;
-    for (j = 0; j < h; j++)
-        for (i = 0; i < w; i++) in[j][i] = ob_star_rows[j][i] != '.' ? 0 : 1;
-    while (on && again) {
-        again = 0;
-        for (j = 0; j < h; j++)
-            for (i = 0; i < w; i++) {
-                if (in[j][i] != 1) continue;
-                if (j == 0 || i == 0 || j == h - 1 || i == w - 1 || in[j - 1][i] == 2 || in[j + 1][i] == 2 || in[j][i - 1] == 2 || in[j][i + 1] == 2) {
-                    in[j][i] = 2;
-                    again = 1;
-                }
-            }
-    }
-    for (j = 0; j < h; j++)
-        for (i = 0; i < w; i++) {
+    int j, i;
+    for (j = 0; j < ob_star_h; j++)
+        for (i = 0; i < ob_star_w; i++) {
             char l = ob_star_rows[j][i];
             if (l == 'c') cfill(c, x + i, y + j, 1, 1, rgb);
             else if (l == 's') cfill(c, x + i, y + j, 1, 1, 0x240024);
-            else if (on && in[j][i] == 1) cfill(c, x + i, y + j, 1, 1, rgb);
         }
 }
 
@@ -566,8 +551,9 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
         py0 = 120 + (at[col]++ * 2 - (n - 1)) * sp / 2;
         px0 = col == 0 ? 45 : col == 2 ? 237 : 158;
         sx = col == 0 ? px0 + 36 : px0 - 36;
-        cstar(&c, sx, py0 + 2, starrgb[i & 3], d->ready);
+        cstar(&c, sx, py0 + 2, starrgb[i & 3]);
         cicon(&c, kind, px0 + (40 - ob_icons[kind].w) / 2, py0 + (27 - ob_icons[kind].h) / 2);
+        if (d->ready) ctext_c(&c, px0, 40, py0 + 29, "READY", 0xFFFF00, 1);   /* the star stays empty; ready is said in words */
     }
     (void)cols; (void)cx; (void)rowh; (void)top; (void)lbl; (void)line;
     if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
