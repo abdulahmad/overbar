@@ -187,6 +187,7 @@ enum {
     OB_ID_SEASON_NOTE,          /* a status or error line */
     OB_ID_OSK,                  /* Keys page: F9 on-screen keyboard */
     OB_ID_FRAME_RATE,           /* Video page: how often the game draws (when the client gave choices) */
+    OB_ID_SIDES,                /* Input page: Select sides (a port with the screen sets host.sides_menu and shell.sides) */
     OB_ID_MENU_SOUNDS,          /* Main page: the overlay's navigation sounds off / on */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
@@ -314,6 +315,7 @@ typedef struct ob_host {
     int replay_secs_index;      /* 0 off, 1 10s, 2 20s, 3 30s, 4 60s */
     int gif_scale;              /* 0 1x, 1 2x, 2 3x */
     int recording;
+    int sides_menu;             /* the port has the select-sides screen: the Input page lists it */
     int device_n;               /* the Input page's list of connected devices (ob_host_device_*) */
     char device_kind[OB_DEVICES_MAX][24];
     char device_name[OB_DEVICES_MAX][64];
@@ -503,6 +505,7 @@ typedef struct ob_shell {
     int (*vsync)(int v);          /* -1 reads the running window */
     int (*stats)(int v);
     void (*quit)(void);
+    void (*sides)(void);         /* Input > Select sides: opens the screen (ob_pads_sides_open) */
     void (*controllers)(void);   /* the bar's Input > Controllers: the client's own pad setup (NULL: the overlay's Input page) */
 } ob_shell;
 

@@ -38,6 +38,7 @@ static struct {
     int stick_dir[OB_PLAT_SLOTS];
     uint8_t trigger_down[OB_PLAT_SLOTS][2];
     int text_on, cursor_hidden;
+    uint32_t mouse_ms;          /* SDL_GetTicks of the last mouse move or press (the pointer hides 3 s after it, on auto) */
     uint32_t over_px[OVER_W * OVER_H];
     uint32_t fps_px[FPS_W * FPS_H];
     int over_mw, over_mh, over_x, over_y, over_w, over_h;
@@ -117,8 +118,8 @@ void ob_plat_devices_refresh(void)
     char name[64];
     if (!P.host) return;
     ob_host_devices_clear(P.host);
-    if (desktop() || seen_key) ob_host_device_add(P.host, "Keyboard", "Keyboard");
-    if (desktop() || seen_mouse) ob_host_device_add(P.host, "Mouse", "Mouse");
+    if (desktop() || seen_key) ob_host_device_add(P.host, "Keyboard", "connected");
+    if (desktop() || seen_mouse) ob_host_device_add(P.host, "Mouse", "connected");
     for (int i = 0; !P.hk.no_pads && i < OB_PLAT_SLOTS; i++) {
         char kind[24];
         int pl;
@@ -321,12 +322,13 @@ static void note_input(const SDL_Event *e)
         return;
     case SDL_MOUSEMOTION:
         if (!seen_mouse) { seen_mouse = 1; dev_dirty = 1; }
-        if (e->motion.xrel || e->motion.yrel) last_in = IN_MOUSE;
+        if (e->motion.xrel || e->motion.yrel) { last_in = IN_MOUSE; P.mouse_ms = SDL_GetTicks() | 1u; }
         return;
     case SDL_MOUSEBUTTONDOWN:
     case SDL_MOUSEWHEEL:
         if (!seen_mouse) { seen_mouse = 1; dev_dirty = 1; }
         last_in = IN_MOUSE;
+        P.mouse_ms = SDL_GetTicks() | 1u;
         return;
     case SDL_CONTROLLERBUTTONDOWN:
         last_in = IN_PAD;
@@ -382,6 +384,9 @@ static int osk_event(const SDL_Event *e)
 
 /* ---- the select-sides screen and chat ---- */
 
+int ob_plat_overlay_open(void) { return P.host && P.host->overlay_open; }
+void ob_plat_overlay_close(void) { if (P.host && P.host->overlay_open) ob_overlay_close(P.host); }
+
 void ob_plat_room(ob_sides *sides, ob_chat *chat) { R_sides = sides; R_chat = chat; }
 
 void ob_plat_sides_devices(ob_sides *sides)
@@ -389,6 +394,7 @@ void ob_plat_sides_devices(ob_sides *sides)
     int i;
     if (!sides) return;
     ob_sides_add(sides, 0, "Keyboard");
+    if (desktop() || seen_mouse) ob_sides_add(sides, 100, "Mouse");
     if (!P.hk.no_pads)
         for (i = 0; i < OB_PLAT_SLOTS; i++)
             if (P.ctrl[i]) ob_sides_add(sides, 1 + i, SDL_GameControllerName(P.ctrl[i]));
@@ -416,6 +422,19 @@ static int room_event(const SDL_Event *e)
                : b == SDL_CONTROLLER_BUTTON_B ? MDRT_MENU_BACK : -1;
             if (in < 0 || slot < 0) return 1;
             return ob_sides_input(R_sides, 1 + slot, in);
+        }
+        if (e->type == SDL_MOUSEBUTTONDOWN && ob_sides_find(R_sides, 0, 100) >= 0) {
+            /* the mouse: a click in a column sends the mouse's device there (or says ready when it is there); right click is Back */
+            int ww = 0, wh = 0, d = ob_sides_find(R_sides, 0, 100);
+            SDL_GetWindowSize(P.win, &ww, &wh);
+            if (e->button.button == SDL_BUTTON_RIGHT) return ob_sides_input(R_sides, 100, MDRT_MENU_BACK);
+            if (e->button.button == SDL_BUTTON_LEFT && ww > 0) {
+                int want = e->button.x * 3 < ww ? 0 : e->button.x * 3 > ww * 2 ? 2 : 1, tm = R_sides->d[d].team;
+                int cur = R_sides->g.teams == 1 ? (tm == OB_SIDES_MIDDLE ? 0 : 1) : tm == OB_SIDES_MIDDLE ? 1 : tm == 0 ? 0 : 2;
+                if (R_sides->g.teams == 1) want = want > 0;
+                return ob_sides_input(R_sides, 100, want < cur ? MDRT_MENU_LEFT : want > cur ? MDRT_MENU_RIGHT : MDRT_MENU_OK);
+            }
+            return 1;
         }
         if ((e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_CONTROLLERAXISMOTION) && !P.hk.no_pads) return 1;
         if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) {
@@ -446,7 +465,11 @@ static void sync_text_input(void)
 static void cursor_update(void)
 {
     if (P.hk.window_only) return;                         /* the port's: it knows when the game draws a pointer of its own */
-    int hide = !(P.host->overlay_open || ob_screen_up() || (P.hk.captures && P.hk.captures()) || P.host->pointer == 1);   /* a full-window screen (the box) keeps the pointer */
+    /* a full-window screen (the box) keeps the pointer; on auto the pointer shows while it moves and hides after 3 s of nothing */
+    int moving = P.mouse_ms && (uint32_t)(SDL_GetTicks() - P.mouse_ms) < 3000u;
+    int hide = !(P.host->overlay_open || ob_screen_up() || (P.hk.captures && P.hk.captures()) || P.host->pointer == 1 || (P.host->pointer == 0 && moving));
+    if (P.host->pointer == 2 && !P.host->overlay_open) hide = 1;
+    if (ob_pads_mouse_player() >= 0 && !P.host->overlay_open && !ob_pads_sides_active()) hide = 1;   /* the green cursor is the pointer then */
     if (hide != P.cursor_hidden) { SDL_ShowCursor(hide ? SDL_DISABLE : SDL_ENABLE); P.cursor_hidden = hide; }
 }
 
@@ -497,6 +520,7 @@ static void overlay_handle(int mdrt_input)
     else if (mdrt_input == MDRT_MENU_OK) menu_sound(OB_SFX_SELECT);
     else if (P.host->overlay.sel != was || mdrt_input == MDRT_MENU_LEFT || mdrt_input == MDRT_MENU_RIGHT) menu_sound(OB_SFX_MOVE);
     if (r == OB_ID_CONTROLLERS && P.hk.action) P.hk.action(r);
+    if (r == OB_ID_SIDES) ob_pads_sides_open();
     after_change();
 }
 
@@ -526,6 +550,7 @@ static void overlay_mouse(int wx, int wy, int what)
     if (what == 0) { if (P.host->overlay.sel != was) menu_sound(OB_SFX_MOVE); return; }
     menu_sound(what == 2 ? OB_SFX_BACK : what == 1 ? OB_SFX_SELECT : OB_SFX_MOVE);
     if (r == OB_ID_CONTROLLERS && P.hk.action) P.hk.action(r);
+    if (r == OB_ID_SIDES) ob_pads_sides_open();
     after_change();
 }
 
@@ -626,6 +651,11 @@ static void test_keys(void)
     uint32_t now;
     if (!tk_init) test_parse();
     now = SDL_GetTicks() - tk_t0;
+    {   /* OVERBAR_TEST_SIDES=ms: opens the select-sides screen then */
+        static int sides_done;
+        const char *at = getenv("OVERBAR_TEST_SIDES");
+        if (at && !sides_done && now >= (uint32_t)atoi(at)) { sides_done = 1; ob_pads_sides_open(); }
+    }
     for (int i = 0; i < tk_n; i++) {
         SDL_Event e;
         if (!tk[i].done && now >= tk[i].at) {
@@ -706,7 +736,7 @@ void ob_plat_pump(void)
     int captured, pass;
     cursor_update();
     if (dev_dirty) { dev_dirty = 0; ob_plat_devices_refresh(); }
-    if (getenv("OVERBAR_TEST_KEYS")) test_keys();
+    if (getenv("OVERBAR_TEST_KEYS") || getenv("OVERBAR_TEST_SIDES")) test_keys();
     while (SDL_PollEvent(&e)) {
         note_input(&e);
         if (P.hk.event && P.hk.event(&e)) continue;
@@ -926,6 +956,9 @@ static void osk_draw_screen(const SDL_Rect *dst)
     static uint32_t px[OVER_W * OVER_H];
     static SDL_Texture *tex;
     static int tw, th;
+    if (R_sides && R_sides->open && !ob_plat_osk_is_open()) {   /* the select-sides screen is laid out on 320 x 224: as large as fits */
+        t = dst->w / 320 < dst->h / 224 ? dst->w / 320 : dst->h / 224;
+    }
     if (t < 1) t = 1;
     mw = dst->w / t;
     mh = dst->h / t;

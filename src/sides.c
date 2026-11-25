@@ -8,7 +8,9 @@
  *   STATE   open u8, done u8, the teams' names (each length u8, bytes), devices u8, then each:
  *           owner u8, local u8, team + 1 u8, ready u8, name     the host's, to every guest */
 #include "overbar/sides.h"
+#include <stdio.h>
 #include <string.h>
+#include "sides_icons.h"
 #include "mdrt/menu.h"
 
 enum { K_ADD = 1, K_REMOVE, K_INPUT, K_STATE };
@@ -372,61 +374,179 @@ uint32_t ob_sides_hotkeys_filter(uint32_t in, const ob_sides_hotkey *key, int n,
 
 /* ---- drawing ---- */
 
-static void fill(uint32_t *px, int w, int h, int pitch, int x, int y, int rw, int rh, uint32_t rgb)
+/* The screen is laid out on the console's 320 x 224 and drawn at the largest whole-number scale that fits the picture,
+ * centred, with the NHL 94 Rewind look: a blue field, a CONTROLLER SETUP plate, a plate for each team, each device as its
+ * icon in the team's column (the middle when it has none) with a star that fills when it is ready. A game gives its own art
+ * through ob_sides_skin (the field, its font, the team colours); without them it is drawn with Overbar's. */
+#define LW 320
+#define LH 224
+
+typedef struct cv { uint32_t *px; int w, h, pitch, s, ox, oy; const ob_sides_skin *k; } cv;
+
+static void cfill(cv *c, int x, int y, int w, int h, uint32_t rgb)
 {
-    int i, j;
-    for (j = 0; j < rh; j++) {
-        if (y + j < 0 || y + j >= h) continue;
-        for (i = 0; i < rw; i++)
-            if (x + i >= 0 && x + i < w) px[(size_t)(y + j) * pitch + x + i] = rgb;
+    int i, j, x0 = c->ox + x * c->s, y0 = c->oy + y * c->s, x1 = x0 + w * c->s, y1 = y0 + h * c->s;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > c->w) x1 = c->w;
+    if (y1 > c->h) y1 = c->h;
+    for (j = y0; j < y1; j++)
+        for (i = x0; i < x1; i++) c->px[(size_t)j * c->pitch + i] = 0xFF000000u | rgb;
+}
+
+/* the width of s in game pixels at mul times the font's size */
+static int cwidth(const cv *c, const char *s, int mul)
+{
+    if (c->k->text_width) return c->k->text_width(c->k->ud, s, mul > 1);
+    return (int)strlen(s) * 6 * mul;
+}
+
+/* s with its top left at game pixel x, y, mul times the size, a shadow under it */
+static void ctext(cv *c, int x, int y, const char *s, uint32_t rgb, int mul)
+{
+    char b[80];
+    uint32_t t[80 * 6 * 3 * 10 * 3];
+    int n, len = (int)strlen(s), i, j, tw, th = 9;
+    if (len > 79) len = 79;
+    memcpy(b, s, (size_t)len);
+    b[len] = 0;
+    if (c->k->text) {
+        c->k->text(c->k->ud, c->px + (size_t)(c->oy + y * c->s) * c->pitch + (c->ox + x * c->s), c->w - (c->ox + x * c->s), c->h - (c->oy + y * c->s), c->pitch,
+                   0, 0, b, 0xFF000000u | rgb, mul > 1, c->s);
+        return;
+    }
+    tw = len * 6 + 1;
+    if (tw * th > (int)(sizeof t / sizeof t[0])) return;
+    memset(t, 0, (size_t)tw * th * sizeof t[0]);
+    mdrt_menu_text(t, tw, th, tw, 0, 0, b, 0xFF000000u | rgb);
+    n = c->s * mul;
+    for (j = 0; j < th * n; j++) {
+        int yy = c->oy + y * c->s + j;
+        if (yy < 0 || yy >= c->h) continue;
+        for (i = 0; i < tw * n; i++) {
+            int xx = c->ox + x * c->s + i;
+            uint32_t v = t[(j / n) * tw + i / n];
+            if (v && xx >= 0 && xx < c->w) c->px[(size_t)yy * c->pitch + xx] = v | 0xFF000000u;
+        }
     }
 }
 
-/* text cut to fit `chars`, centred in a column `cw` wide at x */
-static void text_in(uint32_t *px, int w, int h, int pitch, int x, int cw, int y, const char *s, uint32_t rgb)
+static void ctext_c(cv *c, int x, int w, int y, const char *s, uint32_t rgb, int mul)
 {
-    char b[64];
-    int chars = cw / 6, len;
-    if (chars > 63) chars = 63;
-    if (chars < 1) return;
-    len = (int)strlen(s);
-    if (len > chars) len = chars;
-    memcpy(b, s, (size_t)len);
-    b[len] = 0;
-    mdrt_menu_text(px, w, h, pitch, x + (cw - len * 6) / 2, y, b, rgb);
+    ctext(c, x + (w - cwidth(c, s, mul)) / 2, y, s, rgb, mul);
+}
+
+static uint32_t icon_rgb(char l)
+{
+    switch (l) {
+    case '0': return 0x000000; case '1': return 0x181818; case '2': return 0x2C2C2C; case '3': return 0x484848;
+    case '4': return 0x686868; case 'W': return 0xE0E0E0; case 'B': return 0x3880F0; case 'Y': return 0xF0C820;
+    case 'R': return 0xE0506A; case 'G': return 0x50B030; default: return 0;
+    }
+}
+
+static void cicon(cv *c, int kind, int x, int y)
+{
+    const ob_icon *ic = &ob_icons[kind];
+    int j, i;
+    for (j = 0; j < ic->h; j++)
+        for (i = 0; i < ic->w; i++)
+            if (ic->rows[j][i] != '.') cfill(c, x + i, y + j, 1, 1, icon_rgb(ic->rows[j][i]));
+}
+
+/* the star (15 game pixels): an outline, or filled when the device is ready */
+static void cstar(cv *c, int x, int y, int on)
+{
+    static const char *const r[15] = {
+        ".......1.......", ".......1.......", "......111......", "......111......", ".....11111.....", "111111111111111", ".1111111111111.",
+        "..11111111111..", "...111111111...", "...111111111...", "..1111...1111..", "..111.....111..", ".111.......111.", ".11.........11.", "11...........11" };
+    int j, i;
+    for (j = 0; j < 15; j++)
+        for (i = 0; i < 15; i++) {
+            int edge;
+            if (r[j][i] != '1') continue;
+            edge = j == 0 || i == 0 || j == 14 || i == 14 || r[j - 1][i] != '1' || r[j + 1][i] != '1' || r[j][i - 1] != '1' || r[j][i + 1] != '1';
+            if (on) cfill(c, x + i, y + j, 1, 1, edge ? 0xC08000 : 0xF8D830);   /* filled: ready */
+            else if (edge) cfill(c, x + i, y + j, 1, 1, 0x28A8FF);              /* the outline only */
+        }
+}
+
+static int kind_of(const char *name)
+{
+    char b[16];
+    size_t i;
+    for (i = 0; i < sizeof b - 1 && name[i]; i++) b[i] = (char)(name[i] >= 'A' && name[i] <= 'Z' ? name[i] + 32 : name[i]);
+    b[i] = 0;
+    if (!strncmp(b, "keyboard", 8)) return OB_ICON_KEYBOARD;
+    if (!strncmp(b, "mouse", 5)) return OB_ICON_MOUSE;
+    return OB_ICON_PAD;
+}
+
+static void cplate(cv *c, int x, int y, int w, int h, uint32_t fill, uint32_t band, const char *text)
+{
+    cfill(c, x, y, w, h, 0x8C8CA8);
+    cfill(c, x + 2, y + 2, w - 4, h - 4, fill);
+    if (band) cfill(c, x + 2, y + h - 7, w - 4, 5, band);
+    if (text) ctext_c(c, x, w, y + (h - 8) / 2 - 1, text, 0xFFFFFF, 1);
 }
 
 void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
 {
-    int cols = s->g.teams + 1, bw, bh, x0, y0, cw, i, t;
+    static const ob_sides_skin none;
+    cv c;
+    const ob_sides_skin *k = &s->g.skin;
+    int teams = s->g.teams, i, t, cols = 3, cx[3], per[3] = { 0, 0, 0 }, at[3] = { 0, 0, 0 }, rowh, top = 90, lbl;
     const char *foot;
-    if (!s->open || w < 120 || h < 80) return;
-    bw = w - 16 > 360 ? 360 : w - 16;
-    bh = 40 + (s->n ? s->n : 1) * 14;
-    if (bh > h - 8) bh = h - 8;
-    x0 = (w - bw) / 2;
-    y0 = (h - bh) / 2;
-    cw = (bw - 8) / cols;
-    fill(px, w, h, pitch, x0, y0, bw, bh, 0xF0101830u);
-    text_in(px, w, h, pitch, x0, bw, y0 + 4, "Select sides", 0xFFFFFFFFu);
-    /* the columns: team 0, the middle, then the rest (two teams: away | middle | home) */
-    for (t = 0; t < cols; t++) {
-        int team = t == 0 ? 0 : t == 1 ? OB_SIDES_MIDDLE : t - 1;
-        const char *head = team == OB_SIDES_MIDDLE ? "" : s->team[team];
-        if (s->g.teams == 1) head = t == 1 ? s->team[0] : "";
-        text_in(px, w, h, pitch, x0 + 4 + t * cw, cw, y0 + 16, head, 0xFFE0E060u);
+    char line[64];
+    uint32_t col2[2] = { k->team_rgb[0] ? k->team_rgb[0] : 0xE03030u, k->team_rgb[1] ? k->team_rgb[1] : 0x3060E0u };
+    if (!s->open || w < 64 || h < 48) return;
+    if (!k) k = &none;
+    c.px = px; c.w = w; c.h = h; c.pitch = pitch; c.k = k;
+    c.s = w / LW < h / LH ? w / LW : h / LH;
+    if (c.s < 1) c.s = 1;
+    c.ox = (w - LW * c.s) / 2;
+    c.oy = (h - LH * c.s) / 2;
+    /* the field */
+    if (k->background) k->background(k->ud, px, w, h, pitch);
+    else {
+        int x, y;
+        for (y = 0; y < h; y++)
+            for (x = 0; x < w; x++) px[(size_t)y * pitch + x] = ((x / c.s) * 2 + (y / c.s)) % 56 < 9 ? 0xFF0000A2u : 0xFF0000B6u;
     }
-    for (i = 0; i < s->n && y0 + 30 + i * 14 + 12 <= y0 + bh - 12; i++) {
+    cplate(&c, 14, 8, 292, 46, 0x000000, 0, NULL);
+    ctext_c(&c, 14, 292, 22, "CONTROLLER SETUP", 0xFFFFFF, 2);
+    cx[0] = 77; cx[1] = 160; cx[2] = 243;
+    for (t = 0; t < 2 && t < teams; t++) {
+        int x = t == 0 ? 14 : 180;
+        cplate(&c, x, 60, 126, 20, 0x00005C, col2[t], s->team[t]);
+    }
+    if (teams == 1) { (void)0; }
+    /* each column's devices */
+    for (i = 0; i < s->n; i++) {
         const ob_sides_device *d = &s->d[i];
-        int col = d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 ? 0 : d->team + 1;
-        int x, y = y0 + 30 + i * 14;
-        if (s->g.teams == 1) col = d->team == OB_SIDES_MIDDLE ? 0 : 1;
-        x = x0 + 4 + col * cw;
-        fill(px, w, h, pitch, x + 2, y, cw - 4, 12, d->ready ? 0xFF508050u : 0xFF303860u);
-        text_in(px, w, h, pitch, x + 2, cw - 4, y + 2, d->name, 0xFFFFFFFFu);
+        int col = teams == 1 ? (d->team == OB_SIDES_MIDDLE ? 0 : 1) : d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 ? 0 : 2;
+        per[col]++;
     }
-    if (!ob_sides_all_ready(s)) foot = "Left/Right: pick a side   OK: ready";
-    else if (s->host) foot = "Everyone is ready: OK starts";
-    else foot = "Everyone is ready: the host starts";
-    text_in(px, w, h, pitch, x0, bw, y0 + bh - 12, foot, 0xFFC0C0C0u);
+    for (i = 0; i < s->n; i++) {
+        const ob_sides_device *d = &s->d[i];
+        int col = teams == 1 ? (d->team == OB_SIDES_MIDDLE ? 0 : 1) : d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 ? 0 : 2;
+        int kind = kind_of(d->name), x, y, ih = ob_icons[kind].h, iw = ob_icons[kind].w;
+        rowh = per[col] > 3 ? 120 / per[col] : 40;
+        lbl = rowh >= 36;
+        y = top + at[col]++ * rowh;
+        x = cx[col] - iw / 2 + 8;
+        cstar(&c, x - 20, y + (ih - 15) / 2, d->ready);
+        cicon(&c, kind, x, y);
+        if (lbl) {
+            snprintf(line, sizeof line, "%.20s", d->name);
+            ctext_c(&c, cx[col] - 60 + 8, 120, y + ih + 2, line, d->ready ? 0xA0FFA0 : 0xFFFFFF, 1);
+        }
+    }
+    (void)cols;
+    if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
+    if (!seated(s)) foot = "Left / Right: pick a side";
+    else if (!ob_sides_all_ready(s)) foot = "Left / Right: pick a side   OK: ready";
+    else if (s->host) foot = "Press OK to begin";
+    else foot = "Waiting for the host to begin";
+    ctext_c(&c, 0, LW, 206, foot, 0xFFE020, 1);
 }

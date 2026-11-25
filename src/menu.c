@@ -492,8 +492,10 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;
     case OB_PAGE_INPUT:
-        for (int i = 0; i < h->device_n; i++) add_text(out, &n, cap - 2, OB_ID_DEVICE, h->device_kind[i], h->device_name[i]);
+        add_text(out, &n, cap - 4, OB_ID_DEVICE, h->device_n ? "Connected devices:" : "No devices found", NULL);
+        for (int i = 0; i < h->device_n; i++) add_text(out, &n, cap - 4, OB_ID_DEVICE, h->device_kind[i], h->device_name[i]);
         if (h->device_n) begin_group(out, &n, cap);
+        if (h->sides_menu) add_action(out, &n, cap, OB_ID_SIDES, "Select sides", NULL);
         add_action(out, &n, cap, OB_ID_CONTROLLERS, "Controllers", NULL);
         add_action(out, &n, cap, OB_ID_BACK, "Back", NULL);
         return n;

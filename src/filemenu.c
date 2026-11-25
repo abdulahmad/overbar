@@ -363,6 +363,10 @@ static void apply_cmd(int id, int value)
         if (g_shell.redraw) g_shell.redraw();
         return;
     }
+    if (id == OB_ID_SIDES) {
+        if (g_shell.sides) g_shell.sides();
+        return;
+    }
     if (id == OB_ID_CONTROLLERS) {
         if (g_shell.controllers) { g_shell.controllers(); return; }
         if (!g_host->overlay_open) ob_overlay_open(g_host);
