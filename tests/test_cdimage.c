@@ -4,7 +4,7 @@
  * The CD image reader (src/cdimage.c) on discs this test makes: a data track of two files
  * (ISO 9660), two audio tracks, ripped as a .cue with a file a track (raw 2352 byte sectors with
  * the pregap), as one .bin for the disc, as a plain .iso with loose WAVE tracks beside it, and
- * as a CloneCD .ccd / .img. */
+ * as a CloneCD .ccd / .img, and as 78 loose WAVE tracks. */
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -164,6 +164,23 @@ int main(void)
                "[Entry 5]\nPoint=0x03\nControl=0x00\nPLBA=%d\n", SECTORS, SECTORS + 6);
     fclose(f);
     check_disc(ob_cd_find("test_cdimage_out/d", need, 2, NULL, 0), "CloneCD", 588 * 6, 588 * 5);
+    /* 5: a disc of 79 tracks, a file a track (more files than are kept open) */
+    mk("test_cdimage_out/e");
+    f = fopen("test_cdimage_out/e/data.iso", "wb"); fwrite(iso, 1, sizeof iso, f); fclose(f);
+    for (int t = 2; t <= 79; t++) {
+        char p[64];
+        snprintf(p, sizeof p, "test_cdimage_out/e/Track %02d.wav", t);
+        put_wav(p, t, 100 + t);
+    }
+    {
+        ob_cd *cd = ob_cd_find("test_cdimage_out/e", need, 2, NULL, 0);
+        int16_t s[4];
+        CHECK(cd && ob_cd_audio_tracks(cd) == 78);
+        for (int t = 2; cd && t <= 79; t++)
+            CHECK(ob_cd_track_frames(cd, t) == 100 + t && ob_cd_track_read(cd, t, 5, s, 1) == 1 && s[0] == (int16_t)(t * 1000 + 5));
+        CHECK(cd && ob_cd_track_read(cd, 2, 7, s, 1) == 1 && s[0] == 2007);
+        ob_cd_close(cd);
+    }
     /* not this disc: its files missing */
     static const char *const other[1] = { "HOCKEY.BIN" };
     CHECK(ob_cd_find("test_cdimage_out", other, 1, NULL, 0) == NULL);
