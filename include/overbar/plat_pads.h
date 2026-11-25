@@ -69,6 +69,9 @@ int ob_pads_sides_active(void);
 /* The mouse as a pad. In play (the default) the pointer steers and the green cursor is drawn; outside play (menus, setup, pause) the mouse steps a
  * selection instead. The port says which, every frame, with ob_pads_mouse_mode. ob_pads_mouse_motion / _wheel are fed by the platform layer. */
 void ob_pads_mouse_mode(int play);
+/* 0: outside play the mouse's travel and wheel press no directions (a screen any press leaves, like a title or logo: only its buttons
+ * count there); 1 (the default): they step the selection. The port says which with each screen */
+void ob_pads_mouse_steps(int on);
 int ob_pads_mouse_cursor(void);                 /* 1: the green cursor is the pointer now */
 int ob_pads_mouse_playing(void);                           /* the port said the game is playing (ob_pads_mouse_mode) */
 void ob_pads_mouse_motion(int dx, int dy);

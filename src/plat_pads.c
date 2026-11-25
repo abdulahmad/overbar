@@ -244,8 +244,10 @@ static int mouse_rel;                                      /* relative mouse mod
 static float macc_x, macc_y;
 static int rel_x, rel_y, rel_have;                         /* the pointer's last place, for its travel outside play */
 static uint32_t pulse_bits, pulse_off, pulse_next;
+static int mouse_steps = 1;                                /* (ob_pads_mouse_steps) its travel steps the selection */
 
 void ob_pads_mouse_mode(int play) { mouse_play = play; }
+void ob_pads_mouse_steps(int on) { mouse_steps = on; }
 int ob_pads_mouse_playing(void) { return mouse_play; }
 int ob_pads_mouse_cursor(void) { return mouse_player >= 0 && mouse_play; }
 static int wheel_acc;                                      /* wheel clicks not yet used (up is minus) */
@@ -375,6 +377,7 @@ uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3])
     }
     now = SDL_GetTicks();
     if (now >= pulse_off) pulse_bits = 0;
+    if (!mouse_steps) macc_x = macc_y = 0;                 /* (a screen any press leaves: moving the mouse is not one) */
     if (!pulse_bits && now >= pulse_next) {
         float ax = macc_x < 0 ? -macc_x : macc_x, ay = macc_y < 0 ? -macc_y : macc_y;
         if (ay >= MENU_STEP && ay >= ax) pulse_bits = macc_y < 0 ? dir[0] : dir[1];
