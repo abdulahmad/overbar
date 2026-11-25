@@ -16,14 +16,19 @@ typedef enum {
     OB_SCREEN_MOVE,               /* the mouse moved to x, y */
     OB_SCREEN_PRESS,              /* the left button went down at x, y */
     OB_SCREEN_RELEASE,            /* and came up */
-    OB_SCREEN_WHEEL,              /* y: +1 up, -1 down */
-    OB_SCREEN_ZOOM                /* a pinch: x is how much, in 1/1000 of the window (+ apart, - together) */
+    OB_SCREEN_WHEEL,              /* a mouse wheel's notch: y +1 up, -1 down */
+    OB_SCREEN_ZOOM,               /* a pinch (a touch screen's, or a touchpad's, which Windows sends as Ctrl + scroll): amount is how much,
+                                     as a share of the window (+ apart, - together); x is the same in 1/1000 */
+    OB_SCREEN_PAN,                /* a touchpad's two-finger scroll: dx, dy in scroll notches (fractions), as the system scrolls */
+    OB_SCREEN_MPRESS,             /* the middle button went down at x, y */
+    OB_SCREEN_MRELEASE            /* and came up */
 } ob_screen_kind;
 
 typedef struct ob_screen_ev {
     int kind;
     int x, y;                     /* in the pixels draw() gets */
     int pad;                      /* 1 when it came from a controller */
+    float amount, dx, dy;         /* OB_SCREEN_ZOOM, OB_SCREEN_PAN */
 } ob_screen_ev;
 
 typedef struct ob_screen {

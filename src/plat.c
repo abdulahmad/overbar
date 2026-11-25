@@ -13,6 +13,7 @@
 #include "overbar/screen.h"
 
 #ifdef OVERBAR_SDL
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -709,10 +710,32 @@ static int screen_event(const SDL_Event *e)
     case SDL_KEYUP: case SDL_TEXTINPUT: return 1;
     case SDL_MOUSEMOTION: ev.kind = OB_SCREEN_MOVE; ev.x = e->motion.x; ev.y = e->motion.y; break;
     case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP:
-        if (e->button.button != SDL_BUTTON_LEFT) return 1;
-        ev.kind = e->type == SDL_MOUSEBUTTONDOWN ? OB_SCREEN_PRESS : OB_SCREEN_RELEASE; ev.x = e->button.x; ev.y = e->button.y; break;
-    case SDL_MOUSEWHEEL: ev.kind = OB_SCREEN_WHEEL; ev.y = e->wheel.y > 0 ? 1 : -1; break;
-    case SDL_MULTIGESTURE: if (e->mgesture.numFingers < 2) return 1; ev.kind = OB_SCREEN_ZOOM; ev.x = (int)(e->mgesture.dDist * 1000); if (!ev.x) return 1; break;
+        if (e->button.button == SDL_BUTTON_MIDDLE) ev.kind = e->type == SDL_MOUSEBUTTONDOWN ? OB_SCREEN_MPRESS : OB_SCREEN_MRELEASE;
+        else if (e->button.button == SDL_BUTTON_LEFT) ev.kind = e->type == SDL_MOUSEBUTTONDOWN ? OB_SCREEN_PRESS : OB_SCREEN_RELEASE;
+        else return 1;
+        ev.x = e->button.x; ev.y = e->button.y; break;
+    case SDL_MOUSEWHEEL: {
+        /* a mouse wheel turns in whole notches; a touchpad's two-finger scroll comes in fractions (and sideways), and its pinch as
+           Ctrl + scroll (Windows). Once a touchpad scroll is going, all of it pans (a whole step now and then is not a wheel) */
+        static uint32_t pan_at;
+        float px = e->wheel.preciseX, py = e->wheel.preciseY;
+        int ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+#ifdef _WIN32
+        if (GetKeyState(VK_CONTROL) & 0x8000) ctrl = 1;
+#endif
+        if (px == 0 && py == 0) return 1;
+        uint32_t now = SDL_GetTicks();
+        int frac = px != 0 || fabsf(py - roundf(py)) > 1e-3f;
+        if (ctrl) { ev.kind = OB_SCREEN_ZOOM; ev.amount = py * 0.055f; ev.x = (int)(ev.amount * 1000); }
+        else if (frac || now - pan_at < 300) { ev.kind = OB_SCREEN_PAN; ev.dx = px; ev.dy = py; pan_at = now; }
+        else { ev.kind = OB_SCREEN_WHEEL; ev.y = py > 0 ? 1 : -1; }
+        break;
+    }
+    case SDL_MULTIGESTURE:
+        if (e->mgesture.numFingers < 2) return 1;
+        ev.kind = OB_SCREEN_ZOOM; ev.amount = e->mgesture.dDist; ev.x = (int)(ev.amount * 1000);
+        if (ev.amount == 0) return 1;
+        break;
     case SDL_FINGERDOWN: case SDL_FINGERUP: case SDL_FINGERMOTION: return 1;
     case SDL_CONTROLLERBUTTONDOWN: {
         int b = e->cbutton.button;
