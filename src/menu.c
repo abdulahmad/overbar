@@ -327,6 +327,7 @@ int ob_main_items(const ob_host *h, ob_item *out, int cap)
      * share it), hi-res and lo-res apart on 95 / 96 PC. */
     if (h->has_hires) add_action(out, &n, cap, OB_ID_SCALE_HI, "Scaling (Hi-Res)", NULL);
     add_action(out, &n, cap, OB_ID_SCALE_LO, h->has_hires ? "Scaling (Lo-Res)" : "Scaling", NULL);
+    if (h->has_movie) add_action(out, &n, cap, OB_ID_SCALE_MOVIE, "Scaling (Movie)", NULL);   /* (a movie can take heavier filtering than the game) */
     if (h->has_sound) add_action(out, &n, cap, OB_ID_SOUND, "Sound", NULL);
     add_action(out, &n, cap, OB_ID_INPUT, "Input", NULL);
     add_action(out, &n, cap, OB_ID_CAPTURE, "Capture", NULL);
@@ -370,10 +371,16 @@ static int ob_opts_items(const ob_host *h, ob_class cls, ob_item *out, int cap);
  * height and Monitor. */
 static int ob_scale_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
 {
-    const ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
+    const ob_look *look = ob_host_look_c(h, cls);
     ob_item opts[OB_ITEMS_MAX];
     int n = 0, no, i, first;
-    int mode_id = cls == OB_CLASS_HIRES ? OB_ID_MODE_MENU_HI : OB_ID_MODE_MENU_LO;
+    int mode_id = cls == OB_CLASS_HIRES ? OB_ID_MODE_MENU_HI : cls == OB_CLASS_MOVIE ? OB_ID_MODE_MENU_MOVIE : OB_ID_MODE_MENU_LO;
+    if (cls == OB_CLASS_MOVIE) {                           /* the game's scaling, or the movie's own below */
+        static const char *const own_choices[] = { "same as the game", "its own" };
+        add_choice(out, &n, cap, OB_ID_MOVIE_OWN, "Movie scaling", own_choices, 2, h->movie_own ? 1 : 0);
+        if (!h->movie_own) { add_action(out, &n, cap, OB_ID_BACK, "Back", NULL); return n; }
+        begin_group(out, &n, cap);
+    }
     add_action(out, &n, cap, mode_id, "Scale Mode", ob_mode_label(look->mode));
     no = ob_opts_items(h, cls, opts, OB_ITEMS_MAX);
     for (i = 0, first = 1; i < no && n < cap; i++) {
@@ -393,7 +400,7 @@ static int ob_scale_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
         add_choice(out, &n, cap, OB_ID_WIDESCREEN, "Widescreen", wide_choices, 2, h->widescreen ? 1 : 0);
     }
     add_choice(out, &n, cap, OB_ID_PICTURE_HEIGHT, "Picture height", height_choices, 4, look->height);
-    if (cls == OB_CLASS_LORES) {
+    if (cls != OB_CLASS_HIRES) {
         begin_group(out, &n, cap);
         add_choice(out, &n, cap, OB_ID_MONITOR_KHZ, "Monitor", khz_choices, 2, look->khz31);
     }
@@ -403,7 +410,7 @@ static int ob_scale_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
 
 static int ob_mode_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
 {
-    const ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
+    const ob_look *look = ob_host_look_c(h, cls);
     int n = 0, i;
     int count = (int)(sizeof mode_values / sizeof mode_values[0]);
     for (i = 0; i < count; i++) {
@@ -420,7 +427,7 @@ static int ob_mode_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
  * stay on the Scaling page. */
 static int ob_opts_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
 {
-    const ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
+    const ob_look *look = ob_host_look_c(h, cls);
     ob_scale_mode m = look->mode;
     int n = 0;
     if (m == OB_MODE_RETROARCH) m = OB_MODE_SHARP;
@@ -482,6 +489,9 @@ int ob_page_items(const ob_host *h, int page, ob_item *out, int cap)
     case OB_PAGE_MODE_LO: return ob_mode_items(h, OB_CLASS_LORES, out, cap);
     case OB_PAGE_OPTS_HI: return ob_opts_items(h, OB_CLASS_HIRES, out, cap);
     case OB_PAGE_OPTS_LO: return ob_opts_items(h, OB_CLASS_LORES, out, cap);
+    case OB_PAGE_SCALE_MOVIE: return ob_scale_items(h, OB_CLASS_MOVIE, out, cap);
+    case OB_PAGE_MODE_MOVIE: return ob_mode_items(h, OB_CLASS_MOVIE, out, cap);
+    case OB_PAGE_OPTS_MOVIE: return ob_opts_items(h, OB_CLASS_MOVIE, out, cap);
     case OB_PAGE_MISTER: {
         const char *sel = ob_mister_selected(h, h->video_class, h->mister_kind);
         int at = !(h->mister_dir[0] && strchr(h->mister_dir, '/'));

@@ -83,6 +83,12 @@ void ob_defaults_apply(ob_host *h, ob_profile profile)
     h->hires.sharp = OB_SHARP_1X;   /* hi-res (the menus) is native 640x480 by default */
     /* lo-res: 3x, then bicubic to the window; 2x on a handheld (a 640x480 screen like the RG35XX's is 2x of 320x240) */
     if (profile == OB_PROFILE_HANDHELD) h->lores.sharp = OB_SHARP_2X;
+    /* the movie's own look: the lo-res one with a soft CRT, which hides a movie's blocks and dither */
+    h->movie = h->lores;
+    h->movie.mode = OB_MODE_CRT;
+    h->movie.crt = OB_CRT_SOFT;
+    h->movie.height = OB_HEIGHT_AUTO_CROP;
+    h->movie_own = 0;
     h->stats = 0;
     h->volume = 80;
     h->mute = 0;
@@ -120,7 +126,7 @@ void ob_host_set_present(ob_host *h, int have_gles2, int have_desktop_gl)
 {
     const ob_look *look;
     h->present = ob_present_pick(h->profile, have_gles2, have_desktop_gl);
-    look = (h->video_class == OB_CLASS_HIRES) ? &h->hires : &h->lores;
+    look = ob_host_look_c(h, h->video_class);
     h->fallback_note = ob_look_fallback_note(look->mode, h->present);
 }
 
@@ -384,6 +390,10 @@ int ob_host_save_ini(const ob_host *h)
     fprintf(f, "windows_pointer=%s\n", pointer_name[h->pointer % 3]);
     write_look(f, "lores", &h->lores, h->console_dar, 1);
     if (h->has_hires) write_look(f, "hires", &h->hires, 0, 0);
+    if (h->has_movie) {
+        fprintf(f, "movie_scaling=%s\n", h->movie_own ? "own" : "game");
+        write_look(f, "movie", &h->movie, h->console_dar, 1);
+    }
     fprintf(f, "volume=%d\n", h->volume);
     fprintf(f, "mute=%s\n", h->mute ? "on" : "off");
     fprintf(f, "menu_sounds=%s\n", h->menu_sounds ? "on" : "off");
@@ -436,6 +446,8 @@ int ob_host_load_ini(ob_host *h, const char *path)
         else if (ob_game_read_ini(h, k, v)) {}
         else if (!strncmp(k, "lores_", 6)) apply_look_key(&h->lores, k + 6, v);
         else if (!strncmp(k, "hires_", 6)) apply_look_key(&h->hires, k + 6, v);
+        else if (!strcmp(k, "movie_scaling")) { h->movie_own = !strcmp(v, "own"); h->has_movie = 1; }   /* (kept when the ini is written before the port says it has movies) */
+        else if (!strncmp(k, "movie_", 6)) { apply_look_key(&h->movie, k + 6, v); h->has_movie = 1; }
     }
     fclose(f);
     /* An older settings file kept empty paths for "the defaults"; empty is none now. A look
@@ -457,11 +469,20 @@ int ob_host_load_ini(ob_host *h, const char *path)
     return 1;
 }
 
+ob_look *ob_host_look(ob_host *h, ob_class cls)
+{
+    return cls == OB_CLASS_HIRES ? &h->hires : cls == OB_CLASS_MOVIE ? &h->movie : &h->lores;
+}
+const ob_look *ob_host_look_c(const ob_host *h, ob_class cls)
+{
+    return cls == OB_CLASS_HIRES ? &h->hires : cls == OB_CLASS_MOVIE ? &h->movie : &h->lores;
+}
+
 const char *ob_mister_selected(const ob_host *h, ob_class cls, int kind)
 {
     const ob_look *look;
     if (!h || kind < 0 || kind > 4) return "";
-    look = cls == OB_CLASS_HIRES ? &h->hires : &h->lores;
+    look = ob_host_look_c(h, cls);
     /* a preset is checked while the filters are still the ones it set */
     if (kind == 4) return ob_mister_preset_matches(look, look->mister_path[4]) ? look->mister_path[4] : "";
     return look->mister_path[kind];
@@ -471,7 +492,7 @@ void ob_mister_pick(ob_host *h, ob_class cls, int kind, const char *rel)
 {
     ob_look *look;
     if (!h || kind < 0 || kind > 4) return;
-    look = cls == OB_CLASS_HIRES ? &h->hires : &h->lores;
+    look = ob_host_look(h, cls);
     snprintf(look->mister_path[kind], sizeof look->mister_path[kind], "%s", rel ? rel : "");
     if (kind == 4) ob_mister_read_preset(rel, look);   /* its filters, gamma, mask and scale */
     look->mode = OB_MODE_MISTER;
@@ -482,7 +503,7 @@ void ob_mister_pick(ob_host *h, ob_class cls, int kind, const char *rel)
 
 int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
 {
-    ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
+    ob_look *look = ob_host_look(h, cls);
     if (ob_game_apply(h, id, value)) { h->live_preview = 1; return 1; }
     if (ob_season_apply(h, id, value)) { h->live_preview = 1; return 1; }
     switch (id) {
@@ -514,6 +535,7 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
         if (value >= 0 && value < n) look->mode = modes[value];
         break;
     }
+    case OB_ID_MOVIE_OWN: h->movie_own = value != 0; break;
     case OB_ID_VIDEO_CLASS: h->video_class = value ? OB_CLASS_HIRES : OB_CLASS_LORES; break;
     case OB_ID_SHARP_AMOUNT: look->sharp = value + (cls == OB_CLASS_HIRES ? 0 : 1); break;
     case OB_ID_CRT_LOOK: look->crt = (ob_crt_look)value; break;

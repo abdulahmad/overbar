@@ -71,7 +71,7 @@ void ob_present_sdl_frame(ob_present_sdl *p, ob_host *h, const uint32_t *px, int
     }
     SDL_UpdateTexture((SDL_Texture *)p->texture, NULL, px, src_w * (int)sizeof(uint32_t));
     SDL_GetRendererOutputSize(ren, &ww, &wh);
-    ob_view_from_host(h, h->has_hires ? h->video_class : OB_CLASS_LORES,
+    ob_view_from_host(h, h->has_hires && h->video_class == OB_CLASS_HIRES ? OB_CLASS_HIRES : OB_CLASS_LORES,
                       src_w, src_h, ww, wh, &in);
     ob_view(&in, &out);
     x = out.blit_x;

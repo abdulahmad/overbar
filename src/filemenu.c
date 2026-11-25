@@ -97,6 +97,7 @@ static int page_of(int id)
     case OB_ID_MODE_MENU_LO: return OB_PAGE_MODE_LO;
     case OB_ID_OPTS_MENU_HI: return OB_PAGE_OPTS_HI;
     case OB_ID_OPTS_MENU_LO: return OB_PAGE_OPTS_LO;
+    case OB_ID_SCALE_MOVIE: return OB_PAGE_SCALE_MOVIE;
     default: return -1;
     }
 }
@@ -299,6 +300,9 @@ static int build_bar(void)
             static char game_label[80];
             snprintf(game_label, sizeof game_label, "%s...", ob_game_title(g_host));
             bar_item(g_bar, game_label, add_cmd(OB_ID_GAME, 0, OB_CLASS_LORES), 0, 0);
+        } else if (page == OB_PAGE_SCALE_MOVIE) {
+            /* the movie's scaling: the bar opens the overlay page (its rows edit the movie look, not the bar's two) */
+            bar_item(g_bar, "Scaling (Movie)...", add_cmd(OB_ID_SCALE_MOVIE, 0, OB_CLASS_LORES), 0, 0);
         } else if (page == OB_PAGE_SEASON) {
             /* Season lists who has which team: the bar opens the overlay page */
             bar_item(g_bar, "Season...", add_cmd(OB_ID_SEASON, 0, OB_CLASS_LORES), 0, 0);
@@ -360,9 +364,10 @@ static void apply_cmd(int id, int value)
         if (g_shell.redraw) g_shell.redraw();
         return;
     }
-    if (id == OB_ID_GAME) {
+    if (id == OB_ID_GAME || id == OB_ID_SCALE_MOVIE) {
         if (!g_host->overlay_open) ob_overlay_open(g_host);
-        g_host->overlay_page = OB_PAGE_GAME;
+        if (id == OB_ID_SCALE_MOVIE) g_host->video_class = OB_CLASS_MOVIE;
+        g_host->overlay_page = id == OB_ID_GAME ? OB_PAGE_GAME : OB_PAGE_SCALE_MOVIE;
         g_host->overlay.sel = 0;
         ob_overlay_build(g_host);
         if (g_shell.redraw) g_shell.redraw();

@@ -88,14 +88,14 @@ void ob_view_par(const ob_view_out *v, int *num, int *den)
 void ob_view_from_host(const ob_host *h, ob_class cls, int src_w, int src_h,
                        int window_w, int window_h, ob_view_in *in)
 {
-    const ob_look *look = (cls == OB_CLASS_HIRES) ? &h->hires : &h->lores;
+    const ob_look *look = ob_host_look_c(h, cls);
     in->src_w = src_w;
     in->src_h = src_h;
     in->dar_h = h->console_dar ? 240 : src_h;
     in->window_w = window_w;
     in->window_h = window_h;
     in->height = look->height;
-    in->line_double = (cls == OB_CLASS_LORES && ob_mode_has_khz(look->mode) && look->khz31);
+    in->line_double = (cls != OB_CLASS_HIRES && ob_mode_has_khz(look->mode) && look->khz31);
     in->auto_crop_src_rows = 0;
     in->wide_num = in->wide_den = 0;
 }

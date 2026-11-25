@@ -1077,8 +1077,10 @@ static int screen_present(void)
     int pw, ph, lines;
     const uint32_t *pic = ob_screen_picture(&pw, &ph, &lines);
     if (pic) {                                             /* a console-sized picture (a movie): drawn like the game's, through the look */
-        const ob_look *look = ob_screen_video_look();         /* (a movie look the port chose, else the player's) */
-        if (!look) look = P.hk.cls == OB_CLASS_HIRES ? &P.host->hires : &P.host->lores;
+        /* the look: one the port set, else the movie's own (Scaling (Movie)), else the game's */
+        ob_class vcls = P.host->has_movie && P.host->movie_own ? OB_CLASS_MOVIE : P.hk.cls;
+        const ob_look *look = ob_screen_video_look();
+        if (!look) look = ob_host_look_c(P.host, vcls);
         static uint32_t *half, *ntsc;
         static long half_cap, ntsc_cap;
         int f = lines > 0 && ph % lines == 0 ? ph / lines : 1, sw = pw, sh = ph;
@@ -1101,12 +1103,12 @@ static int screen_present(void)
         }
         ob_view_in in;
         ob_view_out out;
-        ob_view_from_host(P.host, P.hk.cls, pw / f, ph / f, ww, wh, &in);   /* (the console's size: its shape on screen) */
+        ob_view_from_host(P.host, vcls, pw / f, ph / f, ww, wh, &in);   /* (the console's size: its shape on screen) */
         ob_view(&in, &out);
         for (long i = 0; i < (long)ww * wh; i++) px[i] = 0xFF000000u;
         uint32_t *lp = NULL;
         int dw = 0, dh = 0;
-        if (out.blit_w > 0 && out.blit_h > 0 && ob_render_cpu(look, P.hk.cls, pic, sw, sh, sw, out.blit_w, out.blit_h, &lp, &dw, &dh) && lp)
+        if (out.blit_w > 0 && out.blit_h > 0 && ob_render_cpu(look, vcls, pic, sw, sh, sw, out.blit_w, out.blit_h, &lp, &dw, &dh) && lp)
             for (int y = 0; y < out.blit_h; y++) {
                 int dy = out.blit_y + y, sy = y * dh / out.blit_h;
                 if (dy < 0 || dy >= wh) continue;

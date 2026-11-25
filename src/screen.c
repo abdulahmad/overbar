@@ -95,20 +95,3 @@ void ob_screen_set_video_look(const ob_look *look)
     else video_set = 0;
 }
 const ob_look *ob_screen_video_look(void) { return video_set ? &video : NULL; }
-
-const char *const ob_video_look_names[OB_VIDEO_LOOK_COUNT] = { "Game", "Smooth", "CRT soft", "CRT aperture" };
-
-int ob_video_look(int preset, const ob_look *game, ob_look *out)
-{
-    if (!out || preset <= OB_VIDEO_LOOK_GAME || preset >= OB_VIDEO_LOOK_COUNT) return 0;
-    if (game) *out = *game;
-    else *out = *ob_screen_look();
-    switch (preset) {
-    case OB_VIDEO_LOOK_SMOOTH:     out->mode = OB_MODE_SHARP; out->sharp = OB_SHARP_2X; break;
-    case OB_VIDEO_LOOK_CRT_SOFT:   out->mode = OB_MODE_CRT; out->crt = OB_CRT_SOFT; break;
-    case OB_VIDEO_LOOK_CRT_APERTURE: out->mode = OB_MODE_CRT; out->crt = OB_CRT_SOFT_APERTURE; break;
-    }
-    if (out->mask_scale < 1) out->mask_scale = 1;
-    if (out->bright <= 0) out->bright = 100;
-    return 1;
-}
