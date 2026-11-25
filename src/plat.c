@@ -1077,7 +1077,24 @@ static void osk_draw_screen(const SDL_Rect *dst)
         ob_osk_draw_at(&osk, px, mw, mh, mw, 1);
     } else ob_plat_room_draw(px, mw, mh, mw);
     SDL_Rect to = { dst->x + (dst->w - mw * t) / 2, dst->y + (dst->h - mh * t) / 2, mw * t, mh * t };
-    if (sides) to = *dst;
+    if (sides) {
+        /* the same scaling as the game's picture (the look: Sharp by default), at the picture's size in window pixels */
+        static SDL_Texture *stex;
+        static int stw, sth;
+        uint32_t *out = NULL;
+        int dw = 0, dh = 0;
+        to = *dst;
+        sd_ox = to.x; sd_oy = to.y; sd_t = t; sd_mw = mw; sd_mh = mh; sd_tw = to.w; sd_th = to.h;
+        if (ob_render_cpu(&P.host->lores, P.hk.cls, px, mw, mh, mw, dst->w, dst->h, &out, &dw, &dh) && out && dw > 0 && dh > 0) {
+            if (!stex || stw != dw || sth != dh) {
+                if (stex) SDL_DestroyTexture(stex);
+                stex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, dw, dh);
+                stw = dw; sth = dh;
+                if (stex) SDL_SetTextureScaleMode(stex, SDL_ScaleModeLinear);
+            }
+            if (stex) { SDL_UpdateTexture(stex, NULL, out, dw * 4); SDL_RenderCopy(P.ren, stex, NULL, &to); return; }
+        }
+    }
     sd_ox = to.x; sd_oy = to.y; sd_t = t; sd_mw = mw; sd_mh = mh; sd_tw = to.w; sd_th = to.h;
     SDL_SetTextureScaleMode(tex, to.w % mw == 0 && to.h % mh == 0 ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
     SDL_UpdateTexture(tex, NULL, px, mw * 4);
