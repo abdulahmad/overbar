@@ -394,16 +394,17 @@ struct ob_ddcache {
     uint32_t *out;
 };
 
-ob_ddcache *ob_ddcache_open(const char *path, int w, int h, uint32_t source)
+/* a file of frames fw x fh: "OBDD" a de-dither cache (frames 2x its movie's), "OBFR" frames as they were given */
+static ob_ddcache *open_file(const char *path, const char *magic, int fw, int fh, uint32_t source)
 {
     uint8_t hd[DD_HEAD];
     FILE *f = path ? fopen(path, "rb") : NULL;
     if (!f) return NULL;
     ob_ddcache *c = calloc(1, sizeof *c);
-    if (!c || fread(hd, 1, DD_HEAD, f) != DD_HEAD || memcmp(hd, "OBDD", 4) || get32(hd + 4) != DD_VERSION || get32(hd + 8) != (uint32_t)w * 2
-        || get32(hd + 12) != (uint32_t)h * 2 || get32(hd + 16) != source || !get32(hd + 20) || get32(hd + 20) > 100000) goto bad;
+    if (!c || fread(hd, 1, DD_HEAD, f) != DD_HEAD || memcmp(hd, magic, 4) || get32(hd + 4) != DD_VERSION || get32(hd + 8) != (uint32_t)fw
+        || get32(hd + 12) != (uint32_t)fh || get32(hd + 16) != source || !get32(hd + 20) || get32(hd + 20) > 100000) goto bad;
     c->f = f;
-    c->w = 2 * w; c->h = 2 * h;
+    c->w = fw; c->h = fh;
     c->frames = (int)get32(hd + 20);
     c->cap = (long)c->w * c->h * 8;
     uint8_t *ix = malloc((size_t)c->frames * 4);
@@ -423,6 +424,9 @@ bad:
     fclose(f);
     return NULL;
 }
+
+ob_ddcache *ob_ddcache_open(const char *path, int w, int h, uint32_t source) { return open_file(path, "OBDD", 2 * w, 2 * h, source); }
+ob_ddcache *ob_frames_open(const char *path, int w, int h, uint32_t source) { return open_file(path, "OBFR", w, h, source); }
 
 int ob_ddcache_frames(const ob_ddcache *c) { return c ? c->frames : 0; }
 
@@ -456,23 +460,28 @@ struct ob_ddcache_maker {
     uint8_t head[DD_HEAD];
 };
 
-ob_ddcache_maker *ob_ddcache_make(const char *path, int w, int h, uint32_t source)
+/* frames fw x fh into a file; hq: each comes in at half that and goes through ob_dedither_hq first */
+static ob_ddcache_maker *make_file(const char *path, const char *magic, int fw, int fh, uint32_t source, int hq)
 {
     ob_ddcache_maker *m = calloc(1, sizeof *m);
     if (!m || !path || strlen(path) >= sizeof m->path) { free(m); return NULL; }
     snprintf(m->path, sizeof m->path, "%s", path);
     snprintf(m->tmp, sizeof m->tmp, "%s.part", path);
-    memcpy(m->head, "OBDD", 4);
-    put32(m->head + 4, DD_VERSION); put32(m->head + 8, (uint32_t)w * 2); put32(m->head + 12, (uint32_t)h * 2); put32(m->head + 16, source);
-    m->bufcap = (long)w * h * 4 * 8;
-    m->q = ob_dedither_hq_new(w, h);
+    memcpy(m->head, magic, 4);
+    put32(m->head + 4, DD_VERSION); put32(m->head + 8, (uint32_t)fw); put32(m->head + 12, (uint32_t)fh); put32(m->head + 16, source);
+    m->bufcap = (long)fw * fh * 8;
+    m->q = hq ? ob_dedither_hq_new(fw / 2, fh / 2) : NULL;
     m->buf = malloc((size_t)m->bufcap);
-    int ok = planes_new(&m->pl, 2 * w, 2 * h);
+    int ok = planes_new(&m->pl, fw, fh);
     m->f = fopen(m->tmp, "wb");
     m->pos = DD_HEAD;
-    if (!ok || !m->q || !m->buf || !m->f || fwrite(m->head, 1, DD_HEAD, m->f) != DD_HEAD) { ob_ddcache_end(m, 0); return NULL; }
+    if (!ok || (hq && !m->q) || !m->buf || !m->f || fwrite(m->head, 1, DD_HEAD, m->f) != DD_HEAD) { ob_ddcache_end(m, 0); return NULL; }
     return m;
 }
+
+ob_ddcache_maker *ob_ddcache_make(const char *path, int w, int h, uint32_t source) { return make_file(path, "OBDD", 2 * w, 2 * h, source, 1); }
+ob_ddcache_maker *ob_ddcache_make_done(const char *path, int w, int h, uint32_t source) { return make_file(path, "OBDD", 2 * w, 2 * h, source, 0); }
+ob_ddcache_maker *ob_frames_make(const char *path, int w, int h, uint32_t source) { return make_file(path, "OBFR", w, h, source, 0); }
 
 int ob_ddcache_add(ob_ddcache_maker *m, const uint32_t *frame)
 {
@@ -484,7 +493,7 @@ int ob_ddcache_add(ob_ddcache_maker *m, const uint32_t *frame)
         m->index = ix;
         m->cap = cap;
     }
-    to_planes(ob_dedither_hq_frame(m->q, frame), &m->pl);
+    to_planes(m->q ? ob_dedither_hq_frame(m->q, frame) : frame, &m->pl);
     long len = encode_frame(&m->pl, m->buf, m->bufcap);
     if (len < 0 || fwrite(m->buf, 1, (size_t)len, m->f) != (size_t)len) return 0;
     m->index[m->frames++] = m->pos;

@@ -14,9 +14,10 @@
 #
 # The MiSTer filter files (mister/, GPL-3.0 data, see mister/README.md) are read at run time from a
 # mister folder next to the program. $(call overbar_copy_mister,DIR) copies them to DIR/mister.
+# The frame generation model (third_party/rife, MIT) likewise: $(call overbar_copy_rife,DIR) copies it to DIR/rife-v4.6.
 
 OVERBAR_DIR          ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
-OVERBAR_LIB_NAMES    := scaler render host present menu look overlay filemenu bar_win net plat plat_pads osk gl sides sides_icons chat room lane save fsdir files vdrive season season_ui serial game console vfont vfont_data vmenu sfx screen r3d r3gl box cdimage postfx
+OVERBAR_LIB_NAMES    := scaler render host present menu look overlay filemenu bar_win net plat plat_pads osk gl sides sides_icons chat room lane save fsdir files vdrive season season_ui serial game console vfont vfont_data vmenu sfx screen r3d r3gl box cdimage postfx framegen grade
 # macOS: the Cocoa menu bar is Objective-C: compile $(OVERBAR_MAC_SRCS) with -fobjc-arc and link $(OVERBAR_MAC_LIBS)
 ifeq ($(shell uname -s),Darwin)
 OVERBAR_MAC_SRCS     := $(OVERBAR_DIR)/src/bar_mac.m
@@ -31,3 +32,6 @@ OVERBAR_DEFS         := -DOB_SDL_BASE
 # the MiSTer filter files, copied next to the program
 OVERBAR_MISTER       := $(OVERBAR_DIR)/mister
 overbar_copy_mister   = mkdir -p "$(1)" && rm -rf "$(1)/mister" && cp -r "$(OVERBAR_MISTER)" "$(1)/mister"
+# the frame generation model (third_party/rife, MIT), read at run time from a rife-v4.6 folder next to the program
+OVERBAR_RIFE         := $(OVERBAR_DIR)/third_party/rife/rife-v4.6
+overbar_copy_rife     = mkdir -p "$(1)/rife-v4.6" && cp "$(OVERBAR_RIFE)/flownet.param" "$(OVERBAR_RIFE)/flownet.bin" "$(OVERBAR_DIR)/third_party/rife/LICENSE-RIFE.txt" "$(OVERBAR_DIR)/third_party/rife/LICENSE-rife-ncnn-vulkan.txt" "$(1)/rife-v4.6/"

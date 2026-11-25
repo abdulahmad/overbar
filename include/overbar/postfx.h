@@ -44,6 +44,13 @@ typedef struct ob_ddcache_maker ob_ddcache_maker;
 ob_ddcache_maker *ob_ddcache_make(const char *path, int w, int h, uint32_t source);
 int ob_ddcache_add(ob_ddcache_maker *m, const uint32_t *frame);
 int ob_ddcache_end(ob_ddcache_maker *m, int ok);
+/* the same cache from frames already through ob_dedither_hq (2w x 2h each: a maker that has them anyway) */
+ob_ddcache_maker *ob_ddcache_make_done(const char *path, int w, int h, uint32_t source);
+
+/* a file of any frames as they are (w x h each), in the same code: made with ob_frames_make and ob_ddcache_add /
+ * ob_ddcache_end, read with ob_ddcache_read / ob_ddcache_frames / ob_ddcache_close */
+ob_ddcache *ob_frames_open(const char *path, int w, int h, uint32_t source);
+ob_ddcache_maker *ob_frames_make(const char *path, int w, int h, uint32_t source);
 
 /* the stage: a movie's w x h frames in, the picture to show out (*ow x *oh: w x h, or 2w x 2h from the cache).
  * cache_path may be NULL (no cached mode: it plays live) */
