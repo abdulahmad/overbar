@@ -84,8 +84,14 @@ void r3_free(r3_scene *s);
 int r3_find(const r3_scene *s, const char *name);           /* node index or -1 */
 int r3_find_id(const r3_scene *s, const char *id);
 void r3_tex_set(r3_tex *t, uint32_t *argb, int w, int h);    /* takes the pixels; builds the mip levels */
+extern unsigned r3_tex_serial;                               /* goes up each time a texture's pixels are set */
 int r3_tex_add(r3_scene *s, uint32_t *argb, int w, int h);   /* a new texture (pixels taken) */
 int r3_mat_add(r3_scene *s, const r3_mat *m);
+/* build at run time (before any tween holds a node's fields: the node array may move): a node under parent (-1 the root),
+   and a flat rectangle x0..x1, y0..y1 at z in the node's frame, facing +z (face 1) or -z (face -1), its picture mirrored
+   left to right when mirror is set (a page's back) */
+int r3_node_add(r3_scene *s, int parent, const char *name);
+int r3_mesh_quad(r3_scene *s, int node, int mat, float x0, float x1, float y0, float y1, float z, int face, int mirror);
 
 void r3_update(r3_scene *s);                                 /* world matrices */
 const float *r3_world(r3_scene *s, int node);
@@ -101,6 +107,9 @@ void r3_render(r3_scene *s, r3_target *t, const uint32_t *bg);
    each thread its own rows. begin returns 0 when out of memory */
 int r3_render_begin(r3_scene *s, r3_target *t);
 void r3_render_rows(r3_scene *s, r3_target *t, const uint32_t *bg, int y0, int y1);
+/* a hash of everything a picture depends on (nodes, materials, lights, camera, textures set): the same
+   signature draws the same picture, so a still scene need not be drawn again */
+unsigned r3_signature(const r3_scene *s);
 /* project a world point; returns 0 if behind the camera. x, y in target pixels */
 int r3_project(r3_scene *s, const r3_target *t, const float p[3], float *x, float *y);
 /* the screen box of a node and everything under it; 0 if nothing visible */

@@ -28,6 +28,9 @@ static struct {
     r3_target tgt;
     uint32_t *bg; int bg_w, bg_h;
     uint32_t *rpx; int rcap;
+    uint32_t *c3; long c3cap; int c3w, c3h; unsigned c3sig; int c3full, c3ok;   /* the last 3D picture at window size, and what it shows */
+    float dyn; float r3ms; int r3w, r3h;   /* while things move: the share of the pixels drawn (to keep up), the last 3D picture's cost and size */
+    int fps, fps_n; double fps_t;
     double last;
     /* input */
     int mx, my, mouse_in, down, dragging, down_x, down_y, last_x, last_y, down_node, kb;
@@ -400,6 +403,176 @@ static void view_key(int k)
     else if (k == OB_SCREEN_OK) { if (V.i + 1 < V.n) view_next(0); else view_close(0); }
 }
 
+/* ---------------- the book: a manual read in 3D ----------------
+ * The pages as a booklet in front of the camera: two pages open, a leaf that turns over in 3D, the cover alone on the right
+ * at first. Pages are art keys read when shown (a few kept at a time), so a long manual costs little. Pick the right page (or
+ * Right) for the next, the left (or Left) for the one before; Full size opens the flat reader on the same pages. */
+#define BK_SLOTS 8
+static struct {
+    int up, built, n, s, dir; float t;            /* spread s (0: the cover alone); a turn: dir +1 / -1, t 0..1 */
+    char key[VIEW_MAX][32], title[96]; void (*close)(int);
+    int root, nSh, nL, nR, nT, nBL, nBR, nDim, mL, mR, mTf, mTb;
+    int slot_tex[BK_SLOTS], slot_page[BK_SLOTS]; unsigned slot_used[BK_SLOTS], tick;
+    float W, H;
+} K;
+int bx_book_up(void) { return K.up; }
+static int bk_tex(int page)                       /* the texture holding a page, read if it is not there */
+{
+    if (page < 0 || page >= K.n) return -1;
+    int lru = 0;
+    for (int i = 0; i < BK_SLOTS; i++) {
+        if (K.slot_page[i] == page) { K.slot_used[i] = ++K.tick; return K.slot_tex[i]; }
+        if (K.slot_used[i] < K.slot_used[lru]) lru = i;
+    }
+    int w = 0, h = 0; uint32_t *px = art_load(K.key[page], &w, &h, NULL);
+    r3_tex *t = &BX_S->texs[K.slot_tex[lru]];
+    t->flip_y = 1; t->rep[0] = t->rep[1] = 1;
+    r3_tex_set(t, px, w, h);
+    K.slot_page[lru] = page; K.slot_used[lru] = ++K.tick;
+    return K.slot_tex[lru];
+}
+static int bk_left(int s) { return s <= 0 ? -1 : 2 * s - 1 < K.n ? 2 * s - 1 : -1; }
+static int bk_right(int s) { return 2 * s < K.n ? 2 * s : -1; }
+static void bk_face(int node, int mat, int page)
+{
+    int tx = bk_tex(page);
+    bx_n(node)->vis = tx >= 0;
+    if (tx >= 0) BX_S->mats[mat].map = tx;
+}
+static void bk_layout(void)
+{
+    int l, r;
+    if (K.dir > 0) { l = bk_left(K.s); r = bk_right(K.s + 1); bk_face(K.nT, K.mTf, bk_right(K.s)); bk_face(K.nT, K.mTb, bk_left(K.s + 1)); bx_n(K.nT)->vis = 1; }
+    else if (K.dir < 0) { l = bk_left(K.s - 1); r = bk_right(K.s); bk_face(K.nT, K.mTf, bk_right(K.s - 1)); bk_face(K.nT, K.mTb, bk_left(K.s)); bx_n(K.nT)->vis = 1; }
+    else { l = bk_left(K.s); r = bk_right(K.s); bx_n(K.nT)->vis = 0; }
+    bk_face(K.nL, K.mL, l); bk_face(K.nR, K.mR, r);
+    bx_n(K.nBL)->vis = l >= 0 || (K.dir != 0); bx_n(K.nBR)->vis = r >= 0 || (K.dir != 0);
+    if (K.dir == 0) { bx_n(K.nBL)->vis = l >= 0; bx_n(K.nBR)->vis = r >= 0; }
+}
+static float bk_shift(int s) { return bk_left(s) < 0 ? -K.W / 2 : bk_right(s) < 0 ? K.W / 2 : 0; }
+static float bk_ease(float t) { return t < .5f ? 2 * t * t : 1 - (-2 * t + 2) * (-2 * t + 2) / 2; }
+static void bk_frame(float dt)
+{
+    if (K.dir) {
+        K.t += dt / 520.0f;
+        if (K.t >= 1) { K.s += K.dir; K.dir = 0; K.t = 0; bk_layout(); }
+    }
+    float a = K.dir > 0 ? bk_ease(K.t) : K.dir < 0 ? 1 - bk_ease(K.t) : 0;
+    r3_node *T = bx_n(K.nT);
+    T->rot[1] = -PI_F * a;
+    {   /* the cover alone sits in the middle, so does the back cover alone; two pages open sit either side of it */
+        float o0 = bk_shift(K.s), o1 = K.dir ? bk_shift(K.s + K.dir) : o0, e = K.dir ? bk_ease(K.t) : 0;
+        bx_n(K.nSh)->pos[0] = o0 + (o1 - o0) * e;
+    }
+    T->pos[2] = .02f + sinf(PI_F * a) * .25f;     /* the leaf lifts as it turns */
+    if (!K.dir) {
+        if (bk_right(K.s) >= 0 && bk_left(K.s + 1) >= 0) bx_hot_node(K.nR, "Next page");
+        if (bk_left(K.s) >= 0) bx_hot_node(K.nL, "Previous page");
+    }
+}
+static void bk_next(int a) { (void)a; if (K.dir || bk_left(K.s + 1) < 0) return; K.dir = 1; K.t = 0; bk_layout(); bx_sfx(SFX_PAGE, 0); }
+static void bk_prev(int a) { (void)a; if (K.dir || K.s <= 0) return; K.dir = -1; K.t = 0; bk_layout(); bx_sfx(SFX_PAGE, 0); }
+static void bk_close(int a)
+{
+    (void)a;
+    K.up = 0; K.dir = 0;
+    if (K.built && K.root >= 0 && K.root < BX_S->nnodes) bx_n(K.root)->vis = 0;
+    for (int i = 0; BX_S && i < BK_SLOTS; i++) if (K.slot_tex[i] >= 0 && K.slot_tex[i] < BX_S->ntexs) { r3_tex_set(&BX_S->texs[K.slot_tex[i]], NULL, 0, 0); K.slot_page[i] = -1; }
+    B.kb = -1;
+    if (K.close) K.close(0);
+}
+static void bk_full(int a)
+{
+    (void)a;
+    const char *k[VIEW_MAX];
+    for (int i = 0; i < K.n; i++) k[i] = K.key[i];
+    bx_view_open_keys(K.title, k, K.n, 1, NULL);
+    V.i = K.s > 0 ? bk_left(K.s) : 0;
+}
+static int bk_build(void)
+{
+    if (K.built && K.root >= 0 && K.root < BX_S->nnodes && !strcmp(BX_S->nodes[K.root].name, "book.root")) return 1;
+    int n0 = BX_S->nnodes;
+    K.root = r3_node_add(BX_S, -1, "book.root");
+    K.nSh = r3_node_add(BX_S, K.root, "book.shift");                 /* the booklet slides so what is open sits in the middle */
+    K.nL = r3_node_add(BX_S, K.nSh, "book.left"); K.nR = r3_node_add(BX_S, K.nSh, "book.right"); K.nT = r3_node_add(BX_S, K.nSh, "book.leaf");
+    K.nBL = r3_node_add(BX_S, K.nSh, "book.boardL"); K.nBR = r3_node_add(BX_S, K.nSh, "book.boardR"); K.nDim = r3_node_add(BX_S, K.root, "book.dim");
+    if (K.root < 0 || K.nDim < 0) return 0;
+    for (int i = n0; i < BX_S->nnodes; i++) { snprintf(BX_S->nodes[i].label, sizeof BX_S->nodes[i].label, "%s", K.title); }
+    r3_mat pg; memset(&pg, 0, sizeof pg);
+    pg.type = 'L'; pg.col[0] = pg.col[1] = pg.col[2] = 1; pg.map = -1; pg.opacity = 1; pg.depth_write = 1; pg.visible = 1; pg.bright = 1;
+    pg.emis[0] = pg.emis[1] = pg.emis[2] = .18f;
+    K.mL = r3_mat_add(BX_S, &pg); K.mR = r3_mat_add(BX_S, &pg); K.mTf = r3_mat_add(BX_S, &pg); K.mTb = r3_mat_add(BX_S, &pg);
+    r3_mat bd = pg; bd.map = -1; bd.col[0] = .045f; bd.col[1] = .04f; bd.col[2] = .036f; bd.emis[0] = bd.emis[1] = bd.emis[2] = 0;
+    int mBd = r3_mat_add(BX_S, &bd);
+    r3_mat dm = pg; dm.type = 'B'; dm.map = -1; dm.col[0] = dm.col[1] = dm.col[2] = 0; dm.opacity = .72f; dm.transparent = 1; dm.depth_write = 0; dm.emis[0] = dm.emis[1] = dm.emis[2] = 0;
+    int mDim = r3_mat_add(BX_S, &dm);
+    for (int i = 0; i < BK_SLOTS; i++) { K.slot_tex[i] = r3_tex_add(BX_S, NULL, 0, 0); K.slot_page[i] = -1; K.slot_used[i] = 0; }
+    K.H = 5.0f; K.W = 5.0f * .6875f;
+    float W = K.W, H = K.H, e = .05f;
+    r3_mesh_quad(BX_S, K.nL, K.mL, -W, 0, -H / 2, H / 2, .01f, 1, 0);
+    r3_mesh_quad(BX_S, K.nR, K.mR, 0, W, -H / 2, H / 2, .01f, 1, 0);
+    r3_mesh_quad(BX_S, K.nT, K.mTf, 0, W, -H / 2, H / 2, .004f, 1, 0);
+    r3_mesh_quad(BX_S, K.nT, K.mTb, 0, W, -H / 2, H / 2, -.004f, -1, 1);
+    r3_mesh_quad(BX_S, K.nBL, mBd, -W - e, 0, -H / 2 - e, H / 2 + e, -.04f, 1, 0);
+    r3_mesh_quad(BX_S, K.nBR, mBd, 0, W + e, -H / 2 - e, H / 2 + e, -.04f, 1, 0);
+    r3_mesh_quad(BX_S, K.nDim, mDim, -80, 80, -60, 60, -.6f, 1, 0);
+    bx_n(K.root)->vis = 0;
+    K.built = 1;
+    return 1;
+}
+/* open the book in front of the camera */
+void bx_book_open(const char *title, const char *const *keys, int n, void (*on_close)(int))
+{
+    if (!BX_S || n <= 0) return;
+    if (n > VIEW_MAX) n = VIEW_MAX;
+    snprintf(K.title, sizeof K.title, "%s", title ? title : "");
+    if (!bk_build()) { bx_view_open_keys(title, keys, n, 1, on_close); return; }
+    for (int i = 0; i < n; i++) snprintf(K.key[i], sizeof K.key[0], "%s", keys[i]);
+    for (int i = 0; i < BK_SLOTS; i++) { r3_tex_set(&BX_S->texs[K.slot_tex[i]], NULL, 0, 0); K.slot_page[i] = -1; }
+    K.n = n; K.s = 0; K.dir = 0; K.t = 0; K.close = on_close; K.up = 1;
+    cam_unzoom(); zoom = 1;
+    /* in front of the camera, facing it, the open pages filling about three quarters of the height */
+    float *c = BX_S->cam, d[3] = { bx_look[0] - c[0], bx_look[1] - c[1], bx_look[2] - c[2] };
+    float L = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (L < 1e-3f) { d[0] = 0; d[1] = 0; d[2] = -1; L = 1; }
+    for (int k = 0; k < 3; k++) d[k] /= L;
+    float D = K.H / (.74f * 2 * tanf(BX_S->fov * PI_F / 360));
+    if (D > L * .8f) D = L * .8f;
+    r3_node *r = bx_n(K.root);
+    for (int k = 0; k < 3; k++) r->pos[k] = c[k] + d[k] * D;
+    r->rot[0] = asinf(d[1]); r->rot[1] = atan2f(-d[0], -d[2]); r->rot[2] = 0;
+    r->vis = 1;
+    bk_layout();
+    bx_sfx(SFX_PAGE, 0);
+}
+static void bk_draw2d(void)
+{
+    float u = BX_C.u;
+    bx_text(BX_C.sx + BX_C.sw / 2, BX_C.sy + BX_C.sh * 0.055f, 1.6f * u, 0xf4ecdf, 255, K.title, 2, 0);
+    char cnt[64];
+    int l = bk_left(K.s), r = bk_right(K.s);
+    if (l >= 0 && r >= 0) snprintf(cnt, sizeof cnt, "Pages %d-%d of %d", l + 1, r + 1, K.n);
+    else snprintf(cnt, sizeof cnt, "Page %d of %d", (r >= 0 ? r : l) + 1, K.n);
+    float by = BX_C.sy + BX_C.sh * 0.88f, cx = BX_C.sx + BX_C.sw / 2, cw = bx_text_w(1.4f * u, cnt, 0) + 2 * u;
+    bx_button(cx - cw / 2, by, "< Prev", bk_prev, 0, 1);
+    bx_text(cx, by + 2.0f * u, 1.4f * u, 0xb5a58f, 255, cnt, 0, 0);
+    bx_button(cx + cw / 2, by, "Next >", bk_next, 0, -1);
+    float rx = cx + cw / 2 + bx_text_w(1.5f * u, "Next >", 0) + 4.2f * u;
+    bx_button(rx, by, "Full size", bk_full, 0, -1);
+    bx_button(rx + bx_text_w(1.5f * u, "Full size", 0) + 4 * u, by, "Close", bk_close, 0, -1);
+    bx_text(BX_C.sx + BX_C.sw / 2, BX_C.sy + BX_C.sh * 0.97f, 1.3f * u, 0xb5a58f, 255, "Pick the right page to turn it, the left to go back", 0, 0);
+}
+static int bk_key(int k)
+{
+    if (k == OB_SCREEN_RIGHT || k == OB_SCREEN_DOWN) bk_next(0);
+    else if (k == OB_SCREEN_LEFT || k == OB_SCREEN_UP) bk_prev(0);
+    else if (k == OB_SCREEN_BACK) bk_close(0);
+    else if (k == OB_SCREEN_OK) { if (bk_left(K.s + 1) >= 0) bk_next(0); else bk_close(0); }
+    else return 0;
+    return 1;
+}
+
 /* ---------------- sound ---------------- */
 #define MIXN 88200
 static SDL_AudioDeviceID adev;
@@ -539,14 +712,26 @@ static void make_bg(int w, int h)
 /* the 3D picture in bands of rows on every core (SDL threads), each band picking the next free one */
 #define BX_THREADS 16
 #define BX_BAND 24
-static struct { int n; SDL_sem *go[BX_THREADS], *done; SDL_atomic_t next; int nb; } TP = { .n = -1 };
+static struct { int n; SDL_sem *go[BX_THREADS], *done; SDL_atomic_t next; int nb; int up; } TP = { .n = -1 };
+static void up_rows(int y0, int y1);
+static void pool_start(void);
 static void bands(void)
 {
     for (;;) {
         int b = SDL_AtomicAdd(&TP.next, 1);
         if (b >= TP.nb) return;
-        r3_render_rows(BX_S, &B.tgt, B.bg, b * BX_BAND, (b + 1) * BX_BAND);
+        if (TP.up) up_rows(b * BX_BAND, (b + 1) * BX_BAND);
+        else r3_render_rows(BX_S, &B.tgt, B.bg, b * BX_BAND, (b + 1) * BX_BAND);
     }
+}
+static void run_bands(int nb, int up)
+{
+    if (TP.n < 0) pool_start();
+    TP.nb = nb; TP.up = up;
+    SDL_AtomicSet(&TP.next, 0);
+    for (int i = 1; i < TP.n; i++) SDL_SemPost(TP.go[i]);
+    bands();
+    for (int i = 1; i < TP.n; i++) SDL_SemWait(TP.done);
 }
 static int band_worker(void *arg)
 {
@@ -569,35 +754,20 @@ static void pool_start(void)
     }
 }
 
-/* the scene's 3D picture at the window's own size (up to 4K; bigger is drawn smaller and stretched) */
-static void render3d(uint32_t *px, int w, int h, int pitch)
+/* the scene's 3D picture at the window's own size (up to 4K; bigger is drawn smaller and stretched). A still scene is not drawn
+   again: the last picture is kept (its signature says what it shows). While things move it is drawn with fewer pixels if the
+   whole size would not keep up, and drawn at full size again as soon as it stops. */
+float box_fixed_dt;                /* tests: each frame is this many ms (0: the clock) */
+static struct { const uint32_t *src; int tw, th; uint32_t *px; int w, h, pitch; } UP;
+static void up_rows(int ya, int yb)
 {
-    float k = sqrtf(8.3e6f / ((float)w * h));
-    if (k > 1) k = 1;
-    int tw = (int)(w * k), th = (int)(h * k);
-    if (tw < 16) tw = 16;
-    if (th < 16) th = 16;
-    int direct = tw == w && th == h;
-    if (direct) { B.tgt.px = px; B.tgt.w = w; B.tgt.h = h; B.tgt.pitch = pitch; }
-    else {
-        if (B.rcap < tw * th) { free(B.rpx); B.rpx = (uint32_t *)malloc((size_t)tw * th * 4); B.rcap = B.rpx ? tw * th : 0; if (!B.rpx) return; }
-        B.tgt.px = B.rpx; B.tgt.w = tw; B.tgt.h = th; B.tgt.pitch = tw;
-    }
-    make_bg(tw, th);
-    if (!r3_render_begin(BX_S, &B.tgt)) return;
-    if (TP.n < 0) pool_start();
-    TP.nb = (th + BX_BAND - 1) / BX_BAND;
-    SDL_AtomicSet(&TP.next, 0);
-    for (int i = 1; i < TP.n; i++) SDL_SemPost(TP.go[i]);
-    bands();
-    for (int i = 1; i < TP.n; i++) SDL_SemWait(TP.done);
-    if (direct) return;
-    /* bilinear up, 16.16 fixed */
+    const uint32_t *src = UP.src; int tw = UP.tw, th = UP.th, w = UP.w, h = UP.h, pitch = UP.pitch; uint32_t *px = UP.px;
     uint32_t sx = (uint32_t)(((uint64_t)tw << 16) / w), sy = (uint32_t)(((uint64_t)th << 16) / h);
-    for (int y = 0; y < h; y++) {
+    if (yb > h) yb = h;
+    for (int y = ya; y < yb; y++) {
         int fy = (int)(y * sy + sy / 2) - 32768; if (fy < 0) fy = 0;
         int y0 = fy >> 16, y1 = y0 + 1 < th ? y0 + 1 : th - 1; uint32_t ay = (fy >> 8) & 255;
-        const uint32_t *r0 = B.rpx + (size_t)y0 * tw, *r1 = B.rpx + (size_t)y1 * tw;
+        const uint32_t *r0 = src + (size_t)y0 * tw, *r1 = src + (size_t)y1 * tw;
         uint32_t *o = px + (size_t)y * pitch;
         for (int x = 0; x < w; x++) {
             int fx = (int)(x * sx + sx / 2) - 32768; if (fx < 0) fx = 0;
@@ -612,8 +782,87 @@ static void render3d(uint32_t *px, int w, int h, int pitch)
         }
     }
 }
+static void render3d(uint32_t *px, int w, int h, int pitch)
+{
+    if (B.c3cap < (long)w * h) {
+        free(B.c3); B.c3 = (uint32_t *)malloc((size_t)w * h * 4); B.c3cap = B.c3 ? (long)w * h : 0; B.c3ok = 0;
+        if (!B.c3) return;
+    }
+    if (B.c3w != w || B.c3h != h) B.c3ok = 0;
+    unsigned sig = r3_signature(BX_S);
+    int still = B.c3ok && sig == B.c3sig;
+    if (still && B.c3full) {                     /* nothing moved: the same picture */
+        for (int y = 0; y < h; y++) memcpy(px + (size_t)y * pitch, B.c3 + (size_t)y * w, (size_t)w * 4);
+        return;
+    }
+    if (B.dyn <= 0) B.dyn = 1;
+    float k = sqrtf(8.3e6f / ((float)w * h));
+    if (k > 1) k = 1;
+    int full = still || box_fixed_dt > 0 || getenv("OB_BOX_DYN_OFF") != NULL;
+    if (!full) k *= sqrtf(B.dyn);
+    int tw = (int)(w * k), th = (int)(h * k);
+    if (tw < 16) tw = 16;
+    if (th < 16) th = 16;
+    int direct = tw == w && th == h;
+    if (direct) { B.tgt.px = B.c3; B.tgt.w = w; B.tgt.h = h; B.tgt.pitch = w; }
+    else {
+        if (B.rcap < tw * th) { free(B.rpx); B.rpx = (uint32_t *)malloc((size_t)tw * th * 4); B.rcap = B.rpx ? tw * th : 0; if (!B.rpx) return; }
+        B.tgt.px = B.rpx; B.tgt.w = tw; B.tgt.h = th; B.tgt.pitch = tw;
+    }
+    double t0 = bx_now();
+    make_bg(tw, th);
+    if (!r3_render_begin(BX_S, &B.tgt)) return;
+    run_bands((th + BX_BAND - 1) / BX_BAND, 0);
+    if (!direct) {                               /* bilinear up, 16.16 fixed, in bands too */
+        UP.src = B.rpx; UP.tw = tw; UP.th = th; UP.px = B.c3; UP.w = w; UP.h = h; UP.pitch = w;
+        run_bands((h + BX_BAND - 1) / BX_BAND, 1);
+    }
+    float ms = (float)((bx_now() - t0) * 1000.0);
+    B.r3ms = ms; B.r3w = tw; B.r3h = th;
+    if (!still) {                                /* moving: aim for about 9 ms (a 60 Hz frame with room for the rest) */
+        float f = 9.0f / (ms > .5f ? ms : .5f);
+        if (f < .7f) f = .7f;
+        if (f > 1.25f) f = 1.25f;
+        if (direct || f < 1) B.dyn *= f;
+        if (B.dyn > 1) B.dyn = 1;
+        if (B.dyn < .3f) B.dyn = .3f;
+    }
+    B.c3w = w; B.c3h = h; B.c3sig = sig; B.c3full = k >= 1 || direct || full; B.c3ok = 1;
+    for (int y = 0; y < h; y++) memcpy(px + (size_t)y * pitch, B.c3 + (size_t)y * w, (size_t)w * 4);
+}
 
-float box_fixed_dt;                /* tests: each frame is this many ms (0: the clock) */
+/* the stats (F12 / the overlay's Stats): the box's own pictures a second and what its 3D picture costs */
+static void stats_draw(uint32_t *px, int w, int h, int pitch)
+{
+    double now = bx_now();
+    B.fps_n++;
+    if (B.fps_t <= 0) B.fps_t = now;
+    if (now - B.fps_t >= 1) { B.fps = (int)(B.fps_n / (now - B.fps_t) + .5); B.fps_n = 0; B.fps_t = now; }
+    if (!B.host || !B.host->stats) return;
+    char l1[40], l2[48], l3[40];
+    snprintf(l1, sizeof l1, "BOX FPS %d", B.fps);
+    snprintf(l2, sizeof l2, "3D %.1f MS %dX%d", B.r3ms, B.r3w, B.r3h);
+    snprintf(l3, sizeof l3, "%d CORES  %dX%d", TP.n > 0 ? TP.n : 1, w, h);
+    const char *const lines[3] = { l1, l2, l3 };
+    static uint32_t sp[200 * 28];
+    int bw = 0, bh = 0, x, y, ww, hh;
+    ob_stats_draw(lines, sp, 200, 200, 28, &bw, &bh);
+    ob_stats_place(w, h, bw, bh, &x, &y, &ww, &hh);
+    for (int j = 0; j < hh && y + j < h; j++) {
+        uint32_t *o = px + (size_t)(y + j) * pitch;
+        const uint32_t *r = sp + (size_t)(j * bh / hh) * 200;
+        for (int i = 0; i < ww && x + i < w; i++) {
+            if (x + i < 0) continue;
+            uint32_t c = r[i * bw / ww], a = c >> 24;
+            if (!a) continue;
+            uint32_t d = o[x + i];
+            uint32_t rb = ((c & 0xff00ff) * a + (d & 0xff00ff) * (255 - a)) >> 8 & 0xff00ff;
+            uint32_t g = ((c & 0xff00) * a + (d & 0xff00) * (255 - a)) >> 8 & 0xff00;
+            o[x + i] = 0xff000000u | rb | g;
+        }
+    }
+}
+
 static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
 {
     (void)ud;
@@ -635,6 +884,7 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
         BX_SC->draw_full();
     } else {
         BX_SC->frame(dt);
+        if (K.up) { bx_hot_clear(); bk_frame(dt); }
         /* highlight */
         for (int i = 0; i < BX_S->nnodes; i++) BX_S->nodes[i].hl = 1;
         for (int i = 0; i < BX_S->nmats; i++) BX_S->mats[i].bright = 1;
@@ -661,7 +911,7 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
                 bx_pill((x0 + x1) / 2 * k, y, lab);
             }
         }
-        BX_SC->draw2d();
+        if (K.up) bk_draw2d(); else BX_SC->draw2d();
     }
     /* first launch: the way out */
     if (BX.first && !V.up) bx_button(BX_C.sx + BX_C.sw - 2 * BX_C.u, BX_C.sy + BX_C.sh - 4.6f * BX_C.u, "Skip to the game", skip, 0, 1);
@@ -682,6 +932,7 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
     if (B.kb >= nhot) B.kb = nhot ? nhot - 1 : -1;
     if (B.mouse_in) hover = hot_at(B.mx, B.my);
     if (B.fade > 0) bx_rect(0, 0, w, h, (uint32_t)(B.fade * 255) << 24);
+    stats_draw(px, w, h, pitch);
 }
 
 static void activate(int i)
@@ -692,6 +943,7 @@ static void activate(int i)
     if (B.kb == i && r3_screen_box(BX_S, &B.tgt, HOT[i].node, &x0, &y0, &x1, &y1)) {   /* a key: the object's right half (next page) */
         float k = (float)BX_C.w / B.tgt.w; sx = (x0 + x1) / 2 * k + 1; sy = (y0 + y1) / 2 * k;
     }
+    if (K.up) { if (HOT[i].node == K.nR) bk_next(0); else if (HOT[i].node == K.nL) bk_prev(0); return; }
     BX_SC->activate(HOT[i].node, sx, sy);
 }
 
@@ -703,7 +955,7 @@ static void input(void *ud, const ob_screen_ev *e)
         B.mx = e->x; B.my = e->y; B.mouse_in = 1;
         if (e->kind == OB_SCREEN_MOVE) {
             if (B.down && !B.dragging && (abs(B.mx - B.down_x) + abs(B.my - B.down_y)) > 6) B.dragging = 1;
-            if (B.dragging && BX_SC->drag && !V.up) BX_SC->drag(B.down_node, (float)(B.mx - B.last_x), (float)(B.my - B.last_y));
+            if (B.dragging && BX_SC->drag && !V.up && !K.up) BX_SC->drag(B.down_node, (float)(B.mx - B.last_x), (float)(B.my - B.last_y));
             B.last_x = B.mx; B.last_y = B.my;
             if (!B.down) { hover = hot_at(B.mx, B.my); if (hover >= 0) B.kb = -1; }
             return;
@@ -726,18 +978,19 @@ static void input(void *ud, const ob_screen_ev *e)
     if (e->kind == OB_SCREEN_WHEEL) {
         if (V.up) { if (V.zoom) V.scroll -= e->y * BX_C.sh * 0.08f; return; }
         zoom *= e->y > 0 ? .88f : 1.0f / .88f;                    /* up: closer */
-        if (zoom < .35f) zoom = .35f;
+        if (zoom < (K.up ? .55f : .35f)) zoom = K.up ? .55f : .35f;
         if (zoom > 2.2f) zoom = 2.2f;
         return;
     }
     if (e->kind == OB_SCREEN_ZOOM) {
         if (V.up) { if ((e->x > 0) != !!V.zoom) view_zoom(0); return; }
         zoom /= 1 + e->x / 1000.0f * 2.5f;                         /* fingers apart: closer */
-        if (zoom < .35f) zoom = .35f;
+        if (zoom < (K.up ? .55f : .35f)) zoom = K.up ? .55f : .35f;
         if (zoom > 2.2f) zoom = 2.2f;
         return;
     }
     if (V.up && e->kind != OB_SCREEN_OK) { view_key(e->kind); return; }
+    if (K.up && !V.up && (e->kind != OB_SCREEN_OK || B.kb < 0)) { if (bk_key(e->kind)) { B.kb = -1; return; } }
     if (e->kind == OB_SCREEN_BACK) { if (V.up) view_close(0); else BX_SC->back(); B.kb = -1; return; }
     if (e->kind == OB_SCREEN_OK) {
         if (B.kb >= 0 && B.kb < nhot) { int k = B.kb; B.kb = -1; B.focus_first = 1; activate(k); }
@@ -779,6 +1032,8 @@ int ob_box_open(int mode)
     B.last = bx_now();
     ob_screen s = { draw, input, NULL };
     ob_screen_show(&s);
+    K.up = 0; K.dir = 0;
+    if (K.built && K.root >= 0 && K.root < BX_S->nnodes && !strcmp(BX_S->nodes[K.root].name, "book.root")) BX_S->nodes[K.root].vis = 0;
     if (mode == BOX_SHOW_MANUAL) { BX_SC->enter(mode); if (BX_SC->manual) BX_SC->manual(); }
     else BX_SC->enter(mode);
     if (B.host && B.host->overlay_open) ob_overlay_close(B.host);
