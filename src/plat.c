@@ -499,7 +499,7 @@ static void cursor_shape(void)
     static SDL_Cursor *hand, *arrow;
     static int is = -1;
     if (!(P.host && P.host->overlay_open)) ob_pointer_hand_set(0, 0);       /* nothing is under the mouse in a closed overlay */
-    int want = (P.host && P.host->overlay_open && ob_pointer_hand(0)) || (!(P.host && P.host->overlay_open) && ob_screen_up() && ob_pointer_hand(1));
+    int want = (P.host && P.host->overlay_open && ob_pointer_hand(0)) || (!(P.host && P.host->overlay_open) && ((ob_screen_up() && ob_pointer_hand(1)) || ob_pointer_hand(2)));
     if (want == is) return;
     if (!hand) hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
     if (!arrow) arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
