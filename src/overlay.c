@@ -368,6 +368,12 @@ void ob_overlay_draw(ob_host *h, uint32_t *px, int w, int hgt, int pitch)
 {
     int y, x;
     if (!h->overlay_open) return;
+    if (h->overlay_page == OB_PAGE_GAME) {      /* the highlighted row's description, under the title */
+        const mdrt_menu *gm = &h->overlay;
+        int id = gm->sel >= 0 && gm->sel < gm->count ? gm->items[gm->sel].id : 0, oi = id - OB_ID_GAME_OPT;
+        const char *hp = oi >= 0 && oi < h->game_ops.nopts ? h->game_ops.opts[oi].help : NULL;
+        snprintf(h->overlay.subtitle, sizeof h->overlay.subtitle, "%s", hp ? hp : "");
+    }
     if (h->overlay_vec) {                       /* vector type: straight alpha, the shade is in the buffer itself */
         for (y = 0; y < hgt; y++) memset(px + (size_t)y * pitch, 0, (size_t)w * 4);
         ob_vmenu_draw(&h->overlay, px, w, hgt, pitch, h->overlay_name, h->overlay_platform);
