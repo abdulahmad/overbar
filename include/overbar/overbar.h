@@ -283,7 +283,6 @@ typedef struct ob_game_opt {
     int def;                    /* the choice a new install starts with */
     int net;                    /* 1: online, every machine uses the host's choice */
     int group;                  /* a divider before the row when it differs from the row above */
-    const char *help;           /* one short line shown while the row is highlighted (NULL: none), static storage */
 } ob_game_opt;
 
 /* A preset: one choice per Game row, set together from one row on top of the page. values[i] is the
@@ -294,6 +293,10 @@ typedef struct ob_game_preset {
     const char *name;
     const signed char *values;  /* one per option, static storage */
 } ob_game_preset;
+
+/* one short line a row for the Game page, shown under the title while the row is highlighted (NULL: none; static storage, one per option) */
+void ob_game_set_help(const char *const *help);
+const char *ob_game_help(int index);
 
 typedef struct ob_game_ops {
     const char *title;          /* the page and its main-page row ("Game" when NULL) */
