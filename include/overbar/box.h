@@ -71,6 +71,9 @@ int bx_hovered_node(void);
 int bx_hot_rect(float x, float y, float w, float h, const char *label, void (*fn)(int), int arg);
 void bx_desk(void);                                        /* the desk background over the whole window */                                /* the 3D hot spot under the mouse or picked by the keys, or -1 */
 
+/* the backdrop behind the 3D: NULL for the desk's warm gradient, or a scene's own painter (w x h ARGB, called when the size changes) */
+extern void (*bx_bg_paint)(uint32_t *px, int w, int h);
+
 /* fade to black and back, running fn at the dark middle */
 void bx_fade(void (*fn)(int), int arg);
 

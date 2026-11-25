@@ -697,13 +697,16 @@ static void replay_toggle(int a)
     ini_write();
 }
 
+void (*bx_bg_paint)(uint32_t *px, int w, int h);
+static void (*bg_painted)(uint32_t *px, int w, int h);
 static void make_bg(int w, int h)
 {
-    if (B.bg && B.bg_w == w && B.bg_h == h) return;
+    if (B.bg && B.bg_w == w && B.bg_h == h && bg_painted == bx_bg_paint) return;
     free(B.bg);
     B.bg = (uint32_t *)malloc((size_t)w * h * 4);
-    B.bg_w = w; B.bg_h = h;
+    B.bg_w = w; B.bg_h = h; bg_painted = bx_bg_paint;
     if (!B.bg) return;
+    if (bx_bg_paint) { bx_bg_paint(B.bg, w, h); return; }
     /* radial-gradient(ellipse at 50% 20%, #4a3829 0%, #2a211b 55%, #1a1410 100%) */
     float cx = w * .5f, cy = h * .2f, rx = w * .5f * 1.4142f, ry = h * .8f * 1.4142f;
     for (int y = 0; y < h; y++)
