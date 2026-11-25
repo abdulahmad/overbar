@@ -569,12 +569,14 @@ static void elem_ch(void *arg, int c)
             case 3: for (size_t i = 0; i < hw; i++) o[i] = a[i] / v; break;
             default: for (size_t i = 0; i < hw; i++) o[i] = v - a[i]; break;
             }
-        } else switch (l->op) {
+        } else {
+            switch (l->op) {
             case 0: for (size_t i = 0; i < hw; i++) o[i] = a[i] + b[i]; break;
             case 1: for (size_t i = 0; i < hw; i++) o[i] = a[i] - b[i]; break;
             case 2: for (size_t i = 0; i < hw; i++) o[i] = a[i] * b[i]; break;
             case 3: for (size_t i = 0; i < hw; i++) o[i] = a[i] / b[i]; break;
             default: for (size_t i = 0; i < hw; i++) o[i] = b[i] - a[i]; break;
+            }
         }
         break;
     }
