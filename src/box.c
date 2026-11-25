@@ -17,6 +17,9 @@ const bx_scene *BX_SC;
 bx_canvas BX_C;
 float bx_look[3];
 static float zoom = 1, cam_real[3];       /* the wheel's or a pinch's zoom: the camera moved toward what it looks at (a new view starts at 1) */
+static float zoom_to = 1;                 /* where the zoom is going: it eases there over a few frames */
+static float pan[2];                      /* the camera (and what it looks at) moved sideways / up, in view heights at what it looks at */
+static void view_reset(void) { zoom = zoom_to = 1; pan[0] = pan[1] = 0; }
 static void cam_unzoom(void) { if (cam_real[2] != 0) { memcpy(BX_S->cam, cam_real, sizeof cam_real); cam_real[2] = 0; } }
 
 static struct {
@@ -31,6 +34,7 @@ static struct {
     uint32_t *c3; long c3cap; int c3w, c3h; unsigned c3sig; int c3full, c3ok;   /* the last 3D picture at window size, and what it shows */
     float dyn; float r3ms; int r3w, r3h;   /* while things move: the share of the pixels drawn (to keep up), the last 3D picture's cost and size */
     int gpu;                 /* the last 3D picture came from the GPU (r3gl) */
+    int mpan;                /* the middle button is held: the mouse pans */
     int fps, fps_n; double fps_t;
     double last;
     /* input */
@@ -92,8 +96,8 @@ int bx_node(const char *name)
 void bx_parent(int node, int parent) { if (node >= 0 && node != parent) { BX_S->nodes[node].parent = parent; BX_S->stamp++; } }
 void bx_attach(int node, int parent) { r3_attach(BX_S, node, parent); }
 void bx_set3(float *v, float x, float y, float z) { v[0] = x; v[1] = y; v[2] = z; }
-void bx_cam(float x, float y, float z) { zoom = 1; cam_real[2] = 0; BX_S->cam[0] = x; BX_S->cam[1] = y; BX_S->cam[2] = z; }
-void bx_cam_to(float x, float y, float z, float ms) { cam_unzoom(); zoom = 1; bx_tw3(BX_S->cam, x, y, z, ms, 0); }
+void bx_cam(float x, float y, float z) { view_reset(); cam_real[2] = 0; BX_S->cam[0] = x; BX_S->cam[1] = y; BX_S->cam[2] = z; }
+void bx_cam_to(float x, float y, float z, float ms) { cam_unzoom(); view_reset(); bx_tw3(BX_S->cam, x, y, z, ms, 0); }
 
 /* ---------------- 2D ---------------- */
 static uint32_t mix(uint32_t d, uint32_t s, int a)
@@ -532,7 +536,7 @@ void bx_book_open(const char *title, const char *const *keys, int n, void (*on_c
     for (int i = 0; i < n; i++) snprintf(K.key[i], sizeof K.key[0], "%s", keys[i]);
     for (int i = 0; i < BK_SLOTS; i++) { r3_tex_set(&BX_S->texs[K.slot_tex[i]], NULL, 0, 0); K.slot_page[i] = -1; }
     K.n = n; K.s = 0; K.dir = 0; K.t = 0; K.close = on_close; K.up = 1;
-    cam_unzoom(); zoom = 1;
+    cam_unzoom(); view_reset();
     /* in front of the camera, facing it, the open pages filling about three quarters of the height */
     float *c = BX_S->cam, d[3] = { bx_look[0] - c[0], bx_look[1] - c[1], bx_look[2] - c[2] };
     float L = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
@@ -912,7 +916,29 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
         BX_S->look[0] = bx_look[0]; BX_S->look[1] = bx_look[1]; BX_S->look[2] = bx_look[2];
         memcpy(cam_real, BX_S->cam, sizeof cam_real);
         if (cam_real[2] == 0) cam_real[2] = 1e-6f;
+        /* the zoom eases toward where the wheel or the pinch sent it (evenly in its logarithm, so in and out feel the same) */
+        if (zoom != zoom_to) {
+            float a = 1 - expf(-dt / 70.0f);
+            zoom = expf(logf(zoom) + (logf(zoom_to) - logf(zoom)) * a);
+            if (fabsf(zoom / zoom_to - 1) < 1e-3f) zoom = zoom_to;
+        }
         for (int k = 0; k < 3; k++) BX_S->cam[k] = BX_S->look[k] + (BX_S->cam[k] - BX_S->look[k]) * zoom;   /* kept till the next frame: picks see this picture */
+        if (pan[0] != 0 || pan[1] != 0) {          /* the pan: camera and target together, across the view */
+            float f[3] = { BX_S->look[0] - BX_S->cam[0], BX_S->look[1] - BX_S->cam[1], BX_S->look[2] - BX_S->cam[2] };
+            float L = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+            if (L > 1e-4f) {
+                for (int k = 0; k < 3; k++) f[k] /= L;
+                float r[3] = { f[1] * 0 - f[2] * 1, f[2] * 0 - f[0] * 0, f[0] * 1 - f[1] * 0 };   /* f x up */
+                float rl = sqrtf(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+                if (rl > 1e-4f) {
+                    for (int k = 0; k < 3; k++) r[k] /= rl;
+                    float u[3] = { r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0] };
+                    float vh = 2 * L * tanf(BX_S->fov * PI_F / 360);
+                    if ((float)w / h < 16.0f / 9) vh *= (16.0f / 9) / ((float)w / h);   /* (a narrow window shows more height: r3d keeps the width) */
+                    for (int k = 0; k < 3; k++) { float o = (r[k] * pan[0] + u[k] * pan[1]) * vh; BX_S->cam[k] += o; BX_S->look[k] += o; }
+                }
+            }
+        }
         render3d(px, w, h, pitch);
         /* the label under the highlighted object */
         if (hn >= 0 && !V.up && !B.dragging) {
@@ -962,10 +988,40 @@ static void activate(int i)
     BX_SC->activate(HOT[i].node, sx, sy);
 }
 
+static void zoom_clamp(void)
+{
+    float lo = K.up ? .55f : .35f;
+    if (zoom_to < lo) zoom_to = lo;
+    if (zoom_to > 2.2f) zoom_to = 2.2f;
+}
+static void pan_by(float x, float y)
+{
+    pan[0] += x; pan[1] += y;
+    if (pan[0] < -1) pan[0] = -1;
+    if (pan[0] > 1) pan[0] = 1;
+    if (pan[1] < -.8f) pan[1] = -.8f;
+    if (pan[1] > .8f) pan[1] = .8f;
+}
+
 static void input(void *ud, const ob_screen_ev *e)
 {
     (void)ud;
     if (!B.up || B.fade_dir != 0) return;
+    if (e->kind == OB_SCREEN_MPRESS || e->kind == OB_SCREEN_MRELEASE) {   /* the middle button held: drag to pan */
+        B.mpan = e->kind == OB_SCREEN_MPRESS && !V.up;
+        B.mx = B.last_x = e->x; B.my = B.last_y = e->y;
+        return;
+    }
+    if (e->kind == OB_SCREEN_MOVE && B.mpan) {
+        if (BX_C.h > 0) pan_by(-(float)(e->x - B.last_x) / BX_C.h, (float)(e->y - B.last_y) / BX_C.h);   /* the scene follows the pointer */
+        B.mx = B.last_x = e->x; B.my = B.last_y = e->y;
+        return;
+    }
+    if (e->kind == OB_SCREEN_PAN) {
+        if (V.up) { if (V.zoom) V.scroll -= e->dy * BX_C.sh * 0.08f; return; }
+        pan_by(e->dx * 0.05f, e->dy * 0.05f);                  /* as the system scrolls: down moves the view down */
+        return;
+    }
     if (e->kind == OB_SCREEN_MOVE || e->kind == OB_SCREEN_PRESS || e->kind == OB_SCREEN_RELEASE) {
         B.mx = e->x; B.my = e->y; B.mouse_in = 1;
         if (e->kind == OB_SCREEN_MOVE) {
@@ -992,16 +1048,15 @@ static void input(void *ud, const ob_screen_ev *e)
     }
     if (e->kind == OB_SCREEN_WHEEL) {
         if (V.up) { if (V.zoom) V.scroll -= e->y * BX_C.sh * 0.08f; return; }
-        zoom *= e->y > 0 ? .88f : 1.0f / .88f;                    /* up: closer */
-        if (zoom < (K.up ? .55f : .35f)) zoom = K.up ? .55f : .35f;
-        if (zoom > 2.2f) zoom = 2.2f;
+        zoom_to *= e->y > 0 ? .85f : 1.0f / .85f;                 /* up: closer */
+        zoom_clamp();
         return;
     }
     if (e->kind == OB_SCREEN_ZOOM) {
         if (V.up) { if ((e->x > 0) != !!V.zoom) view_zoom(0); return; }
-        zoom /= 1 + e->x / 1000.0f * 2.5f;                         /* fingers apart: closer */
-        if (zoom < (K.up ? .55f : .35f)) zoom = K.up ? .55f : .35f;
-        if (zoom > 2.2f) zoom = 2.2f;
+        float a = e->amount != 0 ? e->amount : e->x / 1000.0f;
+        zoom_to /= 1 + a * 2.5f;                                   /* fingers apart: closer */
+        zoom_clamp();
         return;
     }
     if (V.up && e->kind != OB_SCREEN_OK) { view_key(e->kind); return; }
