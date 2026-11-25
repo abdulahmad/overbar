@@ -55,4 +55,14 @@ void ob_screen_input(const ob_screen_ev *e);
 /* a plain look that shows a picture of the window's own size as it is (for ob_gl_render / ob_render_cpu) */
 struct ob_look;
 const struct ob_look *ob_screen_look(void);
+/* the look the screen's picture (a movie) is drawn with in place of the player's own, so a low-quality movie can
+ * be filtered more heavily than the game: the same render path, scaling modes and view (aspect kept, never
+ * stretched). The look is copied; NULL goes back to the player's. ob_screen_video_look: the one set, NULL none */
+void ob_screen_set_video_look(const struct ob_look *look);
+const struct ob_look *ob_screen_video_look(void);
+/* presets for a "movie look" option: Game (the player's own look), Smooth (Sharp at its softest prescale),
+ * CRT soft, CRT soft aperture. ob_video_look fills out from the player's look game; 0 for Game (out untouched) */
+enum { OB_VIDEO_LOOK_GAME = 0, OB_VIDEO_LOOK_SMOOTH, OB_VIDEO_LOOK_CRT_SOFT, OB_VIDEO_LOOK_CRT_APERTURE, OB_VIDEO_LOOK_COUNT };
+extern const char *const ob_video_look_names[OB_VIDEO_LOOK_COUNT];
+int ob_video_look(int preset, const struct ob_look *game, struct ob_look *out);
 #endif

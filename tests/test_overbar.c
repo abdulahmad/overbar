@@ -11,6 +11,7 @@
 #include "overbar/vmenu.h"
 #include "overbar/sfx.h"
 #include "overbar/season.h"
+#include "overbar/screen.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -1109,8 +1110,28 @@ static void test_autoscroll(void)
     mdrt_menu_free(&h.overlay);
 }
 
+/* the movie look: presets over the player's look, set and cleared */
+static void test_video_look(void)
+{
+    ob_look game, out;
+    memset(&game, 0, sizeof game);
+    game.mode = OB_MODE_SHARP; game.sharp = OB_SHARP_4X; game.mask_scale = 1; game.bright = 90; game.ntsc = 1;
+    CHECK(!ob_video_look(OB_VIDEO_LOOK_GAME, &game, &out));
+    CHECK(ob_video_look(OB_VIDEO_LOOK_SMOOTH, &game, &out) && out.mode == OB_MODE_SHARP && out.sharp == OB_SHARP_2X);
+    CHECK(out.bright == 90 && out.ntsc == 1);
+    CHECK(ob_video_look(OB_VIDEO_LOOK_CRT_SOFT, &game, &out) && out.mode == OB_MODE_CRT && out.crt == OB_CRT_SOFT);
+    CHECK(ob_video_look(OB_VIDEO_LOOK_CRT_APERTURE, &game, &out) && out.crt == OB_CRT_SOFT_APERTURE);
+    CHECK(!ob_screen_video_look());
+    ob_screen_set_video_look(&out);
+    CHECK(ob_screen_video_look() && ob_screen_video_look()->crt == OB_CRT_SOFT_APERTURE);
+    ob_screen_set_video_look(NULL);
+    CHECK(!ob_screen_video_look());
+    CHECK(!strcmp(ob_video_look_names[OB_VIDEO_LOOK_SMOOTH], "Smooth"));
+}
+
 int main(void)
 {
+    test_video_look();
     test_scaler_console();
     test_scaler_wide();
     test_scaler_vga();
