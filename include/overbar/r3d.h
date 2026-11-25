@@ -20,6 +20,7 @@ typedef struct r3_tex {
     int alpha;                 /* has pixels that are not opaque */
     char key[64];              /* the art key (a scan, loaded from the art folder) or the file */
     int loaded;
+    unsigned serial;           /* r3_tex_serial when its pixels were last set (the GPU copy is kept until it changes) */
 } r3_tex;
 
 typedef struct r3_mat {
@@ -114,6 +115,15 @@ unsigned r3_signature(const r3_scene *s);
 int r3_project(r3_scene *s, const r3_target *t, const float p[3], float *x, float *y);
 /* the screen box of a node and everything under it; 0 if nothing visible */
 int r3_screen_box(r3_scene *s, const r3_target *t, int node, float *x0, float *y0, float *x1, float *y1);
+
+/* the same picture drawn by the GPU (r3gl.c: OpenGL 3.3 on a hidden window of its own, read back into px). bg: a w x h
+   background or NULL. 0 when there is no GPU path (then draw with r3_render). Main thread only. */
+int r3gl_render(r3_scene *s, uint32_t *px, int w, int h, int pitch, const uint32_t *bg);
+int r3gl_pick(r3_scene *s, int w, int h, int x, int y);      /* the node at a pixel of the last w x h picture, -1 background */
+int r3gl_active(void);
+void r3gl_close(void);                                       /* frees the GPU side (the box closed) */
+float r3gl_ms(void);                                         /* what the last picture cost, drawing and reading back */
+const char *r3gl_renderer(void);
 
 /* small math */
 void r3_m4_mul(float *o, const float *a, const float *b);

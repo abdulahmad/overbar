@@ -85,6 +85,7 @@ SDL_Renderer *ob_plat_renderer(void);
  * ob_plat_dpi_scale: the display's scale (1.0 at 96 DPI) for sizing the first window like before. */
 void ob_plat_dpi_aware(void);
 float ob_plat_dpi_scale(int display);
+int ob_window_hz(SDL_Window *win);          /* the refresh rate (Hz) of the display the window is on; 60 when SDL does not know */
 int ob_plat_window_size(int *w, int *h);      /* the area the picture is placed in (the bar not counted) */
 
 /* controllers */
