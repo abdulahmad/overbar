@@ -975,6 +975,8 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
     if (B.focus_first) for (int i = 0; i < nhot; i++) if (!HOT[i].noauto) { B.kb = i; B.focus_first = 0; break; }
     if (B.kb >= nhot) B.kb = nhot ? nhot - 1 : -1;
     if (B.mouse_in) hover = hot_at(B.mx, B.my);
+    /* a hot spot with no label and no action is only there to be dragged: the arrow stays */
+    ob_pointer_hand_set(1, B.mouse_in && hover >= 0 && hover < nhot && !B.dragging && (HOT[hover].fn || (HOT[hover].label && HOT[hover].label[0])));
     if (B.fade > 0) bx_rect(0, 0, w, h, (uint32_t)(B.fade * 255) << 24);
     stats_draw(px, w, h, pitch);
 }

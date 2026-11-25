@@ -476,6 +476,20 @@ static void cursor_update(void)
     if (hide != P.cursor_hidden) { SDL_ShowCursor(hide ? SDL_DISABLE : SDL_ENABLE); P.cursor_hidden = hide; }
 }
 
+/* the arrow, or a hand while the mouse is over something clickable in the overlay or in a full-window screen (the box) */
+static void cursor_shape(void)
+{
+    static SDL_Cursor *hand, *arrow;
+    static int is = -1;
+    if (!(P.host && P.host->overlay_open)) ob_pointer_hand_set(0, 0);       /* nothing is under the mouse in a closed overlay */
+    int want = (P.host && P.host->overlay_open && ob_pointer_hand(0)) || (!(P.host && P.host->overlay_open) && ob_screen_up() && ob_pointer_hand(1));
+    if (want == is) return;
+    if (!hand) hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+    if (!arrow) arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    if (want ? hand : arrow) SDL_SetCursor(want ? hand : arrow);
+    is = want;
+}
+
 static int overlay_key_to_input(SDL_Scancode k)
 {
     if (k == SDL_SCANCODE_UP) return MDRT_MENU_UP;
@@ -766,6 +780,7 @@ void ob_plat_pump(void)
     SDL_Event e;
     int captured, pass;
     cursor_update();
+    cursor_shape();
     if (dev_dirty) { dev_dirty = 0; ob_plat_devices_refresh(); }
     if (getenv("OVERBAR_TEST_KEYS") || getenv("OVERBAR_TEST_SIDES")) test_keys();
     while (SDL_PollEvent(&e)) {

@@ -564,6 +564,10 @@ void ob_stats_draw(const char *const lines[3], uint32_t *px, int pitch, int cap_
                    int *box_w, int *box_h);
 void ob_stats_place(int win_w, int win_h, int box_w, int box_h, int *x, int *y, int *w, int *h);
 int ob_overlay_input(ob_host *h, int mdrt_input);         /* applies + live-previews; 1 still open */
+/* The click pointer: the overlay (who 0) and the box (who 1) say when the mouse is over something that can be clicked, and
+ * the platform layer shows a hand there instead of the arrow. */
+void ob_pointer_hand_set(int who, int on);
+int ob_pointer_hand(int who);
 /* A mouse over the overlay buffer. what: 0 move, 1 left click, 2 right click, 3 wheel up, 4 wheel down. */
 int ob_overlay_pointer(ob_host *h, int x, int y, int w, int hgt, int what);
 /* the mouse at (x, y) of the overlay buffer (w x hgt) rests at the list's bottom or top edge: scroll the list one item per 80 ms (now: a millisecond clock). 1 when it moved */
