@@ -21,5 +21,10 @@ PolyForm Noncommercial terms:
    from MiSTer-devel, GPL-3.0, unchanged. They are separate data files that
    the programs only read at run time; see mister/README.md.
 
+3. The RIFE 4.6 frame generation model in third_party/rife/rife-v4.6/
+   (flownet.param, flownet.bin), MIT License: the model Copyright (c) 2021
+   hzwer, its ncnn conversion Copyright (c) 2020 nihui. Unchanged data files
+   read at run time; both license texts travel with them (third_party/rife/).
+
 Other notices: see licenses/ (Nuked-OPN2 LGPL-2.1, ymfm BSD-3, shipped shaders).
 The soft CRT look is after Timothy Lottes' CRT shader (idea only, no code copied).
