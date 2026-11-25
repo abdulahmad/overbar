@@ -56,6 +56,11 @@ typedef struct ob_sides_skin {
      * magnification of a game pixel; big: the title's size. NULL: Overbar's font */
     void (*text)(void *ud, uint32_t *px, int w, int h, int pitch, int x, int y, const char *s, uint32_t argb, int big, int scale);
     int (*text_width)(void *ud, const char *s, int big);     /* its width in game pixels */
+    /* a box (the game's frame, drawn to fit) over the canvas pixels x, y, fw x fh; scale: the whole-number magnification of a game pixel */
+    void (*frame)(void *ud, uint32_t *px, int w, int h, int pitch, int x, int y, int fw, int fh, int scale);
+    /* a team's plate (the game's banner) centred at canvas x, y (its top): team 0 / 1; the plate's size in game pixels in team_w, team_h. 0: Overbar's plate */
+    void (*team)(void *ud, uint32_t *px, int w, int h, int pitch, int x, int y, int team, int scale);
+    int team_w, team_h;
     void *ud;
 } ob_sides_skin;
 
