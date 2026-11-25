@@ -394,16 +394,16 @@ void ob_pads_mouse_draw(const SDL_Rect *dst)
     if (ren && w && mouse_rel && !mouse_play && !menu_on && !S.open && !ob_plat_overlay_open()) {   /* a white arrow where the hand has moved to */
         static const char *HAND[11] = { "O.......", "OO......", "OWO.....", "OWWO....", "OWWWO...", "OWWWWO..", "OWWWWWO.", "OWWWOOOO", "OWOWO...", "OO.OWO..", "O..OOO.." };
         float hs = dst->h / 224.0f; int hr, hc;
-        SDL_Rect o[96], f[96]; int no = 0, nf = 0;
+        SDL_Rect o[96], wf[96]; int no = 0, nf = 0;
         for (hr = 0; hr < 11; hr++)
             for (hc = 0; hc < 8; hc++) {
                 char ch = HAND[hr][hc];
                 SDL_Rect q = { (int)(dst->x + (hand_x + hc) * hs), (int)(dst->y + (hand_y + hr) * hs), (int)(hs + 1.0f), (int)(hs + 1.0f) };
-                if (ch == 'O') o[no++] = q; else if (ch == 'W') f[nf++] = q;
+                if (ch == 'O') o[no++] = q; else if (ch == 'W') wf[nf++] = q;
             }
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 255); SDL_RenderFillRects(ren, o, no);
-        SDL_SetRenderDrawColor(ren, 255, 255, 255, 255); SDL_RenderFillRects(ren, f, nf);
+        SDL_SetRenderDrawColor(ren, 255, 255, 255, 255); SDL_RenderFillRects(ren, wf, nf);
         return;
     }
     if (mouse_player < 0 || !mouse_play || !ren || !w || S.open || ob_plat_overlay_open()) return;
