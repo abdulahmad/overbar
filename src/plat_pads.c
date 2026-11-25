@@ -302,7 +302,13 @@ static uint32_t menu_pointer(const uint32_t dir[4])
             if (!pulse_bits && now >= pulse_next) {
                 if (wheel_acc) { pulse_bits = wheel_acc < 0 ? dir[0] : dir[1]; wheel_acc += wheel_acc < 0 ? 1 : -1; }
                 else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700u + 12u * (Uint32)(menu.step_ms > 0 ? menu.step_ms : 0)) {
-                    pulse_bits = hit < menu.sel ? dir[0] : dir[1]; menu_steps++;
+                    if (menu.grid && menu.sel >= 0 && menu.sel < menu.n) {
+                        const ob_menu_rect *h = &menu.row[hit], *c = &menu.row[menu.sel];
+                        int dx = (h->x + h->w / 2) - (c->x + c->w / 2), dy = (h->y + h->h / 2) - (c->y + c->h / 2);
+                        if (dx < -c->w / 2 || dx > c->w / 2) pulse_bits = dx < 0 ? dir[2] : dir[3];
+                        else pulse_bits = dy < 0 ? dir[0] : dir[1];
+                    } else pulse_bits = hit < menu.sel ? dir[0] : dir[1];
+                    menu_steps++;
                 } else if ((pl || (lb && !menu_lb)) && hit >= 0 && hit == menu.sel) {
                     pulse_bits = menu.ok; pend &= ~1u;
                     if (menu.lr) {
