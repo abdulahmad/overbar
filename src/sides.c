@@ -484,6 +484,10 @@ static int kind_of(const char *name)
 
 static void cplate(cv *c, int x, int y, int w, int h, uint32_t fill, uint32_t band, const char *text)
 {
+    if (c->k->frame && !band) {                       /* the game's frame, black inside */
+        c->k->frame(c->k->ud, c->px, c->w, c->h, c->pitch, c->ox + x * c->s, c->oy + y * c->s, w * c->s, h * c->s, c->s);
+        return;
+    }
     cfill(c, x, y, w, h, 0x8C8CA8);
     cfill(c, x + 2, y + 2, w - 4, h - 4, fill);
     if (band) cfill(c, x + 2, y + h - 7, w - 4, 5, band);
@@ -518,6 +522,10 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     cx[0] = 77; cx[1] = 160; cx[2] = 243;
     for (t = 0; t < 2 && t < teams; t++) {
         int x = t == 0 ? 14 : 180;
+        if (k->team && k->team_w > 0) {                /* the game's own banner for the team */
+            k->team(k->ud, px, w, h, pitch, c.ox + (x + (126 - k->team_w) / 2) * c.s, c.oy + 62 * c.s, t, c.s);
+            continue;
+        }
         cplate(&c, x, 60, 126, 20, 0x00005C, col2[t], s->team[t]);
     }
     if (teams == 1) { (void)0; }
