@@ -30,6 +30,7 @@ static struct {
     uint32_t *rpx; int rcap;
     uint32_t *c3; long c3cap; int c3w, c3h; unsigned c3sig; int c3full, c3ok;   /* the last 3D picture at window size, and what it shows */
     float dyn; float r3ms; int r3w, r3h;   /* while things move: the share of the pixels drawn (to keep up), the last 3D picture's cost and size */
+    int gpu;                 /* the last 3D picture came from the GPU (r3gl) */
     int fps, fps_n; double fps_t;
     double last;
     /* input */
@@ -235,10 +236,10 @@ static int hot_at(int x, int y)
 {
     for (int i = nhot - 1; i >= 0; i--)
         if (HOT[i].btn && x >= HOT[i].x && x < HOT[i].x + HOT[i].w && y >= HOT[i].y && y < HOT[i].y + HOT[i].h) return i;
-    if (!B.tgt.pick || !B.tgt.w) return -1;
+    if ((!B.tgt.pick && !B.gpu) || !B.tgt.w) return -1;
     int tx = (int)((float)x * B.tgt.w / BX_C.w), ty = (int)((float)y * B.tgt.h / BX_C.h);
     if (tx < 0 || ty < 0 || tx >= B.tgt.w || ty >= B.tgt.h) return -1;
-    int nd = B.tgt.pick[(size_t)ty * B.tgt.w + tx];
+    int nd = B.gpu ? r3gl_pick(BX_S, B.tgt.w, B.tgt.h, tx, ty) : B.tgt.pick[(size_t)ty * B.tgt.w + tx];
     if (nd < 0) return -1;
     /* the deepest hot node that owns the picked mesh */
     int best = -1, depth = -1;
@@ -678,6 +679,8 @@ static void finish(int a)
     bx_time_clear();
     V.up = 0;
     ob_screen_show(NULL);
+    r3gl_close();
+    B.gpu = 0;
 }
 void bx_done(void) { bx_fade(finish, 0); }
 static void skip(int a) { (void)a; if (BX_SC->skip) BX_SC->skip(); bx_done(); }
@@ -795,6 +798,17 @@ static void render3d(uint32_t *px, int w, int h, int pitch)
         for (int y = 0; y < h; y++) memcpy(px + (size_t)y * pitch, B.c3 + (size_t)y * w, (size_t)w * 4);
         return;
     }
+    /* the GPU: the whole picture at the window's size, every frame */
+    make_bg(w, h);
+    if (B.bg && r3gl_render(BX_S, B.c3, w, h, w, B.bg)) {
+        B.gpu = 1;
+        B.tgt.px = B.c3; B.tgt.w = w; B.tgt.h = h; B.tgt.pitch = w;
+        B.r3ms = r3gl_ms(); B.r3w = w; B.r3h = h;
+        B.c3w = w; B.c3h = h; B.c3sig = sig; B.c3full = 1; B.c3ok = 1;
+        for (int y = 0; y < h; y++) memcpy(px + (size_t)y * pitch, B.c3 + (size_t)y * w, (size_t)w * 4);
+        return;
+    }
+    B.gpu = 0;
     if (B.dyn <= 0) B.dyn = 1;
     float k = sqrtf(8.3e6f / ((float)w * h));
     if (k > 1) k = 1;
@@ -842,7 +856,8 @@ static void stats_draw(uint32_t *px, int w, int h, int pitch)
     char l1[40], l2[48], l3[40];
     snprintf(l1, sizeof l1, "BOX FPS %d", B.fps);
     snprintf(l2, sizeof l2, "3D %.1f MS %dX%d", B.r3ms, B.r3w, B.r3h);
-    snprintf(l3, sizeof l3, "%d CORES  %dX%d", TP.n > 0 ? TP.n : 1, w, h);
+    if (B.gpu) snprintf(l3, sizeof l3, "GPU  %dX%d", w, h);
+    else snprintf(l3, sizeof l3, "CPU %d CORES  %dX%d", TP.n > 0 ? TP.n : 1, w, h);
     const char *const lines[3] = { l1, l2, l3 };
     static uint32_t sp[200 * 28];
     int bw = 0, bh = 0, x, y, ww, hh;
