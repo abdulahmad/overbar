@@ -544,7 +544,8 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     }
     (void)cols;
     if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
-    if (!ob_sides_all_ready(s)) foot = "Left / Right: pick a side   OK: ready";
+    if (!seated(s)) foot = "Left / Right: pick a side";
+    else if (!ob_sides_all_ready(s)) foot = "Left / Right: pick a side   OK: ready";
     else if (s->host) foot = "Press OK to begin";
     else foot = "Waiting for the host to begin";
     ctext_c(&c, 0, LW, 206, foot, 0xFFE020, 1);

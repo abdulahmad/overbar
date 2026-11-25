@@ -956,6 +956,9 @@ static void osk_draw_screen(const SDL_Rect *dst)
     static uint32_t px[OVER_W * OVER_H];
     static SDL_Texture *tex;
     static int tw, th;
+    if (R_sides && R_sides->open && !ob_plat_osk_is_open()) {   /* the select-sides screen is laid out on 320 x 224: as large as fits */
+        t = dst->w / 320 < dst->h / 224 ? dst->w / 320 : dst->h / 224;
+    }
     if (t < 1) t = 1;
     mw = dst->w / t;
     mh = dst->h / t;
