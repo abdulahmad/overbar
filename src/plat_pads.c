@@ -93,6 +93,8 @@ void ob_pads_init(const ob_pads_cfg *c)
 static void (*seats_cb)(const ob_pads_seats *, void *);
 static void *seats_ud;
 static int seats_players = 2;
+static struct { int8_t local, team; } last[OB_SIDES_MAX_DEVICES];   /* where the devices went last time: the screen opens with them there, ready */
+static int last_n;
 
 /* seat k of a team becomes player team + 2 * k: a controller plays it, the keyboard's keys of that player, or the mouse */
 static void sides_apply(void *ud, const ob_sides_seat *seat, int n)
@@ -102,6 +104,8 @@ static void sides_apply(void *ud, const ob_sides_seat *seat, int n)
     (void)ud;
     memset(&r, 0, sizeof r);
     r.mouse_player = -1;
+    last_n = 0;
+    for (int k = 0; k < n && last_n < OB_SIDES_MAX_DEVICES; k++) { last[last_n].local = (int8_t)seat[k].local; last[last_n].team = (int8_t)seat[k].team; last_n++; }
     for (int k = 0; k < n; k++) {
         int t = seat[k].team & 1, p = t + 2 * count[t]++;
         if (p >= seats_players || p >= OB_PADS_MAX) continue;
@@ -141,6 +145,9 @@ void ob_pads_sides_open_ex(int players, const char *const team_name[2], const ob
     ob_plat_sides_devices(&S);
     ob_plat_room(&S, NULL);
     ob_sides_open(&S);
+    for (int i = 0; i < S.n; i++)                      /* as they were last time, ready: OK starts */
+        for (int k = 0; k < last_n; k++)
+            if (S.d[i].owner == 0 && S.d[i].local == last[k].local) { S.d[i].team = last[k].team; S.d[i].ready = 1; }
     sides_ready = 1;
 }
 
