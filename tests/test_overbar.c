@@ -123,6 +123,24 @@ static void test_scaler_console(void)
     CHECK(num == 1 && den == 1);
 }
 
+/* a widescreen frame: 5 / 4 as wide as the 4:3 picture, the same pixel shape, all of it shown */
+static void test_scaler_wide(void)
+{
+    ob_view_in in;
+    ob_view_out v, n;
+    memset(&in, 0, sizeof in);
+    in.src_w = 320; in.src_h = 224; in.dar_h = 240; in.window_w = 1280; in.window_h = 720; in.height = OB_HEIGHT_FIT;
+    ob_view(&in, &n);
+    in.src_w = 400; in.wide_num = 5; in.wide_den = 4;
+    ob_view(&in, &v);
+    CHECK(v.blit_w == 1280 && v.blit_h == 716);                    /* 400 : 224, a hair wider than 16:9: fits the width */
+    CHECK(v.blit_x == 0 && v.blit_y == 2);
+    CHECK(n.blit_h == 720 && n.blit_w == 1028);                    /* the 4:3 one in the same window */
+    in.height = OB_HEIGHT_INTEGER;
+    ob_view(&in, &v);
+    CHECK(v.blit_h == 672 && v.blit_w == 1200);                    /* 3 rows a line, 3 columns a pixel */
+}
+
 static void test_scaler_vga(void)
 {
     ob_view_in in;
@@ -1044,6 +1062,7 @@ static void test_autoscroll(void)
 int main(void)
 {
     test_scaler_console();
+    test_scaler_wide();
     test_scaler_vga();
     test_defaults();
     test_handheld_detect_and_present();

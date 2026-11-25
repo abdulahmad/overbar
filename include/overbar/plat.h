@@ -32,6 +32,8 @@ typedef struct ob_plat_hooks {
     volatile int *quit_flag;                  /* set when the player closes the window, instead of quit() and leaving at once */
     const uint32_t *(*picture)(void);         /* ARGB8888, src_w pixels a row; the current frame */
     const uint32_t *(*frame)(int *w, int *h); /* instead of picture: a frame whose size changes (src_w, src_h are its first size) */
+    void (*wide)(int *num, int *den);         /* optional, asked after frame: that frame is num / den times as wide as the 4:3
+                                                 picture (a widescreen frame, its pixels the same shape); left alone = 4:3 */
 
     /* all optional (NULL: no-op) */
     void (*changed)(void);                    /* after an overlay change (the port saves its settings) */

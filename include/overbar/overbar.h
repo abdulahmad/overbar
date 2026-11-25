@@ -381,6 +381,8 @@ typedef struct ob_view_in {
     ob_picture_height height;
     int line_double;            /* 31 kHz: unit = dar_h * 2 */
     int auto_crop_src_rows;     /* 0: 6 at width 320 (and consoles), 10 otherwise */
+    int wide_num, wide_den;     /* a widescreen picture: wide_num / wide_den times as wide as the 4:3 one, its pixels
+                                   the same shape (a 400 wide frame of a 320 wide console mode is 5 / 4); 0 = 4:3 */
 } ob_view_in;
 
 typedef struct ob_view_out {
