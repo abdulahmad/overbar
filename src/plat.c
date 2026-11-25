@@ -804,6 +804,7 @@ void ob_plat_pump(void)
         note_input(&e);
         if (e.type == SDL_MOUSEMOTION) ob_pads_mouse_motion(e.motion.xrel, e.motion.yrel);
         else if (e.type == SDL_MOUSEWHEEL) ob_pads_mouse_wheel(e.wheel.y);
+        else if (e.type == SDL_MOUSEBUTTONDOWN) ob_pads_mouse_press(e.button.button);
         if (P.hk.event && P.hk.event(&e)) continue;
         if (osk_event(&e)) continue;
         if (room_event(&e)) continue;

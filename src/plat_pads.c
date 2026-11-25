@@ -254,6 +254,8 @@ static int menu_lb, menu_rb;                               /* buttons last frame
 static Uint32 click_off;
 
 void ob_pads_mouse_motion(int dx, int dy) { macc_x += (float)dx; macc_y += (float)dy; move_ms = SDL_GetTicks(); }
+static unsigned press_latch;                                /* buttons pressed since the menu looked (bit 1 left, 2 right): a click too quick to show in the button state */
+void ob_pads_mouse_press(int button) { if (button == SDL_BUTTON_LEFT) press_latch |= 1; else if (button == SDL_BUTTON_RIGHT) press_latch |= 2; }
 void ob_pads_mouse_wheel(int y) { macc_y -= (float)y * MENU_STEP; wheel_acc -= y; }
 
 void ob_pads_menu(const ob_pad_menu *m)
@@ -290,19 +292,23 @@ static uint32_t menu_pointer(const uint32_t dir[4])
         for (int i = 0; i < menu.n; i++)
             if (px >= menu.row[i].x && px < menu.row[i].x + menu.row[i].w && py >= menu.row[i].y && py < menu.row[i].y + menu.row[i].h) { hit = i; break; }
         if (hit != menu_hover) { menu_hover = hit; menu_steps = 0; }
-        {   int lb = (st & SDL_BUTTON_LMASK) != 0, rb = (st & SDL_BUTTON_RMASK) != 0;
-            if ((lb && !menu_lb) || (rb && !menu_rb)) { move_ms = now; menu_steps = 0; }
+        {   int lb = (st & SDL_BUTTON_LMASK) != 0, rb = (st & SDL_BUTTON_RMASK) != 0, pl, pr;
+            static unsigned pend; static Uint32 pend_ms;           /* a click waits a moment for its turn (a step in progress) */
+            if (press_latch) { pend |= press_latch; pend_ms = now; press_latch = 0; }
+            if (now - pend_ms > 400u) pend = 0;
+            pl = pend & 1; pr = pend & 2;
+            if (pl || pr || (lb && !menu_lb) || (rb && !menu_rb)) { move_ms = now; menu_steps = 0; }
             if (now >= pulse_off) pulse_bits = 0;
             if (!pulse_bits && now >= pulse_next) {
                 if (wheel_acc) { pulse_bits = wheel_acc < 0 ? dir[0] : dir[1]; wheel_acc += wheel_acc < 0 ? 1 : -1; }
                 else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700u + 12u * (Uint32)(menu.step_ms > 0 ? menu.step_ms : 0)) {
                     pulse_bits = hit < menu.sel ? dir[0] : dir[1]; menu_steps++;
-                } else if (lb && !menu_lb && hit >= 0 && hit == menu.sel) {
-                    pulse_bits = menu.ok;
+                } else if ((pl || (lb && !menu_lb)) && hit >= 0 && hit == menu.sel) {
+                    pulse_bits = menu.ok; pend &= ~1u;
                     if (menu.lr) {
                         pulse_bits = px < menu.row[hit].x + menu.row[hit].w / 2.0f ? dir[2] : dir[3];
                     }
-                } else if (rb && !menu_rb) pulse_bits = menu.back;
+                } else if (pr || (rb && !menu_rb)) { pulse_bits = menu.back; pend &= ~2u; }
                 if (pulse_bits) { pulse_off = now + 70; pulse_next = now + (menu.step_ms > 0 ? (Uint32)menu.step_ms : 140u); }
             }
             menu_lb = lb; menu_rb = rb;
