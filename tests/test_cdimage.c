@@ -117,6 +117,7 @@ static void check_disc(ob_cd *cd, const char *what, int f2, int f3)
     CHECK(n == (long)sizeof hello - 1 && b && !memcmp(b, hello, sizeof hello - 1));
     free(b);
     CHECK(ob_cd_read_file(cd, "NOPE.BIN", &b) == -1);
+    CHECK(ob_cd_file_at(cd, 20) && !strcmp(ob_cd_file_at(cd, 20), "GRAPH.BIN") && ob_cd_file_at(cd, 23) && !strcmp(ob_cd_file_at(cd, 23), "SUB/X.TXT") && !ob_cd_file_at(cd, 21));
     CHECK(ob_cd_audio_tracks(cd) == 2);
     CHECK(ob_cd_track_frames(cd, 2) == f2 && ob_cd_track_frames(cd, 3) == f3);
     CHECK(ob_cd_track_read(cd, 3, 99, s, 4) == 4 && s[0] == 3099 && s[1] == -3099 && s[2] == 3000);

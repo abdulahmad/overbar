@@ -38,6 +38,8 @@ long ob_cd_read_file(ob_cd *cd, const char *name, uint8_t **out);
 long ob_cd_file_size(const ob_cd *cd, const char *name);
 /* the data track's i-th file name (0 ..), NULL past the last */
 const char *ob_cd_file_name(const ob_cd *cd, int i);
+/* the name of the file that starts at sector lba of the data track (a game that finds its files by sector), NULL none */
+const char *ob_cd_file_at(const ob_cd *cd, long lba);
 
 /* audio track n (2-99): its length in stereo frames at 44.1 kHz, 0 when there is none */
 long ob_cd_track_frames(const ob_cd *cd, int n);

@@ -541,6 +541,12 @@ long ob_cd_file_size(const ob_cd *cd, const char *name)
 
 const char *ob_cd_file_name(const ob_cd *cd, int i) { return cd && i >= 0 && i < cd->niso ? cd->iso[i].name : NULL; }
 
+const char *ob_cd_file_at(const ob_cd *cd, long lba)
+{
+    for (int i = 0; cd && i < cd->niso; i++) if (cd->iso[i].lba == (uint32_t)lba) return cd->iso[i].name;
+    return NULL;
+}
+
 long ob_cd_read_file(ob_cd *cd, const char *name, uint8_t **out)
 {
     int i = cd ? iso_index(cd, name) : -1;
