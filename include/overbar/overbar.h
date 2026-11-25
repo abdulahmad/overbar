@@ -189,6 +189,7 @@ enum {
     OB_ID_FRAME_RATE,           /* Video page: how often the game draws (when the client gave choices) */
     OB_ID_SIDES,                /* Input page: Select sides (a port with the screen sets host.sides_menu and shell.sides) */
     OB_ID_MENU_SOUNDS,          /* Main page: the overlay's navigation sounds off / on */
+    OB_ID_WIDESCREEN,           /* Scaling page: 4:3 or 16:9 (a port that draws wide pictures sets host.widescreen_ok) */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
     OB_ID_ADDON = 1000
@@ -323,6 +324,8 @@ typedef struct ob_host {
     int has_sound;
     int has_hires;
     int console_dar;            /* 1: source 224, dest unit 240 */
+    int widescreen_ok;          /* the port draws wide pictures (16:9): the Scaling page lists Widescreen */
+    int widescreen;             /* the Widescreen setting: 0 4:3, 1 16:9 (the port reads it; frames say their own shape) */
     int overlay_open;
     int esc_toggles;                  /* Esc opens and closes the overlay (the console ports); set by the platform layer. On the others Esc still closes it, never opens it */
     int overlay_vec;                  /* the overlay is drawn in vector type at the window's resolution (the layer sets it from the port's game_name) */

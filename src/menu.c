@@ -388,6 +388,10 @@ static int ob_scale_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
     }
     begin_group(out, &n, cap);
     add_choice(out, &n, cap, OB_ID_NTSC_COLORS, "CRT TV colors", ntsc_choices, 2, look->ntsc ? 1 : 0);
+    if (h->widescreen_ok && cls == OB_CLASS_LORES) {
+        static const char *const wide_choices[] = { "4:3", "16:9" };
+        add_choice(out, &n, cap, OB_ID_WIDESCREEN, "Widescreen", wide_choices, 2, h->widescreen ? 1 : 0);
+    }
     add_choice(out, &n, cap, OB_ID_PICTURE_HEIGHT, "Picture height", height_choices, 4, look->height);
     if (cls == OB_CLASS_LORES) {
         begin_group(out, &n, cap);
