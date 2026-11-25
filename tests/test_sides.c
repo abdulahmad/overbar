@@ -196,7 +196,7 @@ static void online(void)
         CHECK(lit > 1000, "the screen draws");
     }
     {
-        /* the Rewind look: an opaque field, the title plate's black, a ready device's gold star, the pad icon's face buttons */
+        /* the Rewind look: an opaque field, the title plate's black, a ready device's filled star, the pad icon's face buttons */
         static uint32_t px[640 * 448];
         ob_sides_game g = game2();
         ob_sides t;
@@ -212,9 +212,9 @@ static void online(void)
         ob_sides_draw(&t, px, 640, 448, 640);
         for (i = 0; i < 640 * 448; i++) {
             black += px[i] == 0xFF000000u;
-            gold += px[i] == 0xFFF8D830u;
-            blue += px[i] == 0xFF3880F0u;
-            green += px[i] == 0xFF50B030u;
+            gold += px[i] == 0xFFB6496Du;
+            blue += px[i] == 0xFF4992FFu;
+            green += px[i] == 0xFF6DB649u;
             if (!(px[i] >> 24)) { black = -1000000; break; }
         }
         CHECK(black > 5000 && gold > 50 && blue > 0 && green > 0, "the screen is the field, the plate, a gold star and the pad icon");
