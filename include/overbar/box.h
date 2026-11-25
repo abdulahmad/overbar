@@ -81,6 +81,10 @@ void bx_view_open(const char *title, r3_tex **pages, int n, int spread, void (*o
 void bx_view_open_keys(const char *title, const char *const *keys, int n, int spread, void (*on_close)(int));
 int bx_art_exists(const char *key);
 int bx_view_up(void);
+/* the manual as a 3D booklet in front of the camera, its pages art keys read as they are shown (the cover alone first);
+   it has Full size for the flat reader. Scenes without a 3D book of their own use it */
+void bx_book_open(const char *title, const char *const *keys, int n, void (*on_close)(int));
+int bx_book_up(void);
 
 /* ---- art (the player's own scans, by key) ---- */
 r3_tex *bx_art(const char *key);                          /* loaded once, kept; NULL when the scan is not there */

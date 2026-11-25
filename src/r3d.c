@@ -105,8 +105,10 @@ void r3_m4_inv(float *o, const float *m)
 }
 
 /* ---------------- textures ---------------- */
+unsigned r3_tex_serial;
 void r3_tex_set(r3_tex *t, uint32_t *argb, int w, int h)
 {
+    r3_tex_serial++;
     for (int i = 0; i < t->nlv; i++) free(t->lv[i]);
     t->nlv = 0;
     if (!argb || w < 1 || h < 1) { t->loaded = 0; return; }
@@ -181,6 +183,30 @@ static uint32_t *notch_tex(uint32_t *art, int aw, int ah, float w, float h, floa
     return o;
 }
 
+static unsigned fnv(unsigned h, const void *p, size_t n)
+{
+    const unsigned char *b = (const unsigned char *)p;
+    while (n--) { h ^= *b++; h *= 16777619u; }
+    return h;
+}
+unsigned r3_signature(const r3_scene *s)
+{
+    unsigned h = 2166136261u;
+    h = fnv(h, &r3_tex_serial, sizeof r3_tex_serial);
+    h = fnv(h, s->cam, sizeof s->cam); h = fnv(h, s->look, sizeof s->look); h = fnv(h, &s->fov, sizeof s->fov);
+    h = fnv(h, &s->nnodes, sizeof s->nnodes); h = fnv(h, &s->nmats, sizeof s->nmats); h = fnv(h, &s->ntexs, sizeof s->ntexs);
+    for (int i = 0; i < s->nnodes; i++) {
+        const r3_node *n = &s->nodes[i];
+        h = fnv(h, &n->parent, sizeof n->parent);
+        h = fnv(h, n->pos, sizeof n->pos); h = fnv(h, n->rot, sizeof n->rot); h = fnv(h, n->scale, sizeof n->scale);
+        h = fnv(h, &n->vis, sizeof n->vis); h = fnv(h, &n->hl, sizeof n->hl); h = fnv(h, &n->opacity, sizeof n->opacity);
+    }
+    for (int i = 0; i < s->nmats; i++) h = fnv(h, &s->mats[i], sizeof s->mats[i]);
+    for (int i = 0; i < s->nmeshes; i++) h = fnv(h, &s->meshes[i].mat_override, sizeof s->meshes[i].mat_override);
+    h = fnv(h, s->lights, sizeof s->lights[0] * (size_t)s->nlights);
+    return h;
+}
+
 int r3_tex_add(r3_scene *s, uint32_t *argb, int w, int h)
 {
     if (s->ntexs >= s->cap_texs) {
@@ -206,6 +232,41 @@ int r3_mat_add(r3_scene *s, const r3_mat *m)
     }
     s->mats[s->nmats] = *m;
     return s->nmats++;
+}
+
+int r3_node_add(r3_scene *s, int parent, const char *name)
+{
+    r3_node *n = (r3_node *)realloc(s->nodes, (size_t)(s->nnodes + 2) * sizeof *n);
+    if (!n) return -1;
+    s->nodes = n;
+    r3_node *d = &n[s->nnodes];
+    memset(d, 0, sizeof *d);
+    d->parent = parent; d->vis = 1; d->hl = 1; d->opacity = 1;
+    d->scale[0] = d->scale[1] = d->scale[2] = 1;
+    snprintf(d->name, sizeof d->name, "%s", name ? name : "");
+    return s->nnodes++;
+}
+int r3_mesh_quad(r3_scene *s, int node, int mat, float x0, float x1, float y0, float y1, float z, int face, int mirror)
+{
+    r3_mesh *m = (r3_mesh *)realloc(s->meshes, (size_t)(s->nmeshes + 2) * sizeof *m);
+    if (!m) return -1;
+    s->meshes = m;
+    r3_mesh *q = &m[s->nmeshes];
+    memset(q, 0, sizeof *q);
+    q->node = node; q->mat = mat; q->mat_override = -1;
+    q->v = (float *)malloc(4 * 8 * sizeof(float));
+    q->idx = (uint32_t *)malloc(6 * sizeof(uint32_t));
+    if (!q->v || !q->idx) { free(q->v); free(q->idx); return -1; }
+    const float X[4] = { x0, x1, x1, x0 }, Y[4] = { y0, y0, y1, y1 }, U[4] = { 0, 1, 1, 0 }, Vv[4] = { 0, 0, 1, 1 };
+    for (int k = 0; k < 4; k++) {
+        float *v = q->v + k * 8;
+        v[0] = X[k]; v[1] = Y[k]; v[2] = z; v[3] = 0; v[4] = 0; v[5] = face < 0 ? -1.0f : 1.0f;
+        v[6] = mirror ? 1 - U[k] : U[k]; v[7] = Vv[k];
+    }
+    static const uint32_t fw[6] = { 0, 1, 2, 0, 2, 3 }, bw[6] = { 0, 2, 1, 0, 3, 2 };
+    memcpy(q->idx, face < 0 ? bw : fw, sizeof fw);
+    q->nv = 4; q->ni = 6;
+    return s->nmeshes++;
 }
 
 /* ---------------- loading ---------------- */
