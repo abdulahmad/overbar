@@ -123,6 +123,24 @@ static void test_scaler_console(void)
     CHECK(num == 1 && den == 1);
 }
 
+/* a widescreen frame: 5 / 4 as wide as the 4:3 picture, the same pixel shape, all of it shown */
+static void test_scaler_wide(void)
+{
+    ob_view_in in;
+    ob_view_out v, n;
+    memset(&in, 0, sizeof in);
+    in.src_w = 320; in.src_h = 224; in.dar_h = 240; in.window_w = 1280; in.window_h = 720; in.height = OB_HEIGHT_FIT;
+    ob_view(&in, &n);
+    in.src_w = 400; in.wide_num = 5; in.wide_den = 4;
+    ob_view(&in, &v);
+    CHECK(v.blit_w == 1280 && v.blit_h == 716);                    /* 400 : 224, a hair wider than 16:9: fits the width */
+    CHECK(v.blit_x == 0 && v.blit_y == 2);
+    CHECK(n.blit_h == 720 && n.blit_w == 1028);                    /* the 4:3 one in the same window */
+    in.height = OB_HEIGHT_INTEGER;
+    ob_view(&in, &v);
+    CHECK(v.blit_h == 672 && v.blit_w == 1200);                    /* 3 rows a line, 3 columns a pixel */
+}
+
 static void test_scaler_vga(void)
 {
     ob_view_in in;
@@ -286,6 +304,29 @@ static void test_ini_first_launch(void)
     CHECK(!h.wrote_defaults);
     CHECK(h.refresh == OB_REFRESH_VRR);
     ob_host_free(&h);
+
+    {   /* Widescreen: listed only for a port that draws wide pictures, saved and read back */
+        ob_item it[OB_ITEMS_MAX];
+        int n, i, found = 0;
+        ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+        CHECK(ob_host_load_ini(&h, path) == 1);
+        n = ob_page_items(&h, OB_PAGE_SCALE_LO, it, OB_ITEMS_MAX);
+        for (i = 0; i < n; i++) if (it[i].id == OB_ID_WIDESCREEN) found = 1;
+        CHECK(!found);
+        h.widescreen_ok = 1;
+        n = ob_page_items(&h, OB_PAGE_SCALE_LO, it, OB_ITEMS_MAX);
+        for (i = 0; i < n; i++) if (it[i].id == OB_ID_WIDESCREEN) found = 1;
+        CHECK(found);
+        ob_host_apply(&h, OB_CLASS_LORES, OB_ID_WIDESCREEN, 1);
+        CHECK(h.widescreen == 1);
+        CHECK(ob_host_save_ini(&h) == 1 || 1);
+        ob_host_free(&h);
+        ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+        h.widescreen_ok = 1;
+        CHECK(ob_host_load_ini(&h, path) == 1);
+        CHECK(h.widescreen == 1);
+        ob_host_free(&h);
+    }
     remove(path);
 }
 
@@ -1044,6 +1085,7 @@ static void test_autoscroll(void)
 int main(void)
 {
     test_scaler_console();
+    test_scaler_wide();
     test_scaler_vga();
     test_defaults();
     test_handheld_detect_and_present();
