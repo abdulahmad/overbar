@@ -17,6 +17,10 @@
 enum { TRIGGER_L = 100, TRIGGER_R };
 
 static ob_pads_cfg C;
+static ob_sides S;                                    /* the select-sides screen */
+static int sides_ready;
+static unsigned kbd_mask = ~0u;                       /* the players whose keys play (the screen narrows it) */
+static int mouse_player = -1;                         /* the player the mouse plays (-1: none) */
 static SDL_Scancode key[OB_PADS_MAX][MAXB];
 static int player_ctrl[OB_PADS_MAX];                  /* each player's controller slot + 1 (0: none) */
 static int cbutton[MAXB];
@@ -84,6 +88,46 @@ void ob_pads_init(const ob_pads_cfg *c)
     dead_zone = clamp(atoi(C.get("controller.dead_zone", "50")), 5, 95);
 }
 
+/* ---- the select-sides screen ---- */
+
+/* seat k of a team becomes player team + 2 * k: a controller plays it, the keyboard's keys of that player, or the mouse */
+static void sides_apply(void *ud, const ob_sides_seat *seat, int n)
+{
+    int count[2] = { 0, 0 };
+    (void)ud;
+    kbd_mask = 0;
+    mouse_player = -1;
+    for (int p = 0; p < C.players; p++) player_ctrl[p] = 0;
+    for (int k = 0; k < n; k++) {
+        int t = seat[k].team & 1, p = t + 2 * count[t]++;
+        if (p >= C.players) continue;
+        if (seat[k].local == 0) kbd_mask |= 1u << p;
+        else if (seat[k].local == 100) mouse_player = p;
+        else player_ctrl[p] = seat[k].local;                   /* 1 + the controller's slot */
+    }
+}
+
+void ob_pads_sides_open(void)
+{
+    ob_sides_game g;
+    memset(&g, 0, sizeof g);
+    g.teams = 2;
+    g.seats = C.players > 2 ? C.players : 2;
+    g.per_team = g.seats / 2;
+    g.team_name[0] = C.team_name[0] ? C.team_name[0] : "Away";
+    g.team_name[1] = C.team_name[1] ? C.team_name[1] : "Home";
+    if (C.skin) g.skin = *C.skin;
+    g.apply = sides_apply;
+    ob_plat_overlay_close();
+    ob_sides_init(&S, &g, 0, NULL, NULL);
+    ob_plat_sides_devices(&S);
+    ob_plat_room(&S, NULL);
+    ob_sides_open(&S);
+    sides_ready = 1;
+}
+
+int ob_pads_sides_active(void) { return sides_ready && S.open; }
+
 SDL_GameController *ob_pads_controller(int p)
 {
     return p >= 0 && p < C.players && player_ctrl[p] ? ob_plat_controller(player_ctrl[p] - 1) : NULL;
@@ -111,13 +155,64 @@ static uint32_t ctrl_buttons(SDL_GameController *c)
     return b;
 }
 
+/* ---- the mouse as a pad ---- */
+
+#define MOUSE_DEAD 0.12f
+
+/* the pointer's distance from the middle of the window is the stick (past a small dead zone, so it can rest), the buttons are the port's */
+static uint32_t mouse_bits(void)
+{
+    SDL_Window *w = ob_plat_window();
+    int ww = 0, wh = 0, mx = 0, my = 0;
+    uint32_t b = 0, st;
+    float dx, dy;
+    if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return 0;
+    SDL_GetWindowSize(w, &ww, &wh);
+    if (ww < 2 || wh < 2) return 0;
+    st = SDL_GetMouseState(&mx, &my);
+    dx = (mx - ww / 2.0f) / (ww / 2.0f);
+    dy = (my - wh / 2.0f) / (wh / 2.0f);
+    if (dy < -MOUSE_DEAD) b |= C.b[0].bit;
+    if (dy > MOUSE_DEAD) b |= C.b[1].bit;
+    if (dx < -MOUSE_DEAD) b |= C.b[2].bit;
+    if (dx > MOUSE_DEAD) b |= C.b[3].bit;
+    for (int i = 0; i < 3; i++) {
+        static const uint32_t mask[3] = { SDL_BUTTON_LMASK, SDL_BUTTON_RMASK, SDL_BUTTON_MMASK };
+        if (C.mouse_btn[i] > 0 && C.mouse_btn[i] <= C.n && (st & mask[i])) b |= C.b[C.mouse_btn[i] - 1].bit;
+    }
+    return b;
+}
+
+int ob_pads_mouse_player(void) { return mouse_player; }
+
+/* the small green cursor: where the player is being asked to skate to */
+void ob_pads_mouse_draw(const SDL_Rect *dst)
+{
+    SDL_Renderer *ren = ob_plat_renderer();
+    SDL_Window *w = ob_plat_window();
+    int mx = 0, my = 0, r;
+    if (mouse_player < 0 || !ren || !w || S.open || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS)) return;
+    SDL_GetMouseState(&mx, &my);
+    if (mx < dst->x || my < dst->y || mx >= dst->x + dst->w || my >= dst->y + dst->h) return;
+    r = dst->h / 56 + 2;
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+    SDL_Rect sh[2] = { { mx - r - 1, my - 2, 2 * r + 3, 5 }, { mx - 2, my - r - 1, 5, 2 * r + 3 } };
+    SDL_RenderFillRects(ren, sh, 2);
+    SDL_SetRenderDrawColor(ren, 64, 255, 64, 255);
+    SDL_Rect g[2] = { { mx - r, my - 1, 2 * r + 1, 3 }, { mx - 1, my - r, 3, 2 * r + 1 } };
+    SDL_RenderFillRects(ren, g, 2);
+}
+
 uint32_t ob_pads_read(int p)
 {
     const Uint8 *down = SDL_GetKeyboardState(NULL);
     uint32_t b = 0;
     SDL_GameController *c;
-    if (p < 0 || p >= C.players || setup) return 0;
-    for (int i = 0; i < C.n; i++) if (key[p][i] != SDL_SCANCODE_UNKNOWN && down[key[p][i]]) b |= C.b[i].bit;
+    if (p < 0 || p >= C.players || setup || S.open) return 0;
+    if (kbd_mask & (1u << p))
+        for (int i = 0; i < C.n; i++) if (key[p][i] != SDL_SCANCODE_UNKNOWN && down[key[p][i]]) b |= C.b[i].bit;
+    if (p == mouse_player) b |= mouse_bits();
     if ((c = ob_pads_controller(p))) b |= ctrl_buttons(c);
     return b;
 }
@@ -199,6 +294,7 @@ void ob_pads_setup_key(int k)
 
 void ob_pads_tick(void)
 {
+    if (sides_ready && S.open && ob_plat_overlay_open()) ob_sides_close(&S);   /* the menu opening leaves the screen as it was */
     if (setup && setup_slot >= 0 && !ob_plat_controller(setup_slot)) { setup_close(0); return; }
     if (setup && setup_at >= 0 && setup_slot >= 0 && SDL_GetTicks() - setup_since >= 5000) {
         if (++setup_at == C.n) setup_at = -1;

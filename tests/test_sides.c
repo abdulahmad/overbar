@@ -195,6 +195,30 @@ static void online(void)
         for (i = 0; i < 320 * 200; i++) lit += px[i] != 0;
         CHECK(lit > 1000, "the screen draws");
     }
+    {
+        /* the Rewind look: an opaque field, the title plate's black, a ready device's gold star, the pad icon's face buttons */
+        static uint32_t px[640 * 448];
+        ob_sides_game g = game2();
+        ob_sides t;
+        int i, black = 0, gold = 0, blue = 0, green = 0;
+        ob_sides_init(&t, &g, 0, NULL, NULL);
+        ob_sides_open(&t);
+        ob_sides_add(&t, 0, "Keyboard");
+        ob_sides_add(&t, 1, "Pad");
+        ob_sides_add(&t, 100, "Mouse");
+        ob_sides_input(&t, 0, MDRT_MENU_LEFT);
+        ob_sides_input(&t, 0, MDRT_MENU_OK);
+        ob_sides_input(&t, 1, MDRT_MENU_RIGHT);
+        ob_sides_draw(&t, px, 640, 448, 640);
+        for (i = 0; i < 640 * 448; i++) {
+            black += px[i] == 0xFF000000u;
+            gold += px[i] == 0xFFF8D830u;
+            blue += px[i] == 0xFF3880F0u;
+            green += px[i] == 0xFF50B030u;
+            if (!(px[i] >> 24)) { black = -1000000; break; }
+        }
+        CHECK(black > 5000 && gold > 50 && blue > 0 && green > 0, "the screen is the field, the plate, a gold star and the pad icon");
+    }
 }
 
 /* ---- chat ---- */

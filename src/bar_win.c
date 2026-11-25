@@ -11,6 +11,14 @@
 
 static HWND g_hwnd;
 
+/* Labels are UTF-8 (an em dash in a detail line); Windows' ANSI calls would show it as three Latin-1 letters. */
+static BOOL append_utf8(HMENU m, UINT flags, UINT_PTR id, const char *label)
+{
+    WCHAR w[512];
+    if (!MultiByteToWideChar(CP_UTF8, 0, label ? label : "", -1, w, 512)) w[0] = 0;
+    return AppendMenuW(m, flags, id, w);
+}
+
 int bar_init(void *native_window)
 {
     g_hwnd = (HWND)native_window;
@@ -22,13 +30,13 @@ void *bar_popup(void) { return CreatePopupMenu(); }
 
 void bar_item(void *menu, const char *label, int cmd, int disabled, int checked)
 {
-    AppendMenuA((HMENU)menu, MF_STRING | (disabled ? MF_GRAYED : 0) | (checked ? MF_CHECKED : 0), (UINT_PTR)cmd, label ? label : "");
+    append_utf8((HMENU)menu, MF_STRING | (disabled ? MF_GRAYED : 0) | (checked ? MF_CHECKED : 0), (UINT_PTR)cmd, label);
 }
 
 int bar_sub(void *menu, const char *label, void *submenu)
 {
     int pos = GetMenuItemCount((HMENU)menu);
-    AppendMenuA((HMENU)menu, MF_POPUP, (UINT_PTR)submenu, label ? label : "");
+    append_utf8((HMENU)menu, MF_POPUP, (UINT_PTR)submenu, label);
     return pos;
 }
 

@@ -333,7 +333,7 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
                 return 1;
             }
         }
-        if (id == OB_ID_CONTROLLERS) {
+        if (id == OB_ID_CONTROLLERS || id == OB_ID_SIDES) {
             /* client opens its pad setup; overlay stays */
             return id;
         }

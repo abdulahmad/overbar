@@ -47,7 +47,20 @@ typedef struct ob_sides_seat {
     const char *name;               /* the device's */
 } ob_sides_seat;
 
+/* A game's own look for the screen (all of it optional: zeros draw Overbar's). */
+typedef struct ob_sides_skin {
+    uint32_t team_rgb[2];           /* each team's colour, 0xRRGGBB (0: red / blue) */
+    /* draws the field over the whole w x h picture */
+    void (*background)(void *ud, uint32_t *px, int w, int h, int pitch);
+    /* text in the game's font. px points at the pixel where the text starts (x, y 0 there); scale is the whole-number
+     * magnification of a game pixel; big: the title's size. NULL: Overbar's font */
+    void (*text)(void *ud, uint32_t *px, int w, int h, int pitch, int x, int y, const char *s, uint32_t argb, int big, int scale);
+    int (*text_width)(void *ud, const char *s, int big);     /* its width in game pixels */
+    void *ud;
+} ob_sides_skin;
+
 typedef struct ob_sides_game {
+    ob_sides_skin skin;
     int teams;                      /* columns: 2 (team 0 on the left) */
     int seats;                      /* the game's controller slots in all: 2 for 94 / 95 PC, 4 for 96 PC */
     int per_team;                   /* most devices on one team (0: seats) */

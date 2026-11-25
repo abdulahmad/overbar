@@ -17,6 +17,7 @@ src/plat_pads.c
 src/osk.c
 src/gl.c
 src/sides.c
+src/sides_icons.c
 src/chat.c
 src/console.c
 src/room.c
