@@ -40,3 +40,4 @@ src/r3gl.c
 src/box.c
 src/box_cd.c
 src/box_cd_install.c
+src/cdimage.c
