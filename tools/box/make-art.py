@@ -6,7 +6,7 @@ Each scan named in <data/box>/art-map.txt is copied as <art dir>/<game>/<key>.<e
 (<art dir> is usually local/box-art, which the ports copy beside the program). The art stays on your machine; never commit it."""
 import os, re, shutil, sys
 data, src, out = sys.argv[1:4]
-code = {'pc94': (r'^(man\d+|disk\d+|blank|line\w+)$',), 'gen94': (r'^genManual\d*$',)}
+code = {'pc94': (r'^(man\d+|disk\d+|blank|line\w+)$',), 'gen94': (r'^(genManual\d*|genTmss|pk\w+)$',)}
 used = {}
 for g in code:
     keys = set()
