@@ -85,7 +85,7 @@ void ob_pads_mouse_draw(const SDL_Rect *dst);
  * (the mouse then steps the selection like ob_pads_mouse_mode says). */
 #define OB_MENU_ROWS 16
 typedef struct { int x, y, w, h; } ob_menu_rect;
-typedef struct { const ob_menu_rect *row; int n, sel, lr; uint32_t ok, back; int w; } ob_pad_menu;   /* w: the picture's width, 320 if 0; rows are in its pixels */
+typedef struct { const ob_menu_rect *row; int n, sel, lr; uint32_t ok, back; int w, step_ms; } ob_pad_menu;   /* w: the picture's width, 320 if 0; rows are in its pixels */
 void ob_pads_menu(const ob_pad_menu *m);
 /* where the mouse player is: picture pixels (224 tall) from the middle of the picture; 0, 0 draws the arrow from the middle */
 void ob_pads_mouse_anchor(int x, int y);

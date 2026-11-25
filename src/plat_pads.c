@@ -295,7 +295,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
             if (now >= pulse_off) pulse_bits = 0;
             if (!pulse_bits && now >= pulse_next) {
                 if (wheel_acc) { pulse_bits = wheel_acc < 0 ? dir[0] : dir[1]; wheel_acc += wheel_acc < 0 ? 1 : -1; }
-                else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700) {
+                else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700u + 12u * (Uint32)(menu.step_ms > 0 ? menu.step_ms : 0)) {
                     pulse_bits = hit < menu.sel ? dir[0] : dir[1]; menu_steps++;
                 } else if (lb && !menu_lb && hit >= 0 && hit == menu.sel) {
                     pulse_bits = menu.ok;
@@ -303,7 +303,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
                         pulse_bits = px < menu.row[hit].x + menu.row[hit].w / 2.0f ? dir[2] : dir[3];
                     }
                 } else if (rb && !menu_rb) pulse_bits = menu.back;
-                if (pulse_bits) { pulse_off = now + 70; pulse_next = now + 140; }
+                if (pulse_bits) { pulse_off = now + 70; pulse_next = now + (menu.step_ms > 0 ? (Uint32)menu.step_ms : 140u); }
             }
             menu_lb = lb; menu_rb = rb;
         }
