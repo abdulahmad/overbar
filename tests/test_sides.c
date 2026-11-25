@@ -69,7 +69,9 @@ static void local(void)
     ob_sides_input(&s, 2, MDRT_MENU_RIGHT);            /* Pad 2: home is full too? no: two seats taken */
     CHECK(s.d[2].team == OB_SIDES_MIDDLE, "no seat left for the third");
     CHECK(ob_sides_all_ready(&s) && !applied, "everyone ready, not started");
-    ob_sides_input(&s, 2, MDRT_MENU_OK);               /* any device of this machine starts it */
+    ob_sides_input(&s, 2, MDRT_MENU_OK);               /* a device waiting in the middle cannot start it */
+    CHECK(!applied, "the middle device does not start it");
+    ob_sides_input(&s, 0, MDRT_MENU_OK);               /* a seated device of this machine starts it */
     CHECK(applied == 1 && s.done && !s.open && nlast == 2, "started: the game's hook has the table");
     CHECK(last[0].team == 0 && last[1].team == 0, "both away (both moved left)");
     ob_sides_owners(&s, owner, 8, 2);
@@ -77,7 +79,7 @@ static void local(void)
     ob_sides_open(&s);
     CHECK(!s.done && s.d[0].team == OB_SIDES_MIDDLE && !s.d[0].ready, "open again: all in the middle");
     ob_sides_input(&s, 0, MDRT_MENU_OK);
-    CHECK(applied == 2 && nlast == 0, "nobody seated: the computer plays itself");
+    CHECK(applied == 1 && !s.done, "nobody seated: nobody can start it");
     /* per_team */
     g.seats = 4; g.per_team = 2;
     ob_sides_init(&s, &g, 0, NULL, NULL);

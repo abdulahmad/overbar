@@ -553,9 +553,38 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     }
     (void)cols; (void)cx; (void)rowh; (void)top; (void)lbl; (void)line;
     if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
-    if (!seated(s)) foot = "Left / Right: pick a side";
-    else if (!ob_sides_all_ready(s)) foot = "Left / Right: pick a side   OK: ready";
-    else if (s->host) foot = "Press Menu button to begin";
-    else foot = "Waiting for the host to begin";
+    {   int kb = ob_sides_find(s, s->me, 0);
+        int key = kb >= 0 && s->d[kb].team != OB_SIDES_MIDDLE;      /* the keyboard has a seat: say its key */
+        if (!seated(s)) foot = "Left / Right: pick a side";
+        else if (!ob_sides_all_ready(s)) foot = key ? "Left / Right: pick a side   Enter: ready" : "Left / Right: pick a side   OK: ready";
+        else if (s->host) foot = key ? "Press Enter to begin" : "Press Menu button to begin";
+        else foot = "Waiting for the host to begin";
+    }
     ctext_c(&c, 0, LW, 208, foot, 0xFFFF00, 1);
+}
+
+/* the device under a point of the w x h picture the screen is drawn on (the same layout as ob_sides_draw): its index, or -1 */
+int ob_sides_device_at(const ob_sides *s, int w, int h, int x, int y)
+{
+    int teams = s->g.teams, i, per[3] = { 0, 0, 0 }, at[3] = { 0, 0, 0 }, sc, ox, oy;
+    if (!s->open || w < 64 || h < 48) return -1;
+    sc = w / LW < h / LH ? w / LW : h / LH;
+    if (sc < 1) sc = 1;
+    ox = (w - LW * sc) / 2;
+    oy = (h - LH * sc) / 2;
+    for (i = 0; i < s->n; i++) {
+        const ob_sides_device *d = &s->d[i];
+        per[d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2]++;
+    }
+    for (i = 0; i < s->n; i++) {
+        const ob_sides_device *d = &s->d[i];
+        int col = d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2;
+        int n = per[col], sp = n <= 2 ? 60 : 120 / n, px0, py0, lx, ly;
+        if (sp < 28) sp = 28;
+        py0 = 120 + (at[col]++ * 2 - (n - 1)) * sp / 2;
+        px0 = col == 0 ? 45 : col == 2 ? 237 : 158;
+        lx = (x - ox) / sc; ly = (y - oy) / sc;
+        if (x >= ox && y >= oy && lx >= px0 - 4 && lx < px0 + 44 && ly >= py0 - 3 && ly < py0 + 30) return i;
+    }
+    return -1;
 }
