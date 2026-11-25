@@ -5,27 +5,30 @@ It describes how the work is set up and checked, not where any one piece of work
 
 ## 1. Repos
 
-| Repo | Overbar's place | Branch that takes the work |
-|---|---|---|
-| overbar | the library: overlay, menu bar, picture shape, looks | `main` |
-| NHL94Genesis-C-Port | submodule at `native/overbar` | `cursor/overbar-genesis-6801` |
-| NHL94SNES-C-Port | submodule at `platform/overbar` | `cursor/overbar-snes-6801` |
-| NHL95PC | submodule at `port/overbar` | `cursor/overbar-95pc-6801` |
-| NHL96PC | submodule at `port/overbar` | `cursor/overbar-96pc-6801` |
-| NHL94PC | submodule at `port/overbar` | `cursor/overbar-94pc-6801` |
+| Repo | Overbar's place |
+|---|---|
+| overbar | the library: overlay, menu bar, picture shape, looks |
+| NHL94Genesis-C-Port | submodule at `native/overbar` |
+| NHL94SNES-C-Port | submodule at `platform/overbar` |
+| NHL95PC | submodule at `port/overbar` |
+| NHL96PC | submodule at `port/overbar` |
+| NHL94PC | submodule at `port/overbar` |
+| NHL97PC | submodule at `port/overbar` |
+
+Every repo takes work on `main`. The old per-port `cursor/overbar-*-6801` branches are merged and gone.
 
 ## 2. Ground rules
 
 | Rule | What it means |
 |---|---|
-| Merge it yourself | Work happens on the thread's own branch, then goes straight into Overbar `main` and each port's overbar branch, with no PRs. Use a merge commit when a port's branch has commits of its own |
+| Small PRs into `main` | Work happens on a short branch off the current `main`, then one PR per topic into Overbar `main`; each port's submodule bump is its own PR into that port's `main`. PRs are merged with a merge commit, never a force-push |
 | Bump every port | An Overbar change ends with a submodule bump commit in each port that builds against it, made only after the library's checks pass |
 | PulseMan stays as it is | Never change `ext/pulseman` in the Genesis port, and never push to 1nputs/pulseman |
 | Nothing generated in git | No ROMs, save states, captures, screenshots, GIFs or golden files. The README's sample pictures are the exception Abdul asked for. The MiSTer filter files live once, in Overbar's `mister/`; ports copy them at build time and keep no copy of their own |
 | No line-ending rewrites | Don't commit a file whose only change is its line endings |
 | Game code doesn't move | Overbar work changes host shells only. Game code (`src/`, `game/`) and frame hashes stay the same |
 | Library stays generic | Overbar's modules (overlay, net, season, vdrive, files) are for any game on any platform, or many games on one platform. A title's folders, names, export, and merge live in that port |
-| Keys stay | `` ` `` and F11 open the overlay, F12 shows the stats, F9 the on-screen keyboard, Alt+Enter toggles fullscreen |
+| Keys stay | `` ` `` (and Esc on the console ports) opens the overlay, Backspace is Back, F12 shows the stats, F9 the on-screen keyboard, Alt+Enter toggles fullscreen |
 | Builds work as checked out | `-Werror` is for CI only. Don't fix pre-existing warnings or the known ucrt64 failures as part of other work |
 | Netplay security | Anything that comes over the network is hostile: never run, load or write code from it, never take an address from it, check every length before use, validate a state before and clean it after. The rules and checklist are in `docs/NETPLAY_SECURITY.md`; `tests/netsec.sh` (part of `make test`, and run by every port with `sh port/overbar/tests/netsec.sh .`) fails the build on what it can check. A change to a network path, a state or a file route follows it |
 | Credit | Overbar is a derivative of 1nputs' PulseMan. A derivative of Overbar carries the credit block in the README |
@@ -39,7 +42,7 @@ A change passes on what a program says.
 | Library | `make test` and `tests/check.sh` in overbar | a test fails, or the library stops building without SDL |
 | Genesis | `make` (game target `build/nhl94.exe` on Windows); `make test` when anything outside `native/` changes | the build fails, or a frame hash changes |
 | SNES | `make`; `test/check.sh ROM` when anything outside `platform/` changes | the build fails, or a frame hash changes |
-| PC ports | `sh port/build-win.sh` (mingw32 for 95 and 96 PC, ucrt64 for 94 PC) | the build fails |
+| PC ports | `sh port/build-win.sh` (mingw32 for 95, 96 and 97 PC, ucrt64 for 94 PC) | the build fails |
 
 ## 4. Checks on Abdul's machine
 
@@ -79,7 +82,7 @@ A unit that fails a gate goes back with the check's output. After the same failu
 
 These steps go ahead without asking, because they can be undone:
 - branches
-- pushes to the branches above
+- pushes to your own work branch (not to `main`)
 - builds in the cloud
 - a Remote Control session that builds and runs
 

@@ -247,7 +247,7 @@ A plain build prints warnings without stopping, so a newer compiler still builds
 
 ### 🌐 Online play (rollback or lockstep)
 
-`overbar/net.h` is a game-agnostic netplay core for games that run the same on every machine given the same buttons. It plays in one of two modes:
+`include/overbar/net.h` is a game-agnostic netplay core for games that run the same on every machine given the same buttons. It plays in one of two modes:
 
 - **Rollback**, for a game that can save and load its state at a clean point (`ob_net_game.states`). A step never waits for the network. The other machines' buttons are guessed (each pad's last known buttons, held), and when a guess turns out wrong, the core loads the state from before that step and the game plays the steps since again, quietly, with the right buttons.
 - **Lockstep**, for a game that can't save its state yet. Nothing is saved or rolled back, and a step waits until every machine's buttons for it have come.

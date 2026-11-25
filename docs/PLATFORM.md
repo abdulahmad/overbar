@@ -1,6 +1,9 @@
 # Overbar platform layer (SDL2)
 
-Status: design, stage 0. Nothing here is built yet.
+Status: built. `src/plat.c` and `src/plat_pads.c` are the layer, and every port uses it (Genesis `native/frontend.c`,
+SNES `platform/main.c`, the PC ports' `port/shell.c` and `port/input.c`). The push-audio and own-the-loop calls below
+were not built: ports keep their own sound and loop and call `ob_plat_pump()` / `ob_plat_present()`. The sections
+below are the original design; `include/overbar/plat.h` is the API as built.
 
 Anything that uses Overbar goes through one SDL2 platform layer. The port keeps only what is its own game:
 its frame, its pad bits, its sound, its options. SDL2 (not SDL3) because the handhelds (muOS, Knulli, ROCKNIX,
@@ -13,11 +16,11 @@ key/mouse routing, cursor hiding, text input, FPS, controller open/close and pad
 
 | Module | File | Owns |
 |---|---|---|
-| Window and present | `src/plat_window.c` | SDL_Init, window flags (fullscreen on handheld), SDL_Renderer on handhelds, OpenGL only where the port asks, vsync, fullscreen toggle, picture rect from `ob_view`, FPS/stats, the overlay and banner drawn over the frame |
-| Input | `src/plat_input.c` | the event pump, keyboard and controller open/close, hotkeys (`` ` ``, F12, F9, Alt+Enter, controller Back), overlay and file-menu routing, cursor hiding, text input, per-slot pad binding and the pad-setup screen, settings file |
-| Audio | `src/plat_audio.c` | one SDL audio device, a sample ring the game pushes into (or a pull callback), resampling to the device rate, mute online |
-| Desktop menu bar | `src/bar.c` (model) + `bar_win.c`, `bar_mac.m` | the standard bar built once from `ob_host` as a neutral item tree (check marks, radio groups, actions). Windows: native HMENU. macOS: native NSMenu in the screen's menu bar. Linux has no standard native menu bar, so it gets none (the Overbar overlay menu is the way in there, as on handhelds). A port may replace items or the whole tree |
-| Loop | `src/plat_run.c` | optional: `ob_plat_run()` owns the main loop and calls the hooks; ports with their own loop (PC ports) call `ob_plat_pump()` and `ob_plat_present()` instead |
+| Window, present and input | `src/plat.c` | SDL_Init, the window (fullscreen on handheld), present (SDL_Renderer, or OpenGL where the port asks), vsync, fullscreen toggle, the picture rect from `ob_view`, FPS/stats, the overlay and banner drawn over the frame; the event pump, hotkeys, overlay and file-menu routing, cursor hiding, text input, the on-screen keyboard and the room screens |
+| Pads | `src/plat_pads.c` | keyboard and controller open/close, per-slot pad binding and the controller setup screen |
+| Desktop menu bar | `src/filemenu.c` (model) + `src/bar_win.c`, `src/bar_mac.m` (backends, `src/bar_backend.h`) | the standard bar built from the overlay's item tree. Windows: native HMENU. macOS: native NSMenu. Linux and handhelds: no bar (overlay only) |
+| Audio | not in the layer | each port keeps its own sound; Overbar's menu sounds are `src/sfx.c` |
+| Loop | not built | ports keep their own loop and call `ob_plat_pump()` and `ob_plat_present()` |
 
 ## API (one header, `include/overbar/plat.h`)
 
@@ -187,7 +190,7 @@ their own; they pass the `ob_look` and draw.
 
 1. Layer + tests + the bar model and the Windows bar in Overbar (the macOS bar needs a Mac to check; written and compiled-checked first) (this repo, `main`).
 2. SNES port: delete its window/input/audio glue, implement hooks.
-3. Genesis port: the `native/pulseman/sdl2.c` copy becomes a thin adapter onto the layer.
+3. Genesis port: its PulseMan SDL2 copy (`native/pulseman/sdl2.c`, since removed) became a thin adapter onto the layer (`native/frontend.c`).
 4. 95 PC and 96 PC (shared code), then 94 PC.
 5. aarch64 builds and device checks after each.
 
