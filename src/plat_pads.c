@@ -286,7 +286,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
     macc_x = macc_y = 0;
     if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS) || menu_dst.h <= 0) { menu_lb = menu_rb = 0; wheel_acc = 0; return 0; }
     st = SDL_GetMouseState(&mx, &my);
-    {   float sc = menu_dst.h / 224.0f, px = (mx - (menu_dst.x + menu_dst.w / 2.0f)) / sc + (menu.w > 0 ? menu.w : 320) / 2.0f, py = (my - menu_dst.y) / sc;
+    {   float pw = menu.w > 0 ? (float)menu.w : 320.0f, px = (mx - menu_dst.x) * pw / menu_dst.w, py = (my - menu_dst.y) * 224.0f / menu_dst.h;   /* (the picture fills dst, however wide the pixels are) */
         for (int i = 0; i < menu.n; i++)
             if (px >= menu.row[i].x && px < menu.row[i].x + menu.row[i].w && py >= menu.row[i].y && py < menu.row[i].y + menu.row[i].h) { hit = i; break; }
         if (hit != menu_hover) { menu_hover = hit; menu_steps = 0; }
@@ -295,7 +295,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
             if (now >= pulse_off) pulse_bits = 0;
             if (!pulse_bits && now >= pulse_next) {
                 if (wheel_acc) { pulse_bits = wheel_acc < 0 ? dir[0] : dir[1]; wheel_acc += wheel_acc < 0 ? 1 : -1; }
-                else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700) {
+                else if (hit >= 0 && hit != menu.sel && menu_steps < 12 && now - move_ms < 700u + 12u * (Uint32)(menu.step_ms > 0 ? menu.step_ms : 0)) {
                     pulse_bits = hit < menu.sel ? dir[0] : dir[1]; menu_steps++;
                 } else if (lb && !menu_lb && hit >= 0 && hit == menu.sel) {
                     pulse_bits = menu.ok;
@@ -303,7 +303,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
                         pulse_bits = px < menu.row[hit].x + menu.row[hit].w / 2.0f ? dir[2] : dir[3];
                     }
                 } else if (rb && !menu_rb) pulse_bits = menu.back;
-                if (pulse_bits) { pulse_off = now + 70; pulse_next = now + 140; }
+                if (pulse_bits) { pulse_off = now + 70; pulse_next = now + (menu.step_ms > 0 ? (Uint32)menu.step_ms : 140u); }
             }
             menu_lb = lb; menu_rb = rb;
         }
