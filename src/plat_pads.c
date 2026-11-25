@@ -299,7 +299,7 @@ static const struct { int w, h, ox, oy; const char *row[9]; } AIM[6] = {
     { 12, 9, 4, 4, { "...OOO......", "...OGO......", "...OGO......", "...OGO......", "OOOOGOOOO...", ".OGGGGGO....", "..OGGGO.....", "...OGO......", "....O......." } },
     { 12, 9, 5, 4, { "....OOO.....", "....OGO.....", "....OGO.....", ".OOOOGOOOO..", ".OGGGGGGGO..", ".OOOOGOOOO..", "....OGO.....", "....OGO.....", "....OOO....." } },
 };
-static int aim_x = -1, aim_y = -1;       /* where the player is, in picture pixels (-1: the middle of the picture) */
+static int aim_x, aim_y;                 /* where the player is, in picture pixels from the middle of the picture */
 
 void ob_pads_mouse_anchor(int x, int y) { aim_x = x; aim_y = y; }
 
@@ -316,8 +316,8 @@ void ob_pads_mouse_draw(const SDL_Rect *dst)
     f = fl < 0 ? 5 : frame[fl];
     flip = fl >= 5;
     sc = dst->h / 224.0f;                                   /* the picture is 224 lines tall; sc is the size of one picture pixel */
-    ax = dst->x + (aim_x < 0 ? dst->w / 2.0f : aim_x * sc) + (fl < 0 ? 0 : dx / 4.0f * sc);
-    ay = dst->y + (aim_y < 0 ? dst->h / 2.0f : aim_y * sc) + (fl < 0 ? 0 : dy / 4.0f * sc);
+    ax = dst->x + (dst->w / 2.0f + aim_x * sc) + (fl < 0 ? 0 : dx / 4.0f * sc);
+    ay = dst->y + (dst->h / 2.0f + aim_y * sc) + (fl < 0 ? 0 : dy / 4.0f * sc);
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
     /* outline first, fill on top: two passes over the same cells */
     {   SDL_Rect o[160], g[160]; int no = 0, ng = 0;

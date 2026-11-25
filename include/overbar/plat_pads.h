@@ -78,7 +78,7 @@ void ob_pads_mouse_wheel(int y);
 int ob_pads_mouse_player(void);
 uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3]);   /* for ports that read pads themselves: in play like _bits, else menu steps */
 void ob_pads_mouse_draw(const SDL_Rect *dst);
-/* where the mouse player is in the picture (pixels, 224 tall); without it the arrow is drawn from the middle of the picture */
+/* where the mouse player is: picture pixels (224 tall) from the middle of the picture; 0, 0 draws the arrow from the middle */
 void ob_pads_mouse_anchor(int x, int y);
 
 /* the controller setup screen; wire these into ob_plat_hooks */
