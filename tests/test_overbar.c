@@ -1110,28 +1110,40 @@ static void test_autoscroll(void)
     mdrt_menu_free(&h.overlay);
 }
 
-/* the movie look: presets over the player's look, set and cleared */
-static void test_video_look(void)
+/* the movie's own look: its own Scaling page, written to and read from the ini */
+static void test_movie_look(void)
 {
-    ob_look game, out;
-    memset(&game, 0, sizeof game);
-    game.mode = OB_MODE_SHARP; game.sharp = OB_SHARP_4X; game.mask_scale = 1; game.bright = 90; game.ntsc = 1;
-    CHECK(!ob_video_look(OB_VIDEO_LOOK_GAME, &game, &out));
-    CHECK(ob_video_look(OB_VIDEO_LOOK_SMOOTH, &game, &out) && out.mode == OB_MODE_SHARP && out.sharp == OB_SHARP_2X);
-    CHECK(out.bright == 90 && out.ntsc == 1);
-    CHECK(ob_video_look(OB_VIDEO_LOOK_CRT_SOFT, &game, &out) && out.mode == OB_MODE_CRT && out.crt == OB_CRT_SOFT);
-    CHECK(ob_video_look(OB_VIDEO_LOOK_CRT_APERTURE, &game, &out) && out.crt == OB_CRT_SOFT_APERTURE);
+    ob_host h;
+    ob_item items[OB_ITEMS_MAX];
+    int n, i, found = 0;
+    ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+    CHECK(!h.has_movie && !h.movie_own);
+    CHECK(h.movie.mode == OB_MODE_CRT && h.movie.crt == OB_CRT_SOFT);
+    n = ob_page_items(&h, OB_PAGE_MAIN, items, OB_ITEMS_MAX);
+    for (i = 0; i < n; i++) if (items[i].id == OB_ID_SCALE_MOVIE) found = 1;
+    CHECK(!found);
+    h.has_movie = 1;
+    n = ob_page_items(&h, OB_PAGE_MAIN, items, OB_ITEMS_MAX);
+    for (i = 0, found = 0; i < n; i++) if (items[i].id == OB_ID_SCALE_MOVIE) found = 1;
+    CHECK(found);
+    n = ob_page_items(&h, OB_PAGE_SCALE_MOVIE, items, OB_ITEMS_MAX);
+    CHECK(n == 2 && items[0].id == OB_ID_MOVIE_OWN);       /* same as the game: only the switch and Back */
+    ob_host_apply(&h, OB_CLASS_MOVIE, OB_ID_MOVIE_OWN, 1);
+    CHECK(h.movie_own);
+    n = ob_page_items(&h, OB_PAGE_SCALE_MOVIE, items, OB_ITEMS_MAX);
+    CHECK(n > 4);
+    ob_host_apply(&h, OB_CLASS_MOVIE, OB_ID_SCALE_MODE, OB_MODE_SHARP);
+    ob_host_apply(&h, OB_CLASS_MOVIE, OB_ID_SHARP_AMOUNT, 0);
+    CHECK(h.movie.mode == OB_MODE_SHARP && h.movie.sharp == OB_SHARP_2X);
+    CHECK(h.lores.sharp == OB_SHARP_3X);                    /* the game's look untouched */
+    CHECK(ob_host_look(&h, OB_CLASS_MOVIE) == &h.movie);
+    ob_host_free(&h);
     CHECK(!ob_screen_video_look());
-    ob_screen_set_video_look(&out);
-    CHECK(ob_screen_video_look() && ob_screen_video_look()->crt == OB_CRT_SOFT_APERTURE);
-    ob_screen_set_video_look(NULL);
-    CHECK(!ob_screen_video_look());
-    CHECK(!strcmp(ob_video_look_names[OB_VIDEO_LOOK_SMOOTH], "Smooth"));
 }
 
 int main(void)
 {
-    test_video_look();
+    test_movie_look();
     test_scaler_console();
     test_scaler_wide();
     test_scaler_vga();

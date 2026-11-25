@@ -43,6 +43,7 @@ typedef enum {
 typedef enum {
     OB_CLASS_LORES = 0,
     OB_CLASS_HIRES,
+    OB_CLASS_MOVIE,             /* a port's movie (ob_screen picture): its own look when host.movie_own, drawn like lo-res */
     OB_CLASS_COUNT
 } ob_class;
 
@@ -115,6 +116,9 @@ enum {
     OB_PAGE_GAME,               /* the client's own game options (ob_game_set_ops) */
     OB_PAGE_SEASON,             /* online season: who has which team, pick a team, sync */
     OB_PAGE_SEASON_TEAMS,       /* a guest picks a team ("Edmonton - Bob") */
+    OB_PAGE_SCALE_MOVIE,        /* Scaling (Movie): the movie's own look (host.has_movie) */
+    OB_PAGE_MODE_MOVIE,
+    OB_PAGE_OPTS_MOVIE,
     OB_PAGE_COUNT
 };
 
@@ -191,6 +195,10 @@ enum {
     OB_ID_MENU_SOUNDS,          /* Main page: the overlay's navigation sounds off / on */
     OB_ID_WIDESCREEN,           /* Scaling page: 4:3 or 16:9 (a port that draws wide pictures sets host.widescreen_ok) */
     OB_ID_GAME_PRESET,          /* Game page: the quick-select row of presets (when the client gave some) */
+    OB_ID_SCALE_MOVIE,          /* Main page: Scaling (Movie) (host.has_movie) */
+    OB_ID_MODE_MENU_MOVIE,
+    OB_ID_OPTS_MENU_MOVIE,
+    OB_ID_MOVIE_OWN,            /* Scaling (Movie): the game's scaling or the movie's own */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
     OB_ID_ADDON = 1000
@@ -319,6 +327,9 @@ typedef struct ob_host {
     int vsync;
     int stats;
     ob_look lores, hires;
+    ob_look movie;              /* the movie's own look (a port's ob_screen picture), used when movie_own */
+    int has_movie;              /* the port plays movies: the main page lists Scaling (Movie) */
+    int movie_own;              /* 1: movies use the movie look; 0: the game's (lo-res) look */
     int volume, mute;
     int menu_sounds;                  /* the overlay makes a sound when it moves, goes in and goes back (default on; the Menu sounds setting) */
     int blend;                  /* 0 off, 1 dither, 2 soft (PulseMan) */
@@ -513,6 +524,9 @@ int ob_items_contain(const ob_item *items, int n, int id);
 int ob_items_contain_label(const ob_item *items, int n, const char *label);
 
 /* Apply a choice / action. Overlay does this on every change (live preview). */
+/* the look a class's settings live in: hi-res, lo-res or the movie's (drawn only when host.movie_own) */
+ob_look *ob_host_look(ob_host *h, ob_class cls);
+const ob_look *ob_host_look_c(const ob_host *h, ob_class cls);
 int ob_host_apply(ob_host *h, ob_class cls, int id, int value);
 
 /* The client paints and pauses. Overbar does not link SDL or the game host.

@@ -26,6 +26,9 @@ static const char *page_title(const ob_host *h, int page)
     case OB_PAGE_SEASON_TEAMS: return "Pick a team";
     case OB_PAGE_SCALE_HI: return "Scaling (Hi-Res)";
     case OB_PAGE_SCALE_LO: return h->has_hires ? "Scaling (Lo-Res)" : "Scaling";
+    case OB_PAGE_SCALE_MOVIE: return "Scaling (Movie)";
+    case OB_PAGE_MODE_MOVIE: return "Scale Mode";
+    case OB_PAGE_OPTS_MOVIE: return "Scale Mode options";
     case OB_PAGE_MODE_HI:
     case OB_PAGE_MODE_LO: return "Scale Mode";
     case OB_PAGE_OPTS_HI:
@@ -48,7 +51,9 @@ void ob_overlay_build(ob_host *h)
     mdrt_menu *m = &h->overlay;
     mdrt_menu_page(m, page_title(h, h->overlay_page));
     if (h->overlay_page == OB_PAGE_MISTER) memset(h->mister_row, 0, sizeof h->mister_row);
-    if (h->overlay_page == OB_PAGE_SCALE_HI || h->overlay_page == OB_PAGE_SCALE_LO) {
+    if (h->overlay_page == OB_PAGE_SCALE_MOVIE)
+        snprintf(m->subtitle, sizeof m->subtitle, "Used only while a movie plays. Changes show on the next movie frame.");
+    else if (h->overlay_page == OB_PAGE_SCALE_HI || h->overlay_page == OB_PAGE_SCALE_LO) {
         if (h->fallback_note)
             snprintf(m->subtitle, sizeof m->subtitle, "%s", h->fallback_note);
         else
@@ -60,8 +65,8 @@ void ob_overlay_build(ob_host *h)
         const ob_item *it = &items[i];
         mdrt_menu_item *add;
         if (it->kind == OB_ITEM_SEP) continue;   /* dividers are for the menu bar */
-        if (it->id == OB_ID_MODE_MENU_HI || it->id == OB_ID_MODE_MENU_LO) {
-            const ob_look *lk = it->id == OB_ID_MODE_MENU_HI ? &h->hires : &h->lores;
+        if (it->id == OB_ID_MODE_MENU_HI || it->id == OB_ID_MODE_MENU_LO || it->id == OB_ID_MODE_MENU_MOVIE) {
+            const ob_look *lk = it->id == OB_ID_MODE_MENU_HI ? &h->hires : it->id == OB_ID_MODE_MENU_MOVIE ? &h->movie : &h->lores;
             int nc = 0;
             const char *const *choices = ob_mode_choice_list(&nc);
             /* The bar opens a submenu. The overlay flips the value on this row. */
@@ -123,7 +128,9 @@ void ob_overlay_close(ob_host *h)
 static int parent_page(const ob_host *h, int page)
 {
     if (page == OB_PAGE_MISTER)
-        return h->video_class == OB_CLASS_HIRES ? OB_PAGE_SCALE_HI : OB_PAGE_SCALE_LO;
+        return h->video_class == OB_CLASS_HIRES ? OB_PAGE_SCALE_HI : h->video_class == OB_CLASS_MOVIE ? OB_PAGE_SCALE_MOVIE : OB_PAGE_SCALE_LO;
+    if (page == OB_PAGE_MODE_MOVIE || page == OB_PAGE_OPTS_MOVIE) return OB_PAGE_SCALE_MOVIE;
+    if (page == OB_PAGE_SCALE_MOVIE) return OB_PAGE_MAIN;
     if (page == OB_PAGE_MODE_LO || page == OB_PAGE_OPTS_LO) return OB_PAGE_SCALE_LO;
     if (page == OB_PAGE_MODE_HI || page == OB_PAGE_OPTS_HI) return OB_PAGE_SCALE_HI;
     if (page == OB_PAGE_SCALE_HI || page == OB_PAGE_SCALE_LO) return OB_PAGE_MAIN;
@@ -236,6 +243,9 @@ int ob_overlay_input(ob_host *h, int mdrt_input)
     case OB_ID_MODE_MENU_LO: h->video_class = OB_CLASS_LORES; go_page(h, OB_PAGE_MODE_LO); return 1;
     case OB_ID_OPTS_MENU_HI: h->video_class = OB_CLASS_HIRES; go_page(h, OB_PAGE_OPTS_HI); return 1;
     case OB_ID_OPTS_MENU_LO: h->video_class = OB_CLASS_LORES; go_page(h, OB_PAGE_OPTS_LO); return 1;
+    case OB_ID_SCALE_MOVIE: h->video_class = OB_CLASS_MOVIE; go_page(h, OB_PAGE_SCALE_MOVIE); return 1;
+    case OB_ID_MODE_MENU_MOVIE: h->video_class = OB_CLASS_MOVIE; go_page(h, OB_PAGE_MODE_MOVIE); return 1;
+    case OB_ID_OPTS_MENU_MOVIE: h->video_class = OB_CLASS_MOVIE; go_page(h, OB_PAGE_OPTS_MOVIE); return 1;
     case OB_ID_SOUND: go_page(h, OB_PAGE_SOUND); return 1;
     case OB_ID_INPUT: go_page(h, OB_PAGE_INPUT); return 1;
     case OB_ID_CAPTURE: go_page(h, OB_PAGE_CAPTURE); return 1;
