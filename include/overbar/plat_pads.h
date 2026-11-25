@@ -70,6 +70,7 @@ int ob_pads_sides_active(void);
  * selection instead. The port says which, every frame, with ob_pads_mouse_mode. ob_pads_mouse_motion / _wheel are fed by the platform layer. */
 void ob_pads_mouse_mode(int play);
 int ob_pads_mouse_cursor(void);                 /* 1: the green cursor is the pointer now */
+int ob_pads_mouse_playing(void);                           /* the port said the game is playing (ob_pads_mouse_mode) */
 void ob_pads_mouse_motion(int dx, int dy);
 void ob_pads_mouse_wheel(int y);
 /* The mouse as a pad: the player it was given on the screen (-1: none). It steers like NHL 95 PC: the pointer's distance from the
@@ -78,6 +79,14 @@ void ob_pads_mouse_wheel(int y);
 int ob_pads_mouse_player(void);
 uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3]);   /* for ports that read pads themselves: in play like _bits, else menu steps */
 void ob_pads_mouse_draw(const SDL_Rect *dst);
+
+/* A menu the port can point at: its rows as rectangles on the picture (224 tall, w wide: 320 or 256; x from its left edge), sel the selected row, lr when a row's options change with left / right (a click left of its middle is left, right of it
+ * right), ok and back the port's buttons for a click and a right click. Call every frame; ob_pads_menu(NULL) says there is none
+ * (the mouse then steps the selection like ob_pads_mouse_mode says). */
+#define OB_MENU_ROWS 16
+typedef struct { int x, y, w, h; } ob_menu_rect;
+typedef struct { const ob_menu_rect *row; int n, sel, lr; uint32_t ok, back; int w; } ob_pad_menu;   /* w: the picture's width (0: 320) */
+void ob_pads_menu(const ob_pad_menu *m);
 /* where the mouse player is: picture pixels (224 tall) from the middle of the picture; 0, 0 draws the arrow from the middle */
 void ob_pads_mouse_anchor(int x, int y);
 
