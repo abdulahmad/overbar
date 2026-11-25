@@ -190,6 +190,7 @@ enum {
     OB_ID_SIDES,                /* Input page: Select sides (a port with the screen sets host.sides_menu and shell.sides) */
     OB_ID_MENU_SOUNDS,          /* Main page: the overlay's navigation sounds off / on */
     OB_ID_WIDESCREEN,           /* Scaling page: 4:3 or 16:9 (a port that draws wide pictures sets host.widescreen_ok) */
+    OB_ID_GAME_PRESET,          /* Game page: the quick-select row of presets (when the client gave some) */
     OB_ID_SEASON_TEAM = 800,    /* + a team 0..31: claim that team */
     OB_ID_GAME_OPT = 900,       /* + an option's index: one row of the Game page */
     OB_ID_ADDON = 1000
@@ -284,6 +285,15 @@ typedef struct ob_game_opt {
     int group;                  /* a divider before the row when it differs from the row above */
 } ob_game_opt;
 
+/* A preset: one choice per Game row, set together from one row on top of the page. values[i] is the
+ * choice for option i, or -1 to leave that row as it is (it then plays no part in matching either).
+ * The row shows "Custom" whenever the rows match no preset, so changing one row by hand flips it. */
+#define OB_GAME_PRESETS_MAX 8
+typedef struct ob_game_preset {
+    const char *name;
+    const signed char *values;  /* one per option, static storage */
+} ob_game_preset;
+
 typedef struct ob_game_ops {
     const char *title;          /* the page and its main-page row ("Game" when NULL) */
     const ob_game_opt *opts;    /* kept by pointer: static storage */
@@ -292,6 +302,8 @@ typedef struct ob_game_ops {
      * rows with ob_game_set (a preset); those get no call of their own. */
     void (*changed)(void *ctx, int index, int value);
     void *ctx;
+    const ob_game_preset *presets;   /* optional: a "Preset" row on top of the page (static storage) */
+    int npresets;
 } ob_game_ops;
 
 #define OB_DEVICES_MAX 12

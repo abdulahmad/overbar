@@ -92,9 +92,47 @@ void ob_game_set(ob_host *h, int index, int value)
     h->game_value[index] = clamp_choice(&h->game_ops.opts[index], value);
 }
 
+static int npresets(const ob_host *h)
+{
+    int n = h && h->game_ready && h->game_ops.presets ? h->game_ops.npresets : 0;
+    return n > OB_GAME_PRESETS_MAX ? OB_GAME_PRESETS_MAX : n;
+}
+
+/* the preset the rows stand at now (the first whose set rows all match), or npresets: Custom */
+static int preset_now(const ob_host *h)
+{
+    int p, i, n = nopts(h), np = npresets(h);
+    for (p = 0; p < np; p++) {
+        const signed char *v = h->game_ops.presets[p].values;
+        int ok = 1;
+        for (i = 0; i < n && ok; i++)
+            if (v[i] >= 0 && clamp_choice(&h->game_ops.opts[i], v[i]) != h->game_value[i]) ok = 0;
+        if (ok) return p;
+    }
+    return np;
+}
+
+static int apply_preset(ob_host *h, int p)
+{
+    int i, n = nopts(h);
+    if (p < 0 || p >= npresets(h)) return 1;           /* Custom: the rows stay as they are */
+    for (i = 0; i < n; i++) {
+        int v = h->game_ops.presets[p].values[i];
+        if (v < 0) continue;
+        if (h->game_session && h->game_ops.opts[i].net) continue;   /* the host's, for this session */
+        v = clamp_choice(&h->game_ops.opts[i], v);
+        if (v == h->game_value[i]) continue;
+        h->game_value[i] = v;
+        notify(h, i);
+    }
+    if (h->ini_path[0]) ob_host_save_ini(h);
+    return 1;
+}
+
 int ob_game_apply(ob_host *h, int id, int value)
 {
     int i = id - OB_ID_GAME_OPT;
+    if (h && id == OB_ID_GAME_PRESET && npresets(h)) return apply_preset(h, value);
     if (!h || id < OB_ID_GAME_OPT || i >= nopts(h)) return 0;
     if (h->game_session && h->game_ops.opts[i].net) return 1;   /* the host's, for this session */
     h->game_value[i] = clamp_choice(&h->game_ops.opts[i], value);
@@ -110,7 +148,22 @@ const char *ob_game_title(const ob_host *h)
 
 int ob_game_items(const ob_host *h, ob_item *out, int cap)
 {
-    int i, n = 0, k = nopts(h);
+    int i, n = 0, k = nopts(h), np = npresets(h);
+    if (np && cap > 2) {
+        static const char *names[OB_GAME_PRESETS_MAX + 1];
+        ob_item *it = &out[n++];
+        for (i = 0; i < np; i++) names[i] = h->game_ops.presets[i].name;
+        names[np] = "Custom";
+        memset(it, 0, sizeof *it);
+        it->id = OB_ID_GAME_PRESET;
+        it->kind = MDRT_ITEM_CHOICE;
+        it->label = "Preset";
+        it->choices = names;
+        it->nchoices = np + 1;
+        it->value = preset_now(h);
+        memset(&out[n], 0, sizeof out[n]);
+        out[n++].kind = OB_ITEM_SEP;
+    }
     for (i = 0; i < k && n < cap; i++) {
         const ob_game_opt *o = &h->game_ops.opts[i];
         ob_item *it;

@@ -294,6 +294,11 @@ static int build_bar(void)
         if (page == OB_PAGE_ONLINE) {
             /* the Online page types into fields: the bar opens it in the overlay */
             bar_item(g_bar, "Online Play...", add_cmd(OB_ID_ONLINE, 0, OB_CLASS_LORES), !g_host->online_ready, 0);
+        } else if (page == OB_PAGE_GAME && g_host->game_ready) {
+            /* the Game page is long and has its preset row: the bar opens the overlay page */
+            static char game_label[80];
+            snprintf(game_label, sizeof game_label, "%s...", ob_game_title(g_host));
+            bar_item(g_bar, game_label, add_cmd(OB_ID_GAME, 0, OB_CLASS_LORES), 0, 0);
         } else if (page == OB_PAGE_SEASON) {
             /* Season lists who has which team: the bar opens the overlay page */
             bar_item(g_bar, "Season...", add_cmd(OB_ID_SEASON, 0, OB_CLASS_LORES), 0, 0);
@@ -352,6 +357,14 @@ static void apply_cmd(int id, int value)
     }
     if (id == OB_ID_ONLINE) {
         ob_online_open(g_host);
+        if (g_shell.redraw) g_shell.redraw();
+        return;
+    }
+    if (id == OB_ID_GAME) {
+        if (!g_host->overlay_open) ob_overlay_open(g_host);
+        g_host->overlay_page = OB_PAGE_GAME;
+        g_host->overlay.sel = 0;
+        ob_overlay_build(g_host);
         if (g_shell.redraw) g_shell.redraw();
         return;
     }
