@@ -81,7 +81,7 @@ void ob_pads_mouse_draw(const SDL_Rect *dst);
 
 /* A menu the port can point at: its rows as rectangles on the 320x224 picture (x from the picture's left edge, centred in the window if the
  * picture is wider), sel the selected row, lr when a row's options change with left / right (a click left of its middle is left, right of it
- * right, in the middle ok), ok and back the port's buttons for a click and a right click. Call every frame; ob_pads_menu(NULL) says there is none
+ * right), ok and back the port's buttons for a click and a right click. Call every frame; ob_pads_menu(NULL) says there is none
  * (the mouse then steps the selection like ob_pads_mouse_mode says). */
 #define OB_MENU_ROWS 16
 typedef struct { int x, y, w, h; } ob_menu_rect;

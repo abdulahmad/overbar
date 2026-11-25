@@ -299,8 +299,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
                 } else if (lb && !menu_lb && hit >= 0 && hit == menu.sel) {
                     pulse_bits = menu.ok;
                     if (menu.lr) {
-                        float rel = (px - menu.row[hit].x) / menu.row[hit].w;
-                        if (rel < 0.4f) pulse_bits = dir[2]; else if (rel > 0.6f) pulse_bits = dir[3];
+                        pulse_bits = px < menu.row[hit].x + menu.row[hit].w / 2.0f ? dir[2] : dir[3];
                     }
                 } else if (rb && !menu_rb) pulse_bits = menu.back;
                 if (pulse_bits) { pulse_off = now + 70; pulse_next = now + 140; }
