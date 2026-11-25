@@ -119,6 +119,7 @@ int ob_sides_input(ob_sides *s, int local, int mdrt_input);
 /* a message of type OB_NET_TYPE_SIDES from machine `from`. 1 when the state changed */
 int ob_sides_message(ob_sides *s, int from, const void *data, size_t size);
 
+int ob_sides_device_at(const ob_sides *s, int w, int h, int x, int y);   /* the device drawn at a point of the w x h picture, or -1 */
 int ob_sides_find(const ob_sides *s, int owner, int local);         /* the device's index, or -1 */
 int ob_sides_all_ready(const ob_sides *s);                          /* every device on a team is ready */
 /* the seat table, by team then by the devices' order (seat[n], n <= g.seats). Its size */

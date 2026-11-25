@@ -266,8 +266,8 @@ void ob_pads_mouse_motion(int dx, int dy)
         if (w) SDL_GetWindowSize(w, &ww, &wh);
         if (ww > 1 && wh > 1) {
             aim_acc_x += dx * 320.0f / ww; aim_acc_y += dy * 200.0f / wh;
-            if (aim_acc_x < -160) aim_acc_x = -160; else if (aim_acc_x > 160) aim_acc_x = 160;
-            if (aim_acc_y < -100) aim_acc_y = -100; else if (aim_acc_y > 100) aim_acc_y = 100;
+            if (aim_acc_x < -320) aim_acc_x = -320; else if (aim_acc_x > 320) aim_acc_x = 320;
+            if (aim_acc_y < -200) aim_acc_y = -200; else if (aim_acc_y > 200) aim_acc_y = 200;
         }
     }
 }
@@ -433,8 +433,12 @@ void ob_pads_mouse_draw(const SDL_Rect *dst)
     f = fl < 0 ? 5 : frame[fl];
     flip = fl >= 5;
     sc = dst->h / 224.0f;                                   /* the picture is 224 lines tall; sc is the size of one picture pixel */
-    ax = dst->x + (dst->w / 2.0f + aim_x * sc) + (fl < 0 ? 0 : dx / 4.0f * sc);
-    ay = dst->y + (dst->h / 2.0f + aim_y * sc) + (fl < 0 ? 0 : dy / 4.0f * sc);
+    ax = dst->x + (dst->w / 2.0f + aim_x * sc) + (fl < 0 ? 0 : dx / 2.0f * sc);
+    ay = dst->y + (dst->h / 2.0f + aim_y * sc) + (fl < 0 ? 0 : dy / 2.0f * sc);
+    {   float lo_x = dst->x + 8 * sc, hi_x = dst->x + dst->w - 8 * sc, lo_y = dst->y + 8 * sc, hi_y = dst->y + dst->h - 8 * sc;   /* off the picture the arrow stays on its edge */
+        if (ax < lo_x) ax = lo_x; else if (ax > hi_x) ax = hi_x;
+        if (ay < lo_y) ay = lo_y; else if (ay > hi_y) ay = hi_y;
+    }
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
     /* outline first, fill on top: two passes over the same cells */
     {   SDL_Rect o[160], g[160]; int no = 0, ng = 0;

@@ -410,6 +410,13 @@ void ob_plat_room_draw(uint32_t *px, int w, int h, int pitch)
 }
 
 static int sides_drag;                                       /* the left button is down on the select-sides screen */
+static int grab_local = -1;                                  /* the device taken by the mouse on that screen (its local id), -1 none */
+static int sd_ox, sd_oy, sd_t = 1, sd_mw, sd_mh;             /* where the screen was drawn: the buffer's place in the window, its scale and size */
+static int sides_device_under(int wx, int wy)
+{
+    if (!R_sides || !R_sides->open || sd_t < 1 || sd_mw < 1) return -1;
+    return ob_sides_device_at(R_sides, sd_mw, sd_mh, (wx - sd_ox) / sd_t + (wx < sd_ox ? -sd_mw : 0), (wy - sd_oy) / sd_t + (wy < sd_oy ? -sd_mh : 0));
+}
 
 /* 1 when the screen or chat used the event */
 static int room_event(const SDL_Event *e)
@@ -428,16 +435,36 @@ static int room_event(const SDL_Event *e)
             if (in < 0 || slot < 0) return 1;
             return ob_sides_input(R_sides, 1 + slot, in);
         }
+        if (e->type == SDL_MOUSEMOTION) {                           /* a hand over a device that can be taken */
+            int wx = e->motion.x, wy = e->motion.y, dv = sides_device_under(wx, wy);
+            ob_pointer_hand_set(2, grab_local >= 0 || (dv >= 0 && R_sides->d[dv].owner == R_sides->me));
+        }
+        if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) {   /* take any device of this machine, the mouse's own too */
+            int dv = sides_device_under(e->button.x, e->button.y);
+            if (dv >= 0 && R_sides->d[dv].owner == R_sides->me) { grab_local = R_sides->d[dv].local; sides_drag = 1; return 1; }
+        }
+        if (grab_local >= 0 && e->type == SDL_MOUSEMOTION) {         /* dragging it: one section at a time as the pointer crosses the thirds */
+            int ww = 0, wh = 0, gi = ob_sides_find(R_sides, R_sides->me, grab_local);
+            SDL_GetWindowSize(P.win, &ww, &wh);
+            if (!(e->motion.state & SDL_BUTTON_LMASK) || gi < 0 || ww <= 0) { grab_local = -1; sides_drag = 0; return 1; }
+            {   int px = e->motion.x, tm = R_sides->d[gi].team, want = px * 3 < ww ? 0 : px * 3 > ww * 2 ? 2 : 1;
+                int cur = R_sides->g.teams == 1 ? (tm == OB_SIDES_MIDDLE ? 0 : 1) : tm == OB_SIDES_MIDDLE ? 1 : tm == 0 ? 0 : 2;
+                if (R_sides->g.teams == 1) want = want > 0;
+                if (want != cur) ob_sides_input(R_sides, grab_local, want < cur ? MDRT_MENU_LEFT : MDRT_MENU_RIGHT);
+            }
+            return 1;
+        }
+        if (e->type == SDL_MOUSEBUTTONUP && grab_local >= 0) { grab_local = -1; sides_drag = 0; return 1; }
         if ((e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEMOTION) && ob_sides_find(R_sides, 0, 100) >= 0) {
             /* the mouse: hold the left button and drag across the screen to move its device (a third of the width each: away, middle, home);
-             * a left click where the device already is says ready; the middle button begins (the game's Menu button); right click is Back */
+             * a left click where the device already is says ready; the Start button (the mouse's button 4) begins; right click is Back */
             int ww = 0, wh = 0, d = ob_sides_find(R_sides, 0, 100), px, step = 0;
             SDL_GetWindowSize(P.win, &ww, &wh);
             if (ww <= 0) return 1;
             if (e->type == SDL_MOUSEBUTTONDOWN) {
                 px = e->button.x;
                 if (e->button.button == SDL_BUTTON_RIGHT) return ob_sides_input(R_sides, 100, MDRT_MENU_BACK);
-                if (e->button.button == SDL_BUTTON_MIDDLE) return R_sides->d[d].ready ? ob_sides_input(R_sides, 100, MDRT_MENU_OK) : 1;
+                if (e->button.button == SDL_BUTTON_X1) return R_sides->d[d].ready ? ob_sides_input(R_sides, 100, MDRT_MENU_OK) : 1;
                 if (e->button.button != SDL_BUTTON_LEFT) return 1;
                 sides_drag = 1;
                 step = 2;                                           /* (a click: move there, or ready when already there) */
@@ -1045,6 +1072,7 @@ static void osk_draw_screen(const SDL_Rect *dst)
         ob_osk_draw_at(&osk, px, mw, mh, mw, 1);
     } else ob_plat_room_draw(px, mw, mh, mw);
     SDL_Rect to = { dst->x + (dst->w - mw * t) / 2, dst->y + (dst->h - mh * t) / 2, mw * t, mh * t };
+    sd_ox = to.x; sd_oy = to.y; sd_t = t; sd_mw = mw; sd_mh = mh;
     SDL_UpdateTexture(tex, NULL, px, mw * 4);
     SDL_RenderCopy(P.ren, tex, NULL, &to);
 }
