@@ -47,8 +47,13 @@ void ob_overlay_build(ob_host *h)
 {
     ob_item items[OB_ITEMS_MAX];
     int n = ob_page_items(h, h->overlay_page, items, OB_ITEMS_MAX);
-    int i, sel = h->overlay.sel;
+    static const ob_host *built_host;
+    static int built_page = -1;
+    int i, sel = h->overlay.sel, top = h->overlay.top;
+    int same = built_host == h && built_page == h->overlay_page;   /* the page built again (a value changed): its list stays where it was */
     mdrt_menu *m = &h->overlay;
+    built_host = h;
+    built_page = h->overlay_page;
     mdrt_menu_page(m, page_title(h, h->overlay_page));
     if (h->overlay_page == OB_PAGE_MISTER) memset(h->mister_row, 0, sizeof h->mister_row);
     if (h->overlay_page == OB_PAGE_SCALE_MOVIE)
@@ -111,12 +116,14 @@ void ob_overlay_build(ob_host *h)
     }
     if (sel >= 0 && sel < m->count) m->sel = sel;
     else mdrt_menu_select(m, m->count ? m->items[0].id : 0);
+    if (same && top > 0 && top < m->count) m->top = top;   /* (the drawing still scrolls to keep the selection in view) */
 }
 
 void ob_overlay_open(ob_host *h)
 {
     h->overlay_open = 1;
     h->overlay_page = OB_PAGE_MAIN;
+    h->overlay.top = 0;
     ob_overlay_build(h);
 }
 
@@ -152,7 +159,7 @@ static int mister_up(ob_host *h)
 static void go_page(ob_host *h, int page)
 {
     h->overlay_page = page;
-    h->overlay.sel = 0;
+    h->overlay.sel = h->overlay.top = 0;
     ob_overlay_build(h);
 }
 
