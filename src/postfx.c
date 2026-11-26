@@ -251,7 +251,7 @@ const uint32_t *ob_dedither_hq_frame(ob_dedither_hq *q, const uint32_t *in)
  * half), each sample guessed from its left, upper and upper-left neighbours (LOCO-I's median), the miss
  * rounded to a step of 2 * NEAR + 1 (so no sample is off by more than NEAR) and written as an adaptive Rice
  * code: about a twentieth of the frame's bytes for these smooth pictures. ---- */
-#define DD_VERSION 2
+#define DD_VERSION 4                   /* (4: back to version 2's pass after 3's wide sharpen; an older file is made again) */
 #define DD_HEAD 28
 #define NEAR 1
 #define STEP (2 * NEAR + 1)
