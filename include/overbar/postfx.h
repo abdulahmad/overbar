@@ -52,6 +52,12 @@ ob_ddcache_maker *ob_ddcache_make_done(const char *path, int w, int h, uint32_t 
 ob_ddcache *ob_frames_open(const char *path, int w, int h, uint32_t source);
 ob_ddcache_maker *ob_frames_make(const char *path, int w, int h, uint32_t source);
 
+/* a movie played while its file is being made: the frame ob_ddcache_add just put in, as the file has it (*bytes the
+ * maker's own until its next add or end: copy them), and such bytes back into a w x h frame (the file's size: 2x the
+ * movie's for a de-dither cache). 0: none / it doesn't read */
+long ob_ddcache_last(const ob_ddcache_maker *m, const uint8_t **bytes);
+int ob_ddcache_decode(const uint8_t *bytes, long len, int w, int h, uint32_t *out);
+
 /* the stage: a movie's w x h frames in, the picture to show out (*ow x *oh: w x h, or 2w x 2h from the cache).
  * cache_path may be NULL (no cached mode: it plays live) */
 typedef struct ob_postfx ob_postfx;

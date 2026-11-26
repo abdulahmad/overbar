@@ -456,7 +456,7 @@ struct ob_ddcache_maker {
     ob_dedither_hq *q;
     planes_t pl;
     uint8_t *buf;
-    long bufcap;
+    long bufcap, lastlen;       /* (the last frame added: its bytes in buf) */
     uint8_t head[DD_HEAD];
 };
 
@@ -498,7 +498,24 @@ int ob_ddcache_add(ob_ddcache_maker *m, const uint32_t *frame)
     if (len < 0 || fwrite(m->buf, 1, (size_t)len, m->f) != (size_t)len) return 0;
     m->index[m->frames++] = m->pos;
     m->pos += (uint32_t)len;
+    m->lastlen = len;
     return 1;
+}
+
+long ob_ddcache_last(const ob_ddcache_maker *m, const uint8_t **bytes)
+{
+    if (!m || m->lastlen <= 0) return 0;
+    *bytes = m->buf;
+    return m->lastlen;
+}
+
+int ob_ddcache_decode(const uint8_t *bytes, long len, int w, int h, uint32_t *out)
+{
+    planes_t pl;
+    int ok = len > 0 && planes_new(&pl, w, h) && decode_frame(&pl, (uint8_t *)bytes, len);   /* (read only) */
+    if (ok) from_planes(&pl, out);
+    if (len > 0) planes_free(&pl);
+    return ok;
 }
 
 int ob_ddcache_end(ob_ddcache_maker *m, int ok)
