@@ -111,6 +111,7 @@ int ob_sides_all_ready(const ob_sides *s)
 void ob_sides_open(ob_sides *s)
 {
     int i;
+    s->dragging = 0;
     if (!s->host) { s->open = 1; return; }        /* a guest's shows; the host's state says what is on it */
     for (i = 0; i < s->n; i++) { s->d[i].team = OB_SIDES_MIDDLE; s->d[i].ready = 0; }
     s->open = 1;
@@ -381,7 +382,7 @@ uint32_t ob_sides_hotkeys_filter(uint32_t in, const ob_sides_hotkey *key, int n,
 #define LW 320
 #define LH 224
 
-typedef struct cv { uint32_t *px; int w, h, pitch, s, ox, oy; const ob_sides_skin *k; } cv;
+typedef struct cv { uint32_t *px; int w, h, pitch, s, ox, oy; const ob_sides_skin *k; int grey; } cv;
 
 static void cfill(cv *c, int x, int y, int w, int h, uint32_t rgb)
 {
@@ -391,7 +392,15 @@ static void cfill(cv *c, int x, int y, int w, int h, uint32_t rgb)
     if (x1 > c->w) x1 = c->w;
     if (y1 > c->h) y1 = c->h;
     for (j = y0; j < y1; j++)
-        for (i = x0; i < x1; i++) c->px[(size_t)j * c->pitch + i] = 0xFF000000u | rgb;
+        for (i = x0; i < x1; i++) {
+            uint32_t *q = &c->px[(size_t)j * c->pitch + i], v = rgb;
+            if (c->grey) {                            /* (a device the mouse has taken: a grey ghost of it, half see-through) */
+                unsigned l = ((rgb >> 16 & 255) * 3 + (rgb >> 8 & 255) * 6 + (rgb & 255)) / 10, b = *q;
+                l = l / 2 + 64;
+                v = ((((b >> 16 & 255) + l) / 2) << 16) | ((((b >> 8 & 255) + l) / 2) << 8) | (((b & 255) + l) / 2);
+            }
+            *q = 0xFF000000u | v;
+        }
 }
 
 /* the width of s in game pixels at mul times the font's size */
@@ -471,6 +480,12 @@ static void cstar(cv *c, int x, int y, uint32_t rgb)
         }
 }
 
+static uint32_t starrgb_of(int i)
+{
+    static const uint32_t rgb[4] = { 0xB6496D, 0x0092FF, 0x24B66D, 0xFFDB24 };
+    return rgb[i & 3];
+}
+
 static int kind_of(const char *name)
 {
     char b[16];
@@ -505,7 +520,7 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     uint32_t col2[2] = { k->team_rgb[0] ? k->team_rgb[0] : 0xE03030u, k->team_rgb[1] ? k->team_rgb[1] : 0x3060E0u };
     if (!s->open || w < 64 || h < 48) return;
     if (!k) k = &none;
-    c.px = px; c.w = w; c.h = h; c.pitch = pitch; c.k = k;
+    c.px = px; c.w = w; c.h = h; c.pitch = pitch; c.k = k; c.grey = 0;
     c.s = w / LW < h / LH ? w / LW : h / LH;
     if (c.s < 1) c.s = 1;
     c.ox = (w - LW * c.s) / 2;
@@ -536,7 +551,6 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     }
     /* each column's devices: the controller, and the player's star beside it (on the middle of the screen's side) */
     for (i = 0; i < s->n; i++) {
-        static const uint32_t starrgb[4] = { 0xB6496D, 0x0092FF, 0x24B66D, 0xFFDB24 };
         const ob_sides_device *d = &s->d[i];
         int col = d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2;
         int kind = kind_of(d->name), n = s->n, sp = n <= 2 ? 60 : 120 / n, px0, py0, sx;   /* (a device keeps its row whatever the others do) */
@@ -544,9 +558,16 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
         py0 = 120 + (i * 2 - (n - 1)) * sp / 2;
         px0 = col == 0 ? 45 : col == 2 ? 237 : 158;
         sx = col == 0 ? px0 + 36 : px0 - 36;
-        cstar(&c, sx, py0 + 2, starrgb[i & 3]);
+        c.grey = s->dragging && d->owner == s->me && d->local == s->drag_local;   /* (carried by the mouse: a ghost here, the device itself under the pointer) */
+        cstar(&c, sx, py0 + 2, starrgb_of(i));
         cicon(&c, kind, px0 + (40 - ob_icons[kind].w) / 2, py0 + (27 - ob_icons[kind].h) / 2);
-        if (d->ready) ctext_c(&c, px0 - 20, 80, py0 + 27, "READY", 0x40FF40, 1);            /* (a notice on each device that is ready) */
+        if (d->ready && !c.grey) ctext_c(&c, px0 - 20, 80, py0 + 27, "READY", 0x40FF40, 1);            /* (a notice on each device that is ready) */
+        c.grey = 0;
+    }
+    if (s->dragging && (i = ob_sides_find(s, s->me, s->drag_local)) >= 0) {   /* the carried device, solid, its middle at the pointer */
+        int kind = kind_of(s->d[i].name), lx = (s->drag_x - c.ox) / c.s, ly = (s->drag_y - c.oy) / c.s;
+        cstar(&c, lx - 20 - 36, ly - 13 + 2, starrgb_of(i));
+        cicon(&c, kind, lx - ob_icons[kind].w / 2, ly - ob_icons[kind].h / 2);
     }
     (void)cols; (void)cx; (void)rowh; (void)top; (void)lbl; (void)line;
     if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
@@ -590,4 +611,22 @@ int ob_sides_device_at(const ob_sides *s, int w, int h, int x, int y)
         if (x >= ox && y >= oy && lx >= px0 - 4 && lx < px0 + 44 && ly >= py0 - 3 && ly < py0 + 30) return i;
     }
     return -1;
+}
+
+void ob_sides_drag(ob_sides *s, int on, int local, int x, int y)
+{
+    s->dragging = on != 0;
+    s->drag_local = local;
+    s->drag_x = x;
+    s->drag_y = y;
+    s->changes++;
+}
+
+int ob_sides_column_at(const ob_sides *s, int w, int h, int x)
+{
+    int sc = w / LW < h / LH ? w / LW : h / LH, lx;
+    if (sc < 1) sc = 1;
+    lx = (x - (w - LW * sc) / 2) / sc;
+    if (s->g.teams == 1) return lx >= LW / 2;
+    return lx < LW / 3 ? 0 : lx >= LW * 2 / 3 ? 2 : 1;
 }

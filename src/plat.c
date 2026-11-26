@@ -428,6 +428,9 @@ static int grab_moved;                                       /* the device being
 static int sides_drag;                                       /* the left button is down on the select-sides screen */
 static int grab_local = -1;                                  /* the device taken by the mouse on that screen (its local id), -1 none */
 static int sd_ox, sd_oy, sd_t = 1, sd_mw, sd_mh, sd_tw, sd_th;             /* where the screen was drawn: the buffer's place in the window, its scale and size */
+static int grab_x, grab_y;                                   /* where the device was picked up (window pixels) */
+static int sides_bx(int wx) { return sd_tw > 0 ? (wx - sd_ox) * sd_mw / sd_tw : 0; }   /* a window pixel in the screen's canvas */
+static int sides_by(int wy) { return sd_th > 0 ? (wy - sd_oy) * sd_mh / sd_th : 0; }
 static int sides_device_under(int wx, int wy)
 {
     if (!R_sides || !R_sides->open || sd_tw < 1 || sd_th < 1 || sd_mw < 1) return -1;
@@ -452,28 +455,42 @@ static int room_event(const SDL_Event *e)
             if (in < 0 || slot < 0) return 1;
             return ob_sides_input(R_sides, 1 + slot, in);
         }
-        if (e->type == SDL_MOUSEMOTION) {                           /* a hand over a device that can be taken */
-            int wx = e->motion.x, wy = e->motion.y, dv = sides_device_under(wx, wy);
-            ob_pointer_hand_set(2, grab_local >= 0 || (dv >= 0 && R_sides->d[dv].owner == R_sides->me));
-        }
-        if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) {   /* take any device of this machine, the mouse's own too */
+        if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) {   /* pick up any device of this machine, the mouse's own too */
             int dv = sides_device_under(e->button.x, e->button.y);
-            if (dv >= 0 && R_sides->d[dv].owner == R_sides->me) { grab_local = R_sides->d[dv].local; sides_drag = 1; grab_moved = 0; return 1; }
-        }
-        if (grab_local >= 0 && e->type == SDL_MOUSEMOTION) {         /* dragging it: one section at a time as the pointer crosses the thirds */
-            int ww = 0, wh = 0, gi = ob_sides_find(R_sides, R_sides->me, grab_local);
-            SDL_GetWindowSize(P.win, &ww, &wh);
-            if (!(e->motion.state & SDL_BUTTON_LMASK) || gi < 0 || ww <= 0) { grab_local = -1; sides_drag = 0; return 1; }
-            {   int px = e->motion.x, tm = R_sides->d[gi].team, want = px * 3 < ww ? 0 : px * 3 > ww * 2 ? 2 : 1;
-                int cur = R_sides->g.teams == 1 ? (tm == OB_SIDES_MIDDLE ? 0 : 1) : tm == OB_SIDES_MIDDLE ? 1 : tm == 0 ? 0 : 2;
-                if (R_sides->g.teams == 1) want = want > 0;
-                if (want != cur) { ob_sides_input(R_sides, grab_local, want < cur ? MDRT_MENU_LEFT : MDRT_MENU_RIGHT); grab_moved = 1; }
+            if (dv >= 0 && R_sides->d[dv].owner == R_sides->me) {
+                grab_local = R_sides->d[dv].local; sides_drag = 1; grab_moved = 0; grab_x = e->button.x; grab_y = e->button.y;
+                ob_sides_drag(R_sides, 1, grab_local, sides_bx(e->button.x), sides_by(e->button.y));
+                return 1;
             }
+        }
+        if (grab_local >= 0 && e->type == SDL_MOUSEMOTION) {         /* carrying it: a grey ghost stays where it was, the device goes with the pointer */
+            if (!(e->motion.state & SDL_BUTTON_LMASK) || ob_sides_find(R_sides, R_sides->me, grab_local) < 0) { grab_local = -1; sides_drag = 0; ob_sides_drag(R_sides, 0, -1, 0, 0); return 1; }
+            if (abs(e->motion.x - grab_x) > 4 || abs(e->motion.y - grab_y) > 4) grab_moved = 1;
+            ob_sides_drag(R_sides, 1, grab_local, sides_bx(e->motion.x), sides_by(e->motion.y));
             return 1;
         }
-        if (e->type == SDL_MOUSEBUTTONUP && grab_local >= 0) {      /* let go: a click that did not move the device says ready (or begins, when all are) */
-            int l = grab_local;
+        if (e->type == SDL_MOUSEBUTTONUP && grab_local >= 0) {      /* put down: in the column under the pointer; a click that did not move it says ready (or begins) */
+            int l = grab_local, gi = ob_sides_find(R_sides, R_sides->me, l);
             grab_local = -1; sides_drag = 0;
+            ob_sides_drag(R_sides, 0, -1, 0, 0);
+            if (gi < 0) return 1;
+            {   int tm = R_sides->d[gi].team, want = ob_sides_column_at(R_sides, sd_mw, sd_mh, sides_bx(e->button.x));
+                int cur = R_sides->g.teams == 1 ? (tm == OB_SIDES_MIDDLE ? 0 : 1) : tm == OB_SIDES_MIDDLE ? 1 : tm == 0 ? 0 : 2, k;
+                if (want != cur) {
+                    for (k = 0; k < 2 && want != cur; k++) {
+                        int gj;
+                        ob_sides_input(R_sides, l, want < cur ? MDRT_MENU_LEFT : MDRT_MENU_RIGHT);
+                        gj = ob_sides_find(R_sides, R_sides->me, l);
+                        if (gj < 0) break;
+                        tm = R_sides->d[gj].team;
+                        {   int now = R_sides->g.teams == 1 ? (tm == OB_SIDES_MIDDLE ? 0 : 1) : tm == OB_SIDES_MIDDLE ? 1 : tm == 0 ? 0 : 2;
+                            if (now == cur) break;                     /* (a full team: it stays) */
+                            cur = now;
+                        }
+                    }
+                    return 1;
+                }
+            }
             if (!grab_moved && e->button.button == SDL_BUTTON_LEFT) return ob_sides_input(R_sides, l, MDRT_MENU_OK);
             return 1;
         }
@@ -548,7 +565,14 @@ static void cursor_shape(void)
     static SDL_Cursor *hand, *arrow;
     static int is = -1;
     if (!(P.host && P.host->overlay_open)) ob_pointer_hand_set(0, 0);       /* nothing is under the mouse in a closed overlay */
-    int want = (P.host && P.host->overlay_open && ob_pointer_hand(0)) || (!(P.host && P.host->overlay_open) && ((ob_screen_up() && ob_pointer_hand(1)) || ob_pointer_hand(2)));
+    int sides_hand = 0;
+    if (R_sides && R_sides->open && !(P.host && P.host->overlay_open)) {   /* the select-sides screen: a hand over a device that can be picked up, and while carrying one */
+        int mx = 0, my = 0, dv;
+        SDL_GetMouseState(&mx, &my);
+        dv = sides_device_under(mx, my);
+        sides_hand = grab_local >= 0 || (dv >= 0 && R_sides->d[dv].owner == R_sides->me);
+    }
+    int want = (P.host && P.host->overlay_open && ob_pointer_hand(0)) || (!(P.host && P.host->overlay_open) && ((ob_screen_up() && ob_pointer_hand(1)) || ob_pointer_hand(2) || sides_hand));
     if (want == is) return;
     if (!hand) hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
     if (!arrow) arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
