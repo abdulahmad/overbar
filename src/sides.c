@@ -557,7 +557,17 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
         else if (s->host) foot = key ? "Press Enter to begin" : "Press Menu button to begin";
         else foot = "Waiting for the host to begin";
     }
-    ctext_c(&c, 0, LW, 208, foot, 0xFFFF00, 1);
+    {   const char *gap = strstr(foot, "   ");     /* a line wider than the screen (the game's font is eight wide each) goes on two */
+        if (gap && cwidth(&c, foot, 1) > LW - 24) {
+            char a[64];
+            size_t n = (size_t)(gap - foot);
+            if (n > sizeof a - 1) n = sizeof a - 1;
+            memcpy(a, foot, n);
+            a[n] = 0;
+            ctext_c(&c, 0, LW, 200, a, 0xFFFF00, 1);
+            ctext_c(&c, 0, LW, 211, gap + 3, 0xFFFF00, 1);
+        } else ctext_c(&c, 0, LW, 208, foot, 0xFFFF00, 1);
+    }
 }
 
 /* the device under a point of the w x h picture the screen is drawn on (the same layout as ob_sides_draw): its index, or -1 */
