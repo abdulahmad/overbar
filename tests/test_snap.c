@@ -112,9 +112,9 @@ static int fake_step(void *user)
                 shared[jb + 8] ^= 0x10;
                 if (st->take(st->user, shared, shared_n) == 0) return -1;
                 shared[jb + 8] = k2;
-                shared[jb + 7] ^= 0x7F;                        /* (the frame pointer out of the stack put back) */
+                shared[jb + 3] ^= 0x7F;                        /* (the frame pointer out of the stack put back: a byte a 32-bit address keeps) */
                 if (st->take(st->user, shared, shared_n) == 0) return -1;
-                shared[jb + 7] ^= 0x7F; shared[jb] = k3;
+                shared[jb + 3] ^= 0x7F; shared[jb] = k3;
             }
             if (st->take(st->user, shared, shared_n - 1) == 0) return -1;
             game_mem[PG + 5] = 200;                            /* (the shared state puts it back) */

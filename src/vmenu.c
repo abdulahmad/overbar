@@ -294,7 +294,7 @@ void ob_vmenu_draw(mdrt_menu *m, uint32_t *px, int w, int h, int pitch, const ch
         size_t n = strlen(t), cut = n;
         float room = w - 2 * x0 > g.listw ? g.listw : w - 2 * x0;
         l2[0] = 0;
-        snprintf(l1, sizeof l1, "%s", t);
+        snprintf(l1, sizeof l1, "%.199s", t);
         if (ob_vf_width(OB_VF_REGULAR, 13 * s, l1, 0) > room) {
             size_t k = n;
             while (k > 1 && (t[k] != ' ' || ob_vf_width(OB_VF_REGULAR, 13 * s, (snprintf(l1, sizeof l1, "%.*s", (int)k, t), l1), 0) > room)) k--;
