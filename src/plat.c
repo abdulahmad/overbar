@@ -409,6 +409,21 @@ void ob_plat_room_draw(uint32_t *px, int w, int h, int pitch)
     if (R_chat) ob_chat_draw(R_chat, px, w, h, pitch);
 }
 
+#define SIDES_FADE_MS 300u
+#define SIDES_HOLD_MS 450u                                   /* (black a while longer: the game sets its next screen up under it) */
+static uint32_t sides_open_ms, sides_close_ms;               /* when the select-sides screen opened and closed (it fades in and out) */
+static int sides_was_open;
+/* 1 while the screen is up or fading out (the game waits for it until the fade is done) */
+static int sides_showing(void)
+{
+    uint32_t now = SDL_GetTicks();
+    int open = R_sides && R_sides->open;
+    if (open && !sides_was_open) { sides_open_ms = now; sides_close_ms = 0; }
+    if (!open && sides_was_open) sides_close_ms = now;
+    sides_was_open = open;
+    return open || (R_sides && sides_close_ms && now - sides_close_ms < SIDES_FADE_MS + SIDES_HOLD_MS);
+}
+int ob_plat_sides_fading(void) { return R_sides && !R_sides->open && sides_close_ms && SDL_GetTicks() - sides_close_ms < SIDES_FADE_MS; }
 static int grab_moved;                                       /* the device being dragged has changed section */
 static int sides_drag;                                       /* the left button is down on the select-sides screen */
 static int grab_local = -1;                                  /* the device taken by the mouse on that screen (its local id), -1 none */
@@ -471,7 +486,7 @@ static int room_event(const SDL_Event *e)
             if (e->type == SDL_MOUSEBUTTONDOWN) {
                 px = e->button.x;
                 if (e->button.button == SDL_BUTTON_RIGHT) return ob_sides_input(R_sides, 100, MDRT_MENU_BACK);
-                if (e->button.button == SDL_BUTTON_X1) return R_sides->d[d].ready ? ob_sides_input(R_sides, 100, MDRT_MENU_OK) : 1;
+                if (e->button.button == SDL_BUTTON_X1) return ob_sides_input(R_sides, 100, MDRT_MENU_OK);      /* the Start button: ready, then begin */
                 if (e->button.button != SDL_BUTTON_LEFT) return 1;
                 sides_drag = 1;
                 step = 2;                                           /* (a click: move there, or ready when already there) */
@@ -836,6 +851,8 @@ void ob_plat_pump(void)
     if (getenv("OVERBAR_TEST_KEYS") || getenv("OVERBAR_TEST_SIDES")) test_keys();
     while (SDL_PollEvent(&e)) {
         note_input(&e);
+        if ((e.type == SDL_KEYDOWN && !e.key.repeat) || e.type == SDL_CONTROLLERBUTTONDOWN) ob_pads_other_input();   /* (not the mouse: it rests until it moves again) */
+        if (e.type == SDL_KEYDOWN && e.key.repeat) ob_pads_other_input();
         if (e.type == SDL_MOUSEMOTION) ob_pads_mouse_motion(e.motion.xrel, e.motion.yrel);
         else if (e.type == SDL_MOUSEWHEEL) ob_pads_mouse_wheel(e.wheel.y);
         else if (e.type == SDL_MOUSEBUTTONDOWN) ob_pads_mouse_press(e.button.button);
@@ -1058,7 +1075,7 @@ static void osk_draw_screen(const SDL_Rect *dst)
     static uint32_t px[OVER_W * OVER_H];
     static SDL_Texture *tex;
     static int tw, th;
-    int sides = R_sides && R_sides->open && !ob_plat_osk_is_open();
+    int sides = sides_showing() && !ob_plat_osk_is_open();
     if (sides) {   /* the select-sides screen is the game's own picture: 400 x 224 (16:9) or 320 x 224 (4:3), whatever the window's shape */
         mw = P.cur_w >= 400 || dst->w * 224 >= dst->h * 360 ? 400 : 320;
         mh = 224;
@@ -1082,6 +1099,17 @@ static void osk_draw_screen(const SDL_Rect *dst)
         if (R_chat) ob_chat_draw(R_chat, px, mw, mh - 5 * 14 - 16 - 12, mw);   /* chat's line above the keyboard */
         ob_osk_draw_at(&osk, px, mw, mh, mw, 1);
     } else ob_plat_room_draw(px, mw, mh, mw);
+    if (sides) {   /* fade in from black when it opens, out to black when it closes */
+        uint32_t now = SDL_GetTicks();
+        int f = 256;
+        if (R_sides->open) { if (now - sides_open_ms < SIDES_FADE_MS) f = (int)((now - sides_open_ms) * 256u / SIDES_FADE_MS); }
+        else if (sides_close_ms) f = 256 - (int)((now - sides_close_ms) * 256u / SIDES_FADE_MS);
+        if (f < 0) f = 0;
+        if (f < 256) for (long i = 0; i < (long)mw * mh; i++) {
+            uint32_t v = px[i];
+            px[i] = 0xFF000000u | ((((v >> 16) & 255) * (unsigned)f >> 8) << 16) | ((((v >> 8) & 255) * (unsigned)f >> 8) << 8) | (((v & 255) * (unsigned)f) >> 8);
+        }
+    }
     SDL_Rect to = { dst->x + (dst->w - mw * t) / 2, dst->y + (dst->h - mh * t) / 2, mw * t, mh * t };
     if (sides) {
         /* the same scaling as the game's picture (the look: Sharp by default), at the picture's size in window pixels */
@@ -1267,7 +1295,7 @@ void ob_plat_present(void)
     if (P.hk.draw_over) P.hk.draw_over(&dst);
     if (P.hk.captures && P.hk.captures()) { /* the port's setup screen is drawn over the picture by draw_over */ }
     else if (P.host->overlay_open) overlay_draw(&dst);
-    if (ob_plat_osk_is_open() || (!P.host->overlay_open && ((R_sides && R_sides->open) || (R_chat && ob_chat_shows(R_chat))))) osk_draw_screen(&dst);
+    if (ob_plat_osk_is_open() || (!P.host->overlay_open && (sides_showing() || (R_chat && ob_chat_shows(R_chat))))) osk_draw_screen(&dst);
     test_dump();
     SDL_RenderPresent(P.ren);
 }

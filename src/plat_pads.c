@@ -158,7 +158,7 @@ void ob_pads_sides_open(void)
     else ob_pads_sides_open_ex(C.players, C.team_name, C.skin, NULL, NULL);
 }
 
-int ob_pads_sides_active(void) { return sides_ready && S.open; }
+int ob_pads_sides_active(void) { return sides_ready && (S.open || ob_plat_sides_fading()); }
 
 SDL_GameController *ob_pads_controller(int p)
 {
@@ -277,6 +277,7 @@ void ob_pads_mouse_motion(int dx, int dy)
 }
 static unsigned press_latch;                                /* buttons pressed since the menu looked (bit 1 left, 2 right): a click too quick to show in the button state */
 void ob_pads_mouse_press(int button) { mouse_active = 1; if (button == SDL_BUTTON_LEFT) press_latch |= 1; else if (button == SDL_BUTTON_RIGHT) press_latch |= 2; }
+void ob_pads_other_input(void) { mouse_active = 0; }
 void ob_pads_mouse_wheel(int y) { mouse_active = 1; macc_y -= (float)y * MENU_STEP; wheel_acc -= y; }
 
 void ob_pads_menu(const ob_pad_menu *m)
