@@ -300,7 +300,7 @@ static void mouse_relative(int on)
 
 /* A published menu (ob_pads_menu): the pointer is a real pointer. The row under it is the one the game's selection is walked to, with short
  * presses of up / down (the game keeps its own rules: skipped lines and so on); a click on the selected row presses ok (on a row with left / right
- * options: left or right of the middle moves the option); a right click presses back; the wheel is up and down. */
+ * options: left or right of the middle moves the option); a right click presses back (left on the selected row with rleft); the wheel is up and down. */
 static uint32_t menu_pointer(const uint32_t dir[4])
 {
     SDL_Window *w = ob_plat_window();
@@ -349,6 +349,8 @@ static uint32_t menu_pointer(const uint32_t dir[4])
                     if (menu.lr) {
                         pulse_bits = px < menu.row[hit].x + menu.row[hit].w / 2.0f ? dir[2] : dir[3];
                     }
+                } else if ((pr || (rb && !menu_rb)) && menu.lr && menu.rleft && hit >= 0 && hit == menu.sel) {
+                    pulse_bits = dir[2]; pend &= ~2u;                  /* (a right click on an option: one step back, as a left click steps it on) */
                 } else if (pr || (rb && !menu_rb)) { pulse_bits = menu.back; pend &= ~2u; }
                 if (pulse_bits) {
                     int hov = hit >= 0 && hit != menu.sel && !wheel_acc;        /* walking to the row under the pointer: quick, so it is selected at once */

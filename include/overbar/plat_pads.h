@@ -93,7 +93,8 @@ void ob_pads_mouse_draw(const SDL_Rect *dst);
  * (the mouse then steps the selection like ob_pads_mouse_mode says). */
 #define OB_MENU_ROWS 40
 typedef struct { int x, y, w, h; } ob_menu_rect;
-typedef struct { const ob_menu_rect *row; int n, sel, lr; uint32_t ok, back; int w, step_ms, grid; } ob_pad_menu;   /* w: the picture's width, 320 if 0; rows are in its pixels */
+typedef struct { const ob_menu_rect *row; int n, sel, lr; uint32_t ok, back; int w, step_ms, grid; int rleft; } ob_pad_menu;   /* w: the picture's width, 320 if 0; rows are in its pixels */
+/* rleft (with lr): a right click on the selected row is left (an option one step back) instead of back */
 void ob_pads_menu(const ob_pad_menu *m);
 int ob_pads_seated(int p);                            /* player p (team + 2 * seat) has a keyboard, a controller or the mouse */
 void ob_pads_mouse_start(uint32_t bits);              /* the pad bits the mouse's fourth button (the first side button) presses: Start */
