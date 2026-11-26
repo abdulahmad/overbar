@@ -794,6 +794,7 @@ static int screen_event(const SDL_Event *e)
     case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP:
         if (e->button.button == SDL_BUTTON_MIDDLE) ev.kind = e->type == SDL_MOUSEBUTTONDOWN ? OB_SCREEN_MPRESS : OB_SCREEN_MRELEASE;
         else if (e->button.button == SDL_BUTTON_LEFT) ev.kind = e->type == SDL_MOUSEBUTTONDOWN ? OB_SCREEN_PRESS : OB_SCREEN_RELEASE;
+        else if (e->button.button == SDL_BUTTON_RIGHT) { if (e->type != SDL_MOUSEBUTTONDOWN) return 1; ev.kind = OB_SCREEN_BACK; }   /* the right button is Back */
         else return 1;
         ev.x = e->button.x; ev.y = e->button.y; break;
     case SDL_MOUSEWHEEL: {

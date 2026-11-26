@@ -92,6 +92,7 @@ int bx_book_up(void);
 
 /* ---- art (the player's own scans, by key) ---- */
 r3_tex *bx_art(const char *key);                          /* loaded once, kept; NULL when the scan is not there */
+uint32_t *bx_art_pixels(const char *key, int *w, int *h);  /* read now and not kept (ARGB, the caller frees it); NULL when not there */
 
 /* ---- sound (synthesized, like the mockup's) ---- */
 enum { SFX_DISK_IN, SFX_DISK_OUT, SFX_BEEP, SFX_MOTOR, SFX_STEP, SFX_SEEK, SFX_HDD, SFX_KEY, SFX_SLIDE, SFX_PAGE, SFX_CLICK };

@@ -292,6 +292,7 @@ static uint32_t *art_load(const char *key, int *w, int *h, void *ud)
     }
     return NULL;
 }
+uint32_t *bx_art_pixels(const char *key, int *w, int *h) { return art_load(key, w, h, NULL); }
 r3_tex *bx_art(const char *key)
 {
     for (int i = 0; i < nart; i++) if (!strcmp(ART[i].key, key)) return ART[i].t.loaded ? &ART[i].t : NULL;
