@@ -8,6 +8,9 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "overbar/cdimage.h"
+#ifdef OB_SDL_BASE                  /* (the SDL client build: one read at a time, from any thread) */
+#include <SDL.h>
+#endif
 
 #include <ctype.h>
 #include <dirent.h>
@@ -48,6 +51,9 @@ struct ob_cd {
     struct track audio[OB_CD_TRACKS + 1];   /* by number; file -1 none */
     struct isofile *iso;
     int niso;
+#ifdef OB_SDL_BASE
+    SDL_mutex *lock;                    /* (the open files are shared: each seek and read under it) */
+#endif
 };
 
 /* ---- small helpers ---- */
@@ -126,7 +132,7 @@ static int add_file(ob_cd *cd, const char *path)
     return cd->nfiles++;
 }
 
-static long read_at(ob_cd *cd, int file, long at, void *out, long n)
+static long read_at_locked(ob_cd *cd, int file, long at, void *out, long n)
 {
     struct src *s;
     if (file < 0 || file >= cd->nfiles || at < 0) return 0;
@@ -143,6 +149,19 @@ static long read_at(ob_cd *cd, int file, long at, void *out, long n)
     if (n > s->size - at) n = s->size - at;
     if (fseek(s->f, at, SEEK_SET) != 0) return 0;
     return (long)fread(out, 1, (size_t)n, s->f);
+}
+
+/* n bytes at at in the image's file (several threads read one disc: the game's, the window's, the sound's) */
+static long read_at(ob_cd *cd, int file, long at, void *out, long n)
+{
+#ifdef OB_SDL_BASE
+    if (cd->lock) SDL_LockMutex(cd->lock);
+    long got = read_at_locked(cd, file, at, out, n);
+    if (cd->lock) SDL_UnlockMutex(cd->lock);
+    return got;
+#else
+    return read_at_locked(cd, file, at, out, n);
+#endif
 }
 
 /* ---- the data track: its sectors' layout, its ISO 9660 directory ---- */
@@ -472,6 +491,9 @@ static ob_cd *fresh(void)
     if (!cd) return NULL;
     for (int i = 0; i <= OB_CD_TRACKS; i++) cd->audio[i].file = -1;
     cd->data = -1;
+#ifdef OB_SDL_BASE
+    cd->lock = SDL_CreateMutex();
+#endif
     return cd;
 }
 
@@ -528,6 +550,9 @@ void ob_cd_close(ob_cd *cd)
     if (!cd) return;
     reset(cd);
     free(cd->iso);
+#ifdef OB_SDL_BASE
+    if (cd->lock) SDL_DestroyMutex(cd->lock);
+#endif
     free(cd);
 }
 
