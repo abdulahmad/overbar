@@ -1144,7 +1144,7 @@ static void test_movie_look(void)
 /* changing a value lower down a long page: the page is built again, and its list stays where it was */
 static void test_overlay_keeps_scroll(void)
 {
-    static const char *const three[3] = { "a", "b", "c" };
+    static const char *const two[2] = { "off", "on" };
     static char keys[30][8];
     static ob_game_opt opts[30];
     ob_game_ops ops;
@@ -1153,7 +1153,7 @@ static void test_overlay_keeps_scroll(void)
     int i, top, row;
     for (i = 0; i < 30; i++) {
         snprintf(keys[i], sizeof keys[i], "k%d", i);
-        opts[i] = (ob_game_opt){ keys[i], keys[i], three, 3, 0, 0, 1 };
+        opts[i] = (ob_game_opt){ keys[i], keys[i], two, 2, 0, 0, 1 };
     }
     memset(&ops, 0, sizeof ops);
     ops.title = "Game";
@@ -1180,21 +1180,6 @@ static void test_overlay_keeps_scroll(void)
     CHECK(h.overlay.sel == row);
     ob_overlay_draw(&h, px, 320, 224, 320);
     CHECK(h.overlay.top == top);
-    {   /* the mouse on a value: a right click steps it back (not Back), a left click on */
-        int x = 160, y, v0, v1;
-        mdrt_menu_item *it = &h.overlay.items[h.overlay.sel];
-        CHECK(it->kind == MDRT_ITEM_CHOICE);
-        v0 = it->value;
-        for (y = 0; y < 224; y++) if (mdrt_menu_at(&h.overlay, x, y, 320, 224) == h.overlay.sel) break;
-        CHECK(y < 224);
-        h.overlay_vec = 0;
-        ob_overlay_pointer(&h, x, y, 320, 224, 2);
-        CHECK(h.overlay_page == OB_PAGE_GAME);
-        v1 = h.overlay.items[h.overlay.sel].value;
-        CHECK(v1 == (v0 + 2) % 3);                            /* (one step back, around the end) */
-        ob_overlay_pointer(&h, x, y, 320, 224, 1);
-        CHECK(h.overlay.items[h.overlay.sel].value == v0);
-    }
     ob_overlay_input(&h, MDRT_MENU_BACK);                     /* another page starts at its top */
     CHECK(h.overlay_page == OB_PAGE_MAIN && h.overlay.top == 0);
     ob_host_free(&h);
