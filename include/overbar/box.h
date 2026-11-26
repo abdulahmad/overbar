@@ -76,6 +76,7 @@ extern void (*bx_bg_paint)(uint32_t *px, int w, int h);
 
 /* fade to black and back, running fn at the dark middle */
 void bx_fade(void (*fn)(int), int arg);
+void bx_fade_ms(void (*fn)(int), int arg, float ms);       /* the same, each half taking ms (bx_fade: 700) */
 
 /* ---- the page reader ---- */
 void bx_view_open(const char *title, r3_tex **pages, int n, int spread, void (*on_close)(int));
@@ -108,6 +109,7 @@ typedef struct {
 extern bx_state BX;
 void bx_say(const char *html);
 void bx_done(void);
+void bx_done_now(void);                                    /* straight into the game, no fade (a cut) */
 void bx_manual_only_closed(int);                          /* the reader's close when manual_only */                                       /* fade out of the box into the game */
 double bx_now(void);                                      /* seconds */
 

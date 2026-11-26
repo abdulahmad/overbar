@@ -39,7 +39,7 @@ static struct {
     double last;
     /* input */
     int mx, my, mouse_in, down, dragging, down_x, down_y, last_x, last_y, down_node, kb;
-    float fade, fade_dir; void (*fade_fn)(int); int fade_arg;
+    float fade, fade_dir, fade_ms; void (*fade_fn)(int); int fade_arg;   /* fade_ms: each half of the fade (700) */
     char pref_label[64];
     int focus_first;               /* highlight the first hot spot once the scene has some (after a key or pad pick) */
 } B;
@@ -256,11 +256,12 @@ static int hot_at(int x, int y)
 }
 
 /* ---------------- fade ---------------- */
-void bx_fade(void (*fn)(int), int arg) { B.fade_fn = fn; B.fade_arg = arg; B.fade_dir = 1; }
+void bx_fade_ms(void (*fn)(int), int arg, float ms) { B.fade_fn = fn; B.fade_arg = arg; B.fade_dir = 1; B.fade_ms = ms > 1 ? ms : 1; }
+void bx_fade(void (*fn)(int), int arg) { bx_fade_ms(fn, arg, 700); }
 static void fade_step(float dt)
 {
     if (B.fade_dir > 0) {
-        B.fade += dt / 700.0f;
+        B.fade += dt / B.fade_ms;
         if (B.fade >= 1) {
             B.fade = 1; B.fade_dir = -1;
             void (*fn)(int) = B.fade_fn; B.fade_fn = NULL;
@@ -270,8 +271,8 @@ static void fade_step(float dt)
             B.fade_dir = -0.0001f;                     /* hold dark one beat */
         }
     } else if (B.fade_dir < 0) {
-        if (B.fade_dir > -0.5f) { B.fade_dir -= dt / 150.0f; if (B.fade_dir <= -0.5f) B.fade_dir = -1; return; }
-        B.fade -= dt / 700.0f;
+        if (B.fade_dir > -0.5f) { B.fade_dir -= dt / (150.0f * B.fade_ms / 700); if (B.fade_dir <= -0.5f) B.fade_dir = -1; return; }
+        B.fade -= dt / B.fade_ms;
         if (B.fade <= 0) { B.fade = 0; B.fade_dir = 0; }
     }
 }
@@ -687,6 +688,7 @@ static void finish(int a)
     B.gpu = 0;
 }
 void bx_done(void) { bx_fade(finish, 0); }
+void bx_done_now(void) { B.fade = 0; B.fade_dir = 0; B.fade_fn = NULL; finish(0); }
 static void skip(int a) { (void)a; if (BX_SC->skip) BX_SC->skip(); bx_done(); }
 /* opened from View Manual & Materials: play the whole opening again at the next start, or not */
 static void replay_toggle(int a)
