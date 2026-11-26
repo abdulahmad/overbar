@@ -851,6 +851,8 @@ void ob_plat_pump(void)
     if (getenv("OVERBAR_TEST_KEYS") || getenv("OVERBAR_TEST_SIDES")) test_keys();
     while (SDL_PollEvent(&e)) {
         note_input(&e);
+        if ((e.type == SDL_KEYDOWN && !e.key.repeat) || e.type == SDL_CONTROLLERBUTTONDOWN) ob_pads_other_input();   /* (not the mouse: it rests until it moves again) */
+        if (e.type == SDL_KEYDOWN && e.key.repeat) ob_pads_other_input();
         if (e.type == SDL_MOUSEMOTION) ob_pads_mouse_motion(e.motion.xrel, e.motion.yrel);
         else if (e.type == SDL_MOUSEWHEEL) ob_pads_mouse_wheel(e.wheel.y);
         else if (e.type == SDL_MOUSEBUTTONDOWN) ob_pads_mouse_press(e.button.button);
