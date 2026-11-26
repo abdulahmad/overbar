@@ -98,6 +98,9 @@ typedef struct ob_sides {
     /* online: a message to a machine (-1: every other one), type OB_NET_TYPE_SIDES; NULL not online */
     void (*send)(void *ud, int to, const void *data, size_t size);
     void *send_ud;
+    /* (this machine's screen only) a device the mouse carries: drawn greyed where it is and solid at drag_x, drag_y (the canvas's
+     * pixels, as ob_sides_draw is given it); ob_sides_drag sets it */
+    int dragging, drag_local, drag_x, drag_y;
 } ob_sides;
 
 /* a screen for a game (g copied). me: this machine (ob_net_me; 0 when not online); send NULL when not online. */
@@ -119,6 +122,11 @@ int ob_sides_input(ob_sides *s, int local, int mdrt_input);
 /* a message of type OB_NET_TYPE_SIDES from machine `from`. 1 when the state changed */
 int ob_sides_message(ob_sides *s, int from, const void *data, size_t size);
 
+/* the mouse carries this machine's device `local` (on: 1), the pointer at canvas pixel x, y; on 0: put down (nothing moves: the caller
+ * sends the inputs). ob_sides_column_at: the column under canvas pixel x (0 the first team's, 1 the middle, 2 the other; one team:
+ * 0 the middle, 1 the team) for a canvas w x h */
+void ob_sides_drag(ob_sides *s, int on, int local, int x, int y);
+int ob_sides_column_at(const ob_sides *s, int w, int h, int x);
 int ob_sides_device_at(const ob_sides *s, int w, int h, int x, int y);   /* the device drawn at a point of the w x h picture, or -1 */
 int ob_sides_find(const ob_sides *s, int owner, int local);         /* the device's index, or -1 */
 int ob_sides_all_ready(const ob_sides *s);                          /* every device on a team is ready */
