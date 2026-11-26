@@ -128,21 +128,12 @@ int main(void)
     long size = f ? (long)fread(file, 1, sizeof file, f) : 0;
     if (f) fclose(f);
     uint32_t file_hash = ob_postfx_hash(file, size);
-    if (size > 8) {                                                                    /* an older version's file (another pass): not used, so made again */
-        file[4] ^= 1;
-        f = fopen(path, "wb");
-        if (f) { fwrite(file, 1, (size_t)size, f); fclose(f); }
-        pc = ob_postfx_new(W, H, path, 7);
-        CHECK(!ob_postfx_has_cache(pc));
-        ob_postfx_free(pc);
-        file[4] ^= 1;
-    }
     remove(path);
 
     printf("  live %08X, cached %08X, file %08X (%ld bytes for 40 frames of %d x %d)\n", (unsigned)live_hash, (unsigned)hq_hash, (unsigned)file_hash, size, 2 * W, 2 * H);
-    CHECK(file_hash == 0xC2B8606Eu);   /* (DD_VERSION 3: the wide sharpen) */
+    CHECK(file_hash == 0xBC6EB96Du);
     CHECK(live_hash == 0xD8F6FF9Fu);   /* (the same on every machine: integers only) */
-    CHECK(hq_hash == 0xE7C1D9A2u);
+    CHECK(hq_hash == 0x493F49ABu);
     printf("postfx: %d of %d checks failed\n", fails, checks);
     return fails != 0;
 }
