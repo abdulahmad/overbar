@@ -83,6 +83,8 @@ void ob_pads_mouse_press(int button);                      /* a button went down
  * middle of the window is the stick, the buttons are cfg.mouse_btn. ob_pads_mouse_draw draws the small green cursor; call it
  * where the port draws over the picture (ob_pads_setup_draw's place). */
 int ob_pads_mouse_player(void);
+/* on: the mouse presses nothing for now (the port's screens a click leaves: the clicks after them are not the next screen's) */
+void ob_pads_mouse_quiet(int on);
 uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3]);   /* for ports that read pads themselves: in play like _bits, else menu steps */
 void ob_pads_mouse_draw(const SDL_Rect *dst);
 
