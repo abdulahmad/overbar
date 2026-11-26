@@ -437,10 +437,13 @@ static int ob_opts_items(const ob_host *h, ob_class cls, ob_item *out, int cap)
     }
     if (m == OB_MODE_SHARP)
     {
-        /* 1x (native) is a hi-res step only; lo-res starts at 2x (OB_ID_SHARP_AMOUNT adds the skipped step back) */
-        int skip = cls == OB_CLASS_HIRES ? 0 : 1;
-        int cur = look->sharp >= 0 && look->sharp < OB_SHARP_COUNT ? look->sharp : OB_SHARP_3X;
-        add_choice(out, &n, cap, OB_ID_SHARP_AMOUNT, "Sharp", sharp_steps + skip, OB_SHARP_COUNT - skip, cur - skip);
+        /* 1x (native) is a hi-res step, and the movie's (1x smooth: straight to the window, no prescale); the game's lo-res starts at 2x
+         * (OB_ID_SHARP_AMOUNT adds the skipped step back) */
+        int skip = ob_sharp_skip(cls);
+        int cur = look->sharp >= skip && look->sharp < OB_SHARP_COUNT ? look->sharp : OB_SHARP_3X;
+        static const char *movie_steps[OB_SHARP_COUNT];
+        if (!movie_steps[0]) { for (int i = 0; i < OB_SHARP_COUNT; i++) movie_steps[i] = sharp_steps[i]; movie_steps[0] = "1x (smooth)"; }
+        add_choice(out, &n, cap, OB_ID_SHARP_AMOUNT, "Sharp", (cls == OB_CLASS_MOVIE ? movie_steps : sharp_steps) + skip, OB_SHARP_COUNT - skip, cur - skip);
     }
     else if (m == OB_MODE_CRT)
         add_choice(out, &n, cap, OB_ID_CRT_LOOK, "CRT Monitor", crt_choices, OB_CRT_COUNT, look->crt);

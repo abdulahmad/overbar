@@ -1134,7 +1134,16 @@ static void test_movie_look(void)
     CHECK(n > 4);
     ob_host_apply(&h, OB_CLASS_MOVIE, OB_ID_SCALE_MODE, OB_MODE_SHARP);
     ob_host_apply(&h, OB_CLASS_MOVIE, OB_ID_SHARP_AMOUNT, 0);
-    CHECK(h.movie.mode == OB_MODE_SHARP && h.movie.sharp == OB_SHARP_2X);
+    CHECK(h.movie.mode == OB_MODE_SHARP && h.movie.sharp == OB_SHARP_1X);   /* the movie's list starts at 1x (smooth) */
+    n = ob_page_items(&h, OB_PAGE_OPTS_MOVIE, items, OB_ITEMS_MAX);
+    for (i = 0, found = 0; i < n; i++)
+        if (items[i].id == OB_ID_SHARP_AMOUNT) found = items[i].value == 0 && !strcmp(items[i].choices[0], "1x (smooth)") && items[i].nchoices == OB_SHARP_COUNT;
+    CHECK(found);
+    n = ob_page_items(&h, OB_PAGE_OPTS_LO, items, OB_ITEMS_MAX);   /* (the game's lo-res still starts at 2x) */
+    for (i = 0, found = 0; i < n; i++) if (items[i].id == OB_ID_SHARP_AMOUNT) found = !strcmp(items[i].choices[0], "2x (480p)");
+    CHECK(found);
+    ob_host_apply(&h, OB_CLASS_MOVIE, OB_ID_SHARP_AMOUNT, 1);
+    CHECK(h.movie.sharp == OB_SHARP_2X);
     CHECK(h.lores.sharp == OB_SHARP_3X);                    /* the game's look untouched */
     CHECK(ob_host_look(&h, OB_CLASS_MOVIE) == &h.movie);
     ob_host_free(&h);
