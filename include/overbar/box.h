@@ -89,6 +89,9 @@ int bx_view_up(void);
 /* the manual as a 3D booklet in front of the camera, its pages art keys read as they are shown (the cover alone first);
    it has Full size for the flat reader. Scenes without a 3D book of their own use it */
 void bx_book_open(const char *title, const char *const *keys, int n, void (*on_close)(int));
+/* the same booklet in the item's place in the scene (node: the item, hidden while the book is open; h: the item's height in
+   its own units): it stays in 3D, tipped back a little, with no dimming, and the pages turn over there */
+void bx_book_open_at(const char *title, const char *const *keys, int n, void (*on_close)(int), int node, float h);
 int bx_book_up(void);
 
 /* ---- art (the player's own scans, by key) ---- */
