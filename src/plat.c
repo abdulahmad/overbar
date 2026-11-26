@@ -418,8 +418,8 @@ static int sides_showing(void)
 {
     uint32_t now = SDL_GetTicks();
     int open = R_sides && R_sides->open;
-    if (open && !sides_was_open) { sides_open_ms = now; sides_close_ms = 0; }
-    if (!open && sides_was_open) sides_close_ms = now;
+    if (open && !sides_was_open) { sides_open_ms = now; sides_close_ms = 0; ob_pads_mouse_fresh(); }
+    if (!open && sides_was_open) { sides_close_ms = now; ob_pads_mouse_fresh(); }   /* (the click that left it is not the next screen's) */
     sides_was_open = open;
     return open || (R_sides && sides_close_ms && now - sides_close_ms < SIDES_FADE_MS + SIDES_HOLD_MS);
 }
