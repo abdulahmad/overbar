@@ -1314,6 +1314,10 @@ static void console_net(int loss)
           "the reset on the same step everywhere");
     CHECK(con_load_at[0] > 400 && con_load_at[0] < 600 && con_load_at[1] == con_load_at[0] && con_load_at[2] == con_load_at[0],
           "the state loaded on the same step everywhere");
+    if (!con_load_at[0])
+        printf("console diag: host id %u sent %x acked %x sending %d bound_at %u members %x loads %ld/%ld/%ld over %d/%d/%d high %u/%u/%u con_sent %d\n",
+               (unsigned)CON[0].id, CON[0].sent, CON[0].acked, CON[0].sending, (unsigned)CON[0].bound_at, ob_net_members(M[0].n), CON[0].loads, CON[1].loads, CON[2].loads,
+               R[0].over, R[1].over, R[2].over, (unsigned)R[0].high, (unsigned)R[1].high, (unsigned)R[2].high, con_sent);
     CHECK(con_menus[0] > 0, "some steps in the menus");
     printf("console%s: reset at step %u, state loaded at step %u, %ld steps in the menus, %d/%d/%d rollbacks\n", loss ? " (loss)" : "",
            (unsigned)con_reset_at[0], (unsigned)con_load_at[0], con_menus[0], R[0].restarts, R[1].restarts, R[2].restarts);
