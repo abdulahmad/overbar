@@ -244,7 +244,7 @@ static void apply_marks(void)
     static const int pages[] = {
         OB_PAGE_VIDEO, OB_PAGE_SCALE_HI, OB_PAGE_SCALE_LO, OB_PAGE_MODE_HI, OB_PAGE_MODE_LO,
         OB_PAGE_OPTS_HI, OB_PAGE_OPTS_LO, OB_PAGE_SOUND, OB_PAGE_INPUT,
-        OB_PAGE_CAPTURE, OB_PAGE_KEYS, OB_PAGE_GAME, OB_PAGE_SEASON
+        OB_PAGE_CAPTURE, OB_PAGE_KEYS, OB_PAGE_GAME, OB_PAGE_SEASON, OB_PAGE_SCALE_MOVIE   /* (Scaling (Movie): its switch and its look's rows) */
     };
     ob_item items[OB_ITEMS_MAX];
     int p, n, i, c;
