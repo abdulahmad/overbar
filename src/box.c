@@ -432,6 +432,7 @@ static struct {
     int root, nSh, nL, nR, nT, nBL, nBR, nDim, mL, mR, mTf, mTb;
     int slot_tex[BK_SLOTS], slot_page[BK_SLOTS]; unsigned slot_used[BK_SLOTS], tick;
     float W, H;
+    int anchor;                                   /* bx_book_open_at: the item the book stands in for (hidden while open) */
 } K;
 int bx_book_up(void) { return K.up; }
 static int bk_tex(int page)                       /* the texture holding a page, read if it is not there */
@@ -465,7 +466,7 @@ static void bk_layout(void)
     else { l = bk_left(K.s); r = bk_right(K.s); bx_n(K.nT)->vis = 0; }
     bk_face(K.nL, K.mL, l); bk_face(K.nR, K.mR, r);
     bx_n(K.nBL)->vis = l >= 0 || (K.dir != 0); bx_n(K.nBR)->vis = r >= 0 || (K.dir != 0);
-    if (K.dir == 0) { bx_n(K.nBL)->vis = l >= 0; bx_n(K.nBR)->vis = r >= 0; }
+    if (K.dir == 0 || K.anchor > 0) { bx_n(K.nBL)->vis = l >= 0; bx_n(K.nBR)->vis = r >= 0; }   /* (in the scene, no bare board while the cover turns) */
 }
 static float bk_shift(int s) { return bk_left(s) < 0 ? -K.W / 2 : bk_right(s) < 0 ? K.W / 2 : 0; }
 static float bk_ease(float t) { return t < .5f ? 2 * t * t : 1 - (-2 * t + 2) * (-2 * t + 2) / 2; }
@@ -495,6 +496,8 @@ static void bk_close(int a)
     (void)a;
     K.up = 0; K.dir = 0;
     if (K.built && K.root >= 0 && K.root < BX_S->nnodes) bx_n(K.root)->vis = 0;
+    if (K.anchor > 0 && K.anchor < BX_S->nnodes) bx_n(K.anchor)->vis = 1;
+    K.anchor = -1;
     for (int i = 0; BX_S && i < BK_SLOTS; i++) if (K.slot_tex[i] >= 0 && K.slot_tex[i] < BX_S->ntexs) { r3_tex_set(&BX_S->texs[K.slot_tex[i]], NULL, 0, 0); K.slot_page[i] = -1; }
     B.kb = -1;
     if (K.close) K.close(0);
@@ -539,8 +542,9 @@ static int bk_build(void)
     K.built = 1;
     return 1;
 }
-/* open the book in front of the camera */
-void bx_book_open(const char *title, const char *const *keys, int n, void (*on_close)(int))
+/* open the book in front of the camera; with an anchor, the book takes that item's place in the scene (its size, where it is,
+   tipped back a little like a booklet in the hands), the item hidden while it is open, the scene left as it is */
+static void bk_open(const char *title, const char *const *keys, int n, void (*on_close)(int), int anchor, float anchor_h)
 {
     if (!BX_S || n <= 0) return;
     if (n > VIEW_MAX) n = VIEW_MAX;
@@ -549,21 +553,43 @@ void bx_book_open(const char *title, const char *const *keys, int n, void (*on_c
     for (int i = 0; i < n; i++) snprintf(K.key[i], sizeof K.key[0], "%s", keys[i]);
     for (int i = 0; i < BK_SLOTS; i++) { r3_tex_set(&BX_S->texs[K.slot_tex[i]], NULL, 0, 0); K.slot_page[i] = -1; }
     K.n = n; K.s = 0; K.dir = 0; K.t = 0; K.close = on_close; K.up = 1;
-    cam_unzoom(); view_reset();
-    /* in front of the camera, facing it, the open pages filling about three quarters of the height */
+    if (anchor <= 0 || anchor >= BX_S->nnodes) anchor = -1;
+    if (!anchor_h) anchor = -1;
+    K.anchor = anchor;
+    if (anchor < 0) { cam_unzoom(); view_reset(); }
     float *c = BX_S->cam, d[3] = { bx_look[0] - c[0], bx_look[1] - c[1], bx_look[2] - c[2] };
-    float L = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-    if (L < 1e-3f) { d[0] = 0; d[1] = 0; d[2] = -1; L = 1; }
-    for (int k = 0; k < 3; k++) d[k] /= L;
-    float D = K.H / (.74f * 2 * tanf(BX_S->fov * PI_F / 360));
-    if (D > L * .8f) D = L * .8f;
     r3_node *r = bx_n(K.root);
-    for (int k = 0; k < 3; k++) r->pos[k] = c[k] + d[k] * D;
-    r->rot[0] = asinf(d[1]); r->rot[1] = atan2f(-d[0], -d[2]); r->rot[2] = 0;
+    if (anchor >= 0) {
+        /* where the item is, facing the camera, as tall as the item */
+        const float *w = r3_world(BX_S, anchor);
+        float p[3] = { w[3], w[7], w[11] }, sy = sqrtf(w[1] * w[1] + w[5] * w[5] + w[9] * w[9]);
+        for (int k = 0; k < 3; k++) d[k] = p[k] - c[k];
+        float L = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (L < 1e-3f) { d[0] = 0; d[1] = 0; d[2] = -1; L = 1; }
+        for (int k = 0; k < 3; k++) { d[k] /= L; r->pos[k] = p[k]; }
+        float k = anchor_h * sy / K.H;
+        bx_set3(r->scale, k, k, k);
+        r->rot[0] = asinf(d[1]) - .32f; r->rot[1] = atan2f(-d[0], -d[2]); r->rot[2] = 0;
+        bx_n(anchor)->vis = 0;
+        bx_n(K.nDim)->vis = 0;
+    } else {
+        /* in front of the camera, facing it, the open pages filling about three quarters of the height */
+        float L = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (L < 1e-3f) { d[0] = 0; d[1] = 0; d[2] = -1; L = 1; }
+        for (int k = 0; k < 3; k++) d[k] /= L;
+        float D = K.H / (.74f * 2 * tanf(BX_S->fov * PI_F / 360));
+        if (D > L * .8f) D = L * .8f;
+        for (int k = 0; k < 3; k++) r->pos[k] = c[k] + d[k] * D;
+        bx_set3(r->scale, 1, 1, 1);
+        r->rot[0] = asinf(d[1]); r->rot[1] = atan2f(-d[0], -d[2]); r->rot[2] = 0;
+        bx_n(K.nDim)->vis = 1;
+    }
     r->vis = 1;
     bk_layout();
     bx_sfx(SFX_PAGE, 0);
 }
+void bx_book_open(const char *title, const char *const *keys, int n, void (*on_close)(int)) { bk_open(title, keys, n, on_close, -1, 0); }
+void bx_book_open_at(const char *title, const char *const *keys, int n, void (*on_close)(int), int node, float h) { bk_open(title, keys, n, on_close, node, h); }
 static void bk_draw2d(void)
 {
     float u = BX_C.u;
@@ -1160,6 +1186,7 @@ int ob_box_open(int mode)
     ob_screen_show(&s);
     K.up = 0; K.dir = 0;
     if (K.built && K.root >= 0 && K.root < BX_S->nnodes && !strcmp(BX_S->nodes[K.root].name, "book.root")) BX_S->nodes[K.root].vis = 0;
+    K.anchor = -1;
     if (mode == BOX_SHOW_MANUAL) { BX_SC->enter(mode); if (BX_SC->manual) BX_SC->manual(); }
     else BX_SC->enter(mode);
     if (B.host && B.host->overlay_open) ob_overlay_close(B.host);
