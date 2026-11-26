@@ -245,6 +245,7 @@ static float macc_x, macc_y;
 static int rel_x, rel_y, rel_have;                         /* the pointer's last place, for its travel outside play */
 static uint32_t pulse_bits, pulse_off, pulse_next;
 static int mouse_steps = 1;                                /* (ob_pads_mouse_steps) its travel steps the selection */
+static int mouse_quiet;                                    /* (ob_pads_mouse_quiet) its buttons and steps reach no pad */
 
 void ob_pads_mouse_mode(int play) { mouse_play = play; }
 void ob_pads_mouse_steps(int on) { mouse_steps = on; }
@@ -406,10 +407,12 @@ static uint32_t mouse_bits(void)
     for (int i = 0; i < 4; i++) dir[i] = C.b[i].bit;
     for (int i = 0; i < C.n; i++) if (C.b[i].name && !strcmp(C.b[i].name, "start")) mouse_start = C.b[i].bit;   /* (button 4 is Start) */
     for (int i = 0; i < 3; i++) if (C.mouse_btn[i] > 0 && C.mouse_btn[i] <= C.n) btn[i] = C.b[C.mouse_btn[i] - 1].bit;
-    return ob_pads_mouse_read(dir, btn);
+    uint32_t b = ob_pads_mouse_read(dir, btn);             /* (read even when quiet: the menus' pointer keeps up with the buttons) */
+    return mouse_quiet ? 0 : b;
 }
 
 int ob_pads_mouse_player(void) { return mouse_player; }
+void ob_pads_mouse_quiet(int on) { mouse_quiet = on; }
 /* does player p have a device (the keyboard's keys, a controller or the mouse) after the select-sides screen? */
 int ob_pads_seated(int p) { return p >= 0 && p < C.players && p < OB_PADS_MAX && ((kbd_mask >> p & 1) || player_ctrl[p] || p == mouse_player); }
 
