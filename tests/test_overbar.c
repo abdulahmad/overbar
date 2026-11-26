@@ -1141,6 +1141,50 @@ static void test_movie_look(void)
     CHECK(!ob_screen_video_look());
 }
 
+/* changing a value lower down a long page: the page is built again, and its list stays where it was */
+static void test_overlay_keeps_scroll(void)
+{
+    static const char *const two[2] = { "off", "on" };
+    static char keys[30][8];
+    static ob_game_opt opts[30];
+    ob_game_ops ops;
+    ob_host h;
+    static uint32_t px[320 * 224];
+    int i, top, row;
+    for (i = 0; i < 30; i++) {
+        snprintf(keys[i], sizeof keys[i], "k%d", i);
+        opts[i] = (ob_game_opt){ keys[i], keys[i], two, 2, 0, 0, 1 };
+    }
+    memset(&ops, 0, sizeof ops);
+    ops.title = "Game";
+    ops.opts = opts;
+    ops.nopts = 30;
+    ob_host_init(&h, OB_PORT_GENESIS, OB_PROFILE_DESKTOP);
+    ob_game_set_ops(&h, &ops);
+    ob_overlay_open(&h);
+    mdrt_menu_select(&h.overlay, OB_ID_GAME);
+    ob_overlay_input(&h, MDRT_MENU_OK);
+    CHECK(h.overlay_page == OB_PAGE_GAME);
+    for (i = 0; i < 25; i++) ob_overlay_input(&h, MDRT_MENU_DOWN);
+    ob_overlay_draw(&h, px, 320, 224, 320);
+    top = h.overlay.top;
+    row = h.overlay.sel;
+    CHECK(top > 0);
+    for (i = 0; i < 2; i++) {
+        ob_overlay_input(&h, MDRT_MENU_UP);                   /* (a row away from the bottom edge) */
+        ob_overlay_draw(&h, px, 320, 224, 320);
+    }
+    top = h.overlay.top;
+    row = h.overlay.sel;
+    ob_overlay_input(&h, MDRT_MENU_RIGHT);
+    CHECK(h.overlay.sel == row);
+    ob_overlay_draw(&h, px, 320, 224, 320);
+    CHECK(h.overlay.top == top);
+    ob_overlay_input(&h, MDRT_MENU_BACK);                     /* another page starts at its top */
+    CHECK(h.overlay_page == OB_PAGE_MAIN && h.overlay.top == 0);
+    ob_host_free(&h);
+}
+
 int main(void)
 {
     test_movie_look();
@@ -1162,6 +1206,7 @@ int main(void)
     test_season_page();
     test_vmenu_and_sfx();
     test_autoscroll();
+    test_overlay_keeps_scroll();
     if (fails) {
         fprintf(stderr, "%d check(s) failed\n", fails);
         return 1;
