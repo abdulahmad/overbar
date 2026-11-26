@@ -140,9 +140,9 @@ int main(void)
     remove(path);
 
     printf("  live %08X, cached %08X, file %08X (%ld bytes for 40 frames of %d x %d)\n", (unsigned)live_hash, (unsigned)hq_hash, (unsigned)file_hash, size, 2 * W, 2 * H);
-    CHECK(file_hash == 0xC2B8606Eu);   /* (DD_VERSION 3: the wide sharpen) */
+    CHECK(file_hash == 0x4DEDEB3Fu);   /* (DD_VERSION 4) */
     CHECK(live_hash == 0xD8F6FF9Fu);   /* (the same on every machine: integers only) */
-    CHECK(hq_hash == 0xE7C1D9A2u);
+    CHECK(hq_hash == 0x493F49ABu);
     printf("postfx: %d of %d checks failed\n", fails, checks);
     return fails != 0;
 }

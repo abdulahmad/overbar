@@ -95,10 +95,6 @@ struct ob_dedither_hq {
 #define NLM_SEARCH 2            /* 5 x 5 */
 #define NLM_H2 (3 * 9 * 14 * 14)   /* a patch's squared difference (3 channels x 9 pixels) of "the same" */
 #define SHARPEN 2               /* (c - blur) / SHARPEN added */
-#define DETAIL_NUM 4            /* the wide sharpen: (c - wide blur) * 4 / 5 added, at most DETAIL_MAX either way (the texture the */
-#define DETAIL_DEN 5            /* dither drew, as in a logo's mottling, brought back up without the dither's own dots) */
-#define DETAIL_MAX 40
-#define DETAIL_PASSES 2         /* the blur's passes (each a 9 x 9 binomial) */
 #define TIME_NEAR 12            /* a channel that moved this little since the last frame is smoothed with it */
 
 ob_dedither_hq *ob_dedither_hq_new(int w, int h)
@@ -230,51 +226,13 @@ static void hq_sharpen(ob_dedither_hq *q)
             }
 }
 
-/* 5. the wide sharpen of a: c + (c - its 9 x 9 binomial) * DETAIL_NUM / DETAIL_DEN, held to DETAIL_MAX (b and dist the scratch) */
-static void hq_detail(ob_dedither_hq *q)
-{
-    static const int k[9] = { 1, 8, 28, 56, 70, 56, 28, 8, 1 };   /* (/256) */
-    int W = q->W, H = q->H;
-    uint32_t *t = q->dist;
-    for (int c = 0; c < 3; c++) {
-        const uint8_t *s = q->a[c];
-        for (int Y = 0; Y < H; Y++)
-            for (int X = 0; X < W; X++) {
-                int sum = 0;
-                for (int i = -4; i <= 4; i++) sum += k[i + 4] * s[(long)Y * W + clampi(X + i, 0, W - 1)];
-                t[(long)Y * W + X] = (uint32_t)sum;
-            }
-        for (int Y = 0; Y < H; Y++)
-            for (int X = 0; X < W; X++) {
-                uint32_t sum = 0;
-                for (int j = -4; j <= 4; j++) sum += (uint32_t)k[j + 4] * t[(long)clampi(Y + j, 0, H - 1) * W + X];
-                q->b[c][(long)Y * W + X] = (uint8_t)((sum + 32768) >> 16);
-            }
-        for (int pass = 1; pass < DETAIL_PASSES; pass++)          /* (again over b: a wider blur) */
-            for (int dir = 0; dir < 2; dir++)
-                for (int Y = 0; Y < H; Y++)
-                    for (int X = 0; X < W; X++) {
-                        int sum = 0;
-                        for (int i = -4; i <= 4; i++)
-                            sum += k[i + 4] * (dir ? (int)t[(long)clampi(Y + i, 0, H - 1) * W + X] : q->b[c][(long)Y * W + clampi(X + i, 0, W - 1)]);
-                        if (dir) q->b[c][(long)Y * W + X] = (uint8_t)((sum + 128) >> 8);
-                        else t[(long)Y * W + X] = (uint32_t)((sum + 128) >> 8);
-                    }
-        for (long i = 0; i < (long)W * H; i++) {
-            int v = q->a[c][i], d = (v - q->b[c][i]) * DETAIL_NUM / DETAIL_DEN;
-            q->a[c][i] = (uint8_t)clampi(v + clampi(d, -DETAIL_MAX, DETAIL_MAX), 0, 255);
-        }
-    }
-}
-
 const uint32_t *ob_dedither_hq_frame(ob_dedither_hq *q, const uint32_t *in)
 {
     long n = (long)q->W * q->H;
     hq_up(q, in);
     hq_nlm(q);
     hq_sharpen(q);
-    hq_detail(q);
-    for (long i = 0; i < n; i++) {                                  /* 6. over time: what hardly moved, a quarter of the last frame */
+    for (long i = 0; i < n; i++) {                                  /* 5. over time: what hardly moved, a quarter of the last frame */
         uint32_t px = 0xFF000000u;
         for (int c = 0; c < 3; c++) {
             int v = q->a[c][i];
@@ -293,7 +251,7 @@ const uint32_t *ob_dedither_hq_frame(ob_dedither_hq *q, const uint32_t *in)
  * half), each sample guessed from its left, upper and upper-left neighbours (LOCO-I's median), the miss
  * rounded to a step of 2 * NEAR + 1 (so no sample is off by more than NEAR) and written as an adaptive Rice
  * code: about a twentieth of the frame's bytes for these smooth pictures. ---- */
-#define DD_VERSION 3                   /* (3: the wide sharpen; an older file is made again) */
+#define DD_VERSION 4                   /* (4: back to version 2's pass after 3's wide sharpen; an older file is made again) */
 #define DD_HEAD 28
 #define NEAR 1
 #define STEP (2 * NEAR + 1)
