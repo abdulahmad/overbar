@@ -701,7 +701,7 @@ static void finish(int a)
 }
 void bx_done(void) { bx_fade(finish, 0); }
 void bx_done_now(void) { B.fade = 0; B.fade_dir = 0; B.fade_fn = NULL; finish(0); }
-static void skip(int a) { (void)a; if (BX_SC->skip) BX_SC->skip(); bx_done(); }
+static void skip(int a) { (void)a; if (BX_SC->skip) BX_SC->skip(); bx_done_now(); }   /* straight into the game: no fade */
 /* opened from View Manual & Materials: play the whole opening again at the next start, or not */
 static void replay_toggle(int a)
 {
