@@ -123,6 +123,9 @@ const char *ob_net_name_of(ob_net *n, int machine);   /* the host 0, then the gu
  * first for this step is the one used). -1: the session ended. */
 int ob_net_step(ob_net *n, const uint16_t *local, uint16_t *all);
 uint32_t ob_net_step_count(ob_net *n);  /* steps run so far (after a rollback: back to the state's step) */
+/* whether the next ob_net_frame / ob_net_step call keeps the buttons it is given (the first call for a step does; a step played
+ * again after a rollback, or a call while a match's state is taken, does not): what a caller puts in them only once should wait for it */
+int ob_net_takes_local(ob_net *n);
 
 /* Rollback's step, called where ob_net_step would be: before each step, with this machine's
  * buttons for it as ob_net_step takes them. resumable: whether the game could go on from here

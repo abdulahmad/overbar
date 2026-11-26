@@ -68,12 +68,13 @@ int ob_console_busy(const ob_console *c) { return c->sending; }
 
 void ob_console_local(ob_console *c, ob_net *n, uint16_t *local, int count)
 {
-    int k;
+    int k, take;
     for (k = 0; k < count; k++) local[k] &= (uint16_t)~OB_CONSOLE_BITS;
     if (!ob_net_is_host(n) || count < 1) { c->reset = 0; return; }
-    if (c->reset) { local[0] |= OB_CONSOLE_RESET; c->reset = 0; }
+    take = ob_net_takes_local(n);                      /* (a step played again, or a state being taken: these buttons are not kept, so asking waits) */
+    if (take && c->reset) { local[0] |= OB_CONSOLE_RESET; c->reset = 0; }
     if (c->sending) send_to_new(c, n);
-    if (c->sending && (ob_net_members(n) & ~c->acked) == 0 &&
+    if (take && c->sending && (ob_net_members(n) & ~c->acked) == 0 &&
         (!c->bound_at || ob_net_confirmed(n) >= c->bound_at + GAP)) {   /* (every machine has it) */
         local[0] |= (uint16_t)(OB_CONSOLE_LOAD | (c->id & 1 ? OB_CONSOLE_ODD : 0));
         c->bound_at = ob_net_step_count(n) + (uint32_t)ob_net_delay(n) + 1;

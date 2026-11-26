@@ -549,6 +549,10 @@ unsigned ob_net_my_pads(ob_net *n) { return n->p[n->me].pads; }
 int ob_net_delay(ob_net *n) { return n->delay; }
 int ob_net_machines(ob_net *n) { return n->room ? count_bits(ob_net_members(n)) : n->npeers; }
 uint32_t ob_net_step_count(ob_net *n) { return n->cur; }
+int ob_net_takes_local(ob_net *n)
+{
+    return n->phase == P_RUNNING && !n->join_pending && n->cur + (uint32_t)n->delay == n->known[n->me];
+}
 const char *ob_net_why(ob_net *n) { return n->phase == P_DONE ? n->why : ""; }
 const char *ob_net_name_of(ob_net *n, int k) { return k >= 0 && k < MACH && n->p[k].used ? n->p[k].name : ""; }
 unsigned ob_net_all_pads(ob_net *n)
