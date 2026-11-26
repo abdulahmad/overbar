@@ -643,7 +643,7 @@ static void pad_back(void)
 
 static void overlay_mouse(int wx, int wy, int what)
 {
-    int ww, wh, winw, winh, r, was, page;
+    int ww, wh, winw, winh, r, was;
     if (!P.host->overlay_open || what < 0 || !ob_plat_window_size(&ww, &wh)) { P.mvalid = 0; return; }
     SDL_GetWindowSize(P.win, &winw, &winh);
     if (winw > 0 && winh > 0 && (ww != winw || wh != winh)) { wx = wx * ww / winw; wy = wy * wh / winh; }
@@ -652,12 +652,10 @@ static void overlay_mouse(int wx, int wy, int what)
     P.my = (wy - P.over_y) * P.over_mh / P.over_h;
     P.mvalid = 1;
     was = P.host->overlay.sel;
-    page = P.host->overlay_page;
     r = ob_overlay_pointer(P.host, (wx - P.over_x) * P.over_mw / P.over_w, (wy - P.over_y) * P.over_mh / P.over_h,
                            P.over_mw, P.over_mh, what);
     if (what == 0) { if (P.host->overlay.sel != was) menu_sound(OB_SFX_MOVE); return; }
-    menu_sound(what == 2 && P.host->overlay_open && P.host->overlay_page == page ? OB_SFX_MOVE   /* (a right click that stepped a value back) */
-               : what == 2 ? OB_SFX_BACK : what == 1 ? OB_SFX_SELECT : OB_SFX_MOVE);
+    menu_sound(what == 2 ? OB_SFX_BACK : what == 1 ? OB_SFX_SELECT : OB_SFX_MOVE);
     if (r == OB_ID_CONTROLLERS && P.hk.action) P.hk.action(r);
     if (r == OB_ID_SIDES) ob_pads_sides_open();
     after_change();

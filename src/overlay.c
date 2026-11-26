@@ -187,18 +187,11 @@ int ob_overlay_pointer(ob_host *h, int x, int y, int bw, int bh, int what)
         if (i >= 0 && i != h->overlay.sel) { h->overlay.sel = i; return 1; }
         return 0;
     }
-    if (what == 2 && i >= 0 && i < h->overlay.count
-        && (h->overlay.items[i].kind == MDRT_ITEM_CHOICE || h->overlay.items[i].kind == MDRT_ITEM_NUMBER)) {
-        h->overlay.sel = i;                               /* right click on a value: one step back (a left click steps it on) */
-        return ob_overlay_input(h, MDRT_MENU_LEFT);
-    }
     if (what == 2) return ob_overlay_input(h, MDRT_MENU_BACK);
     if (what == 3) return ob_overlay_input(h, MDRT_MENU_UP);
     if (what == 4) return ob_overlay_input(h, MDRT_MENU_DOWN);
     if (what == 1 && i >= 0) {
         h->overlay.sel = i;
-        if (i < h->overlay.count && h->overlay.items[i].kind == MDRT_ITEM_NUMBER)
-            return ob_overlay_input(h, MDRT_MENU_RIGHT);  /* (a number steps on like a choice; OK does nothing to it) */
         return ob_overlay_input(h, MDRT_MENU_OK);
     }
     return h->overlay_open;
