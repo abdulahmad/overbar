@@ -499,7 +499,7 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     static const ob_sides_skin none;
     cv c;
     const ob_sides_skin *k = &s->g.skin;
-    int teams = s->g.teams, i, t, cols = 3, cx[3], per[3] = { 0, 0, 0 }, at[3] = { 0, 0, 0 }, rowh, top = 90, lbl;
+    int teams = s->g.teams, i, t, cols = 3, cx[3], rowh, top = 90, lbl;
     const char *foot;
     char line[64];
     uint32_t col2[2] = { k->team_rgb[0] ? k->team_rgb[0] : 0xE03030u, k->team_rgb[1] ? k->team_rgb[1] : 0x3060E0u };
@@ -536,20 +536,17 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
     }
     /* each column's devices: the controller, and the player's star beside it (on the middle of the screen's side) */
     for (i = 0; i < s->n; i++) {
-        const ob_sides_device *d = &s->d[i];
-        per[d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2]++;
-    }
-    for (i = 0; i < s->n; i++) {
         static const uint32_t starrgb[4] = { 0xB6496D, 0x0092FF, 0x24B66D, 0xFFDB24 };
         const ob_sides_device *d = &s->d[i];
         int col = d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2;
-        int kind = kind_of(d->name), n = per[col], sp = n <= 2 ? 60 : 120 / n, px0, py0, sx;
+        int kind = kind_of(d->name), n = s->n, sp = n <= 2 ? 60 : 120 / n, px0, py0, sx;   /* (a device keeps its row whatever the others do) */
         if (sp < 28) sp = 28;
-        py0 = 120 + (at[col]++ * 2 - (n - 1)) * sp / 2;
+        py0 = 120 + (i * 2 - (n - 1)) * sp / 2;
         px0 = col == 0 ? 45 : col == 2 ? 237 : 158;
         sx = col == 0 ? px0 + 36 : px0 - 36;
         cstar(&c, sx, py0 + 2, starrgb[i & 3]);
         cicon(&c, kind, px0 + (40 - ob_icons[kind].w) / 2, py0 + (27 - ob_icons[kind].h) / 2);
+        if (d->ready) ctext_c(&c, px0 - 20, 80, py0 + 27, "READY", 0x40FF40, 1);            /* (a notice on each device that is ready) */
     }
     (void)cols; (void)cx; (void)rowh; (void)top; (void)lbl; (void)line;
     if (!s->n) ctext_c(&c, 0, LW, 130, "No controller found", 0xFFFFFF, 1);
@@ -566,7 +563,7 @@ void ob_sides_draw(const ob_sides *s, uint32_t *px, int w, int h, int pitch)
 /* the device under a point of the w x h picture the screen is drawn on (the same layout as ob_sides_draw): its index, or -1 */
 int ob_sides_device_at(const ob_sides *s, int w, int h, int x, int y)
 {
-    int teams = s->g.teams, i, per[3] = { 0, 0, 0 }, at[3] = { 0, 0, 0 }, sc, ox, oy;
+    int teams = s->g.teams, i, sc, ox, oy;
     if (!s->open || w < 64 || h < 48) return -1;
     sc = w / LW < h / LH ? w / LW : h / LH;
     if (sc < 1) sc = 1;
@@ -574,14 +571,10 @@ int ob_sides_device_at(const ob_sides *s, int w, int h, int x, int y)
     oy = (h - LH * sc) / 2;
     for (i = 0; i < s->n; i++) {
         const ob_sides_device *d = &s->d[i];
-        per[d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2]++;
-    }
-    for (i = 0; i < s->n; i++) {
-        const ob_sides_device *d = &s->d[i];
         int col = d->team == OB_SIDES_MIDDLE ? 1 : d->team == 0 && teams != 1 ? 0 : 2;
-        int n = per[col], sp = n <= 2 ? 60 : 120 / n, px0, py0, lx, ly;
+        int n = s->n, sp = n <= 2 ? 60 : 120 / n, px0, py0, lx, ly;
         if (sp < 28) sp = 28;
-        py0 = 120 + (at[col]++ * 2 - (n - 1)) * sp / 2;
+        py0 = 120 + (i * 2 - (n - 1)) * sp / 2;
         px0 = col == 0 ? 45 : col == 2 ? 237 : 158;
         lx = (x - ox) / sc; ly = (y - oy) / sc;
         if (x >= ox && y >= oy && lx >= px0 - 4 && lx < px0 + 44 && ly >= py0 - 3 && ly < py0 + 30) return i;

@@ -158,7 +158,8 @@ void ob_pads_sides_open(void)
     else ob_pads_sides_open_ex(C.players, C.team_name, C.skin, NULL, NULL);
 }
 
-int ob_pads_sides_active(void) { return sides_ready && S.open; }
+int ob_plat_sides_fading(void);
+int ob_pads_sides_active(void) { return sides_ready && (S.open || ob_plat_sides_fading()); }
 
 SDL_GameController *ob_pads_controller(int p)
 {
