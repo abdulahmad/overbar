@@ -537,7 +537,7 @@ int ob_host_apply(ob_host *h, ob_class cls, int id, int value)
     }
     case OB_ID_MOVIE_OWN: h->movie_own = value != 0; break;
     case OB_ID_VIDEO_CLASS: h->video_class = value ? OB_CLASS_HIRES : OB_CLASS_LORES; break;
-    case OB_ID_SHARP_AMOUNT: look->sharp = value + (cls == OB_CLASS_HIRES ? 0 : 1); break;
+    case OB_ID_SHARP_AMOUNT: look->sharp = value + ob_sharp_skip(cls); break;
     case OB_ID_CRT_LOOK: look->crt = (ob_crt_look)value; break;
     case OB_ID_PICTURE_HEIGHT: look->height = (ob_picture_height)value; break;
     case OB_ID_MONITOR_KHZ: look->khz31 = value; break;

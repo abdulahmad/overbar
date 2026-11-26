@@ -97,6 +97,8 @@ typedef enum {
     OB_SHARP_9X,
     OB_SHARP_COUNT
 } ob_sharp_amount;
+/* the Sharp steps a class's list leaves out at its start: the game's lo-res has no 1x (hi-res and the movie do) */
+static inline int ob_sharp_skip(ob_class cls) { return cls == OB_CLASS_LORES ? 1 : 0; }
 
 enum {
     OB_PAGE_MAIN = 0,
