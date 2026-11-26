@@ -279,11 +279,33 @@ void ob_pads_mouse_motion(int dx, int dy)
 static unsigned press_latch;                                /* buttons pressed since the menu looked (bit 1 left, 2 right): a click too quick to show in the button state */
 void ob_pads_mouse_press(int button) { mouse_active = 1; if (button == SDL_BUTTON_LEFT) press_latch |= 1; else if (button == SDL_BUTTON_RIGHT) press_latch |= 2; }
 void ob_pads_other_input(void) { mouse_active = 0; }
+
+/* a click is never carried from one screen into the next: the buttons held when a screen changes are ignored until they are let go, and
+ * nothing is taken for a moment after (ob_pads_mouse_fresh; the menus and the select-sides screen call it themselves) */
+#define FRESH_MS 200u
+static Uint32 block_mask, block_until;
+static unsigned menu_pend;                                  /* (menu_pointer) clicks waiting a moment for their turn */
+void ob_pads_mouse_fresh(void)
+{
+    block_mask = SDL_GetMouseState(NULL, NULL);
+    block_until = SDL_GetTicks() + FRESH_MS;
+    press_latch = 0;
+    menu_pend = 0;
+}
+/* the mouse's buttons as the menus and screens may take them: those held over a screen change are not, until let go */
+static Uint32 fresh_buttons(Uint32 st)
+{
+    block_mask &= st;                                       /* (let go: free again) */
+    if ((Sint32)(block_until - SDL_GetTicks()) > 0) { press_latch = 0; return 0; }
+    return st & ~block_mask;
+}
 void ob_pads_mouse_wheel(int y) { mouse_active = 1; macc_y -= (float)y * MENU_STEP; wheel_acc -= y; }
 
 void ob_pads_menu(const ob_pad_menu *m)
 {
-    if (!m || m->n <= 0 || m->n > OB_MENU_ROWS) { menu_on = 0; ob_pointer_hand_set(2, 0); return; }
+    static Uint32 off_ms;
+    if (!m || m->n <= 0 || m->n > OB_MENU_ROWS) { if (menu_on) off_ms = SDL_GetTicks(); menu_on = 0; press_latch = 0; ob_pointer_hand_set(2, 0); return; }
+    if (!menu_on && SDL_GetTicks() - off_ms > 250u) ob_pads_mouse_fresh();   /* (a menu has come up: a click from the screen before is not one of its; not a menu that only blinked off) */
     menu = *m;
     for (int i = 0; i < m->n; i++) menu_rect[i] = m->row[i];
     menu.row = menu_rect;
@@ -310,14 +332,15 @@ static uint32_t menu_pointer(const uint32_t dir[4])
     mouse_relative(0);
     macc_x = macc_y = 0;
     if (!w || ob_plat_overlay_open() || !(SDL_GetWindowFlags(w) & SDL_WINDOW_MOUSE_FOCUS) || menu_dst.h <= 0) { menu_lb = menu_rb = 0; wheel_acc = 0; ob_pointer_hand_set(2, 0); return 0; }
-    st = SDL_GetMouseState(&mx, &my);
+    st = fresh_buttons(SDL_GetMouseState(&mx, &my));
     {   float pw = menu.w > 0 ? (float)menu.w : 320.0f, px = (mx - menu_dst.x) * pw / menu_dst.w, py = (my - menu_dst.y) * 224.0f / menu_dst.h;   /* (the picture fills dst, however wide the pixels are) */
         for (int i = 0; i < menu.n; i++)
             if (px >= menu.row[i].x && px < menu.row[i].x + menu.row[i].w && py >= menu.row[i].y && py < menu.row[i].y + menu.row[i].h) { hit = i; break; }
         if (hit != menu_hover) { menu_hover = hit; menu_steps = 0; }
         ob_pointer_hand_set(2, hit >= 0);                              /* a hand over a row that can be clicked */
         {   int lb = (st & SDL_BUTTON_LMASK) != 0, rb = (st & SDL_BUTTON_RMASK) != 0, pl, pr;
-            static unsigned pend; static Uint32 pend_ms;           /* a click waits a moment for its turn (a step in progress) */
+            static Uint32 pend_ms;                                 /* a click waits a moment for its turn (a step in progress): menu_pend */
+            unsigned pend = menu_pend;
             if (press_latch) { pend |= press_latch; pend_ms = now; press_latch = 0; }
             if (now - pend_ms > 400u) pend = 0;
             pl = pend & 1; pr = pend & 2;
@@ -359,6 +382,7 @@ static uint32_t menu_pointer(const uint32_t dir[4])
                 }
             }
             menu_lb = lb; menu_rb = rb;
+            menu_pend = pend;
         }
     }
     (void)click_off;
@@ -395,7 +419,7 @@ uint32_t ob_pads_mouse_read(const uint32_t dir[4], const uint32_t btn[3])
         if (pulse_bits) { macc_x = macc_y = 0; pulse_off = now + 70; pulse_next = now + 140; }
     }
     b = pulse_bits;
-    st = SDL_GetMouseState(NULL, NULL);
+    st = fresh_buttons(SDL_GetMouseState(NULL, NULL));
     if (st & SDL_BUTTON_LMASK) b |= btn[0];
     if (st & SDL_BUTTON_RMASK) b |= btn[1];
     if (st & SDL_BUTTON_MMASK) b |= btn[2];

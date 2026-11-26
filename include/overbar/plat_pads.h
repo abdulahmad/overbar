@@ -78,6 +78,9 @@ void ob_pads_mouse_motion(int dx, int dy);
 void ob_pads_mouse_wheel(int y);
 int ob_plat_sides_fading(void);                       /* the select-sides screen is fading out (the game still waits) */
 void ob_pads_other_input(void);                       /* a key or a pad button was used: the mouse stops hovering and scrolling menus until it moves */
+/* a new screen: the mouse buttons held now count for nothing until let go, and no click is taken for a moment (menus that come up and the
+ * select-sides screen do it themselves; a port calls it at its own screen changes) */
+void ob_pads_mouse_fresh(void);
 void ob_pads_mouse_press(int button);                      /* a button went down (the platform layer feeds it) */
 /* The mouse as a pad: the player it was given on the screen (-1: none). It steers like NHL 95 PC: the pointer's distance from the
  * middle of the window is the stick, the buttons are cfg.mouse_btn. ob_pads_mouse_draw draws the small green cursor; call it
