@@ -1144,6 +1144,18 @@ static void test_movie_look(void)
     CHECK(found);
     ob_host_apply(&h, OB_CLASS_MOVIE, OB_ID_SHARP_AMOUNT, 1);
     CHECK(h.movie.sharp == OB_SHARP_2X);
+    {   /* the bar's checks find the movie's rows on Scaling (Movie) itself (filemenu.c apply_marks) */
+        int seen = 0;
+        n = ob_page_items(&h, OB_PAGE_SCALE_MOVIE, items, OB_ITEMS_MAX);
+        for (i = 0; i < n; i++) {
+            if (items[i].kind != MDRT_ITEM_CHOICE) continue;
+            if (items[i].id == OB_ID_MOVIE_OWN && items[i].value == 1) seen |= 1;
+            if (items[i].id == OB_ID_SHARP_AMOUNT && items[i].value == 1) seen |= 2;
+            if (items[i].id == OB_ID_PICTURE_HEIGHT) seen |= 4;
+            if (items[i].id == OB_ID_NTSC_COLORS) seen |= 8;
+        }
+        CHECK(seen == 15);
+    }
     CHECK(h.lores.sharp == OB_SHARP_3X);                    /* the game's look untouched */
     CHECK(ob_host_look(&h, OB_CLASS_MOVIE) == &h.movie);
     ob_host_free(&h);
