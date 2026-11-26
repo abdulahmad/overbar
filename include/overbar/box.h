@@ -35,6 +35,7 @@ int ob_box_open(int mode);
 void bx_tw(float *v, int n, const float *to, float ms, float delay);           /* n floats from where they are (when it starts) to to[] */
 void bx_tw3(float *v3, float x, float y, float z, float ms, float delay);
 void bx_tw1(float *v, float to, float ms, float delay);
+void bx_view_home(float ms);                               /* ease the viewer's zoom and pan back to none */
 void bx_after(float ms, void (*fn)(int), int arg);
 void bx_time_clear(void);                                                       /* drop every tween and timer */
 float bx_ease(float t);

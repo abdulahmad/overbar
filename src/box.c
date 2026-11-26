@@ -19,8 +19,13 @@ float bx_look[3];
 static float zoom = 1, cam_real[3];       /* the wheel's or a pinch's zoom: the camera moved toward what it looks at (a new view starts at 1) */
 static float zoom_to = 1;                 /* where the zoom is going: it eases there over a few frames */
 static float pan[2];                      /* the camera (and what it looks at) moved sideways / up, in view heights at what it looks at */
-static void view_reset(void) { zoom = zoom_to = 1; pan[0] = pan[1] = 0; }
-static void cam_unzoom(void) { if (cam_real[2] != 0) { memcpy(BX_S->cam, cam_real, sizeof cam_real); cam_real[2] = 0; } }
+static float zoom_lim, fov_real;          /* the closest the camera may come (as a zoom); past it the zoom narrows the lens (fov_real: the scene's own) */
+static void view_reset(void) { zoom = zoom_to = 1; pan[0] = pan[1] = 0; zoom_lim = 0; }
+static void cam_unzoom(void)
+{
+    if (cam_real[2] != 0) { memcpy(BX_S->cam, cam_real, sizeof cam_real); cam_real[2] = 0; }
+    if (fov_real > 0) { BX_S->fov = fov_real; fov_real = 0; }
+}
 
 static struct {
     ob_host *host;
@@ -97,7 +102,13 @@ void bx_parent(int node, int parent) { if (node >= 0 && node != parent) { BX_S->
 void bx_attach(int node, int parent) { r3_attach(BX_S, node, parent); }
 void bx_set3(float *v, float x, float y, float z) { v[0] = x; v[1] = y; v[2] = z; }
 void bx_cam(float x, float y, float z) { view_reset(); cam_real[2] = 0; BX_S->cam[0] = x; BX_S->cam[1] = y; BX_S->cam[2] = z; }
-void bx_cam_to(float x, float y, float z, float ms) { cam_unzoom(); view_reset(); bx_tw3(BX_S->cam, x, y, z, ms, 0); }
+void bx_cam_to(float x, float y, float z, float ms) { cam_unzoom(); bx_view_home(ms < 400 ? 400 : ms > 700 ? 700 : ms); bx_tw3(BX_S->cam, x, y, z, ms, 0); }
+/* the viewer's own zoom and pan ease back to none (moving on to something else starts from the scene's own view) */
+void bx_view_home(float ms)
+{
+    zoom_to = 1;
+    if (pan[0] != 0 || pan[1] != 0) { float z[2] = { 0, 0 }; bx_tw(pan, 2, z, ms, 0); }
+}
 
 /* ---------------- 2D ---------------- */
 static uint32_t mix(uint32_t d, uint32_t s, int a)
@@ -690,7 +701,7 @@ static void finish(int a)
 }
 void bx_done(void) { bx_fade(finish, 0); }
 void bx_done_now(void) { B.fade = 0; B.fade_dir = 0; B.fade_fn = NULL; finish(0); }
-static void skip(int a) { (void)a; if (BX_SC->skip) BX_SC->skip(); bx_done(); }
+static void skip(int a) { (void)a; if (BX_SC->skip) BX_SC->skip(); bx_done_now(); }   /* straight into the game: no fade */
 /* opened from View Manual & Materials: play the whole opening again at the next start, or not */
 static void replay_toggle(int a)
 {
@@ -896,7 +907,7 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
     B.last = now;
     if (dt < 0 || dt > 50) dt = dt < 0 ? 0 : 50;
     if (B.host && B.host->overlay_open) dt = 0;
-    if (B.up && BX_S && cam_real[2] != 0) { memcpy(BX_S->cam, cam_real, sizeof cam_real); cam_real[2] = 0; }   /* the scene's own camera while it moves */
+    if (B.up && BX_S) cam_unzoom();                  /* the scene's own camera (and lens) while it moves */
     time_step(dt);
     fade_step(dt);
     BX_C.px = px; BX_C.w = w; BX_C.h = h; BX_C.pitch = pitch;
@@ -928,7 +939,10 @@ static void draw(void *ud, uint32_t *px, int w, int h, int pitch)
             zoom = expf(logf(zoom) + (logf(zoom_to) - logf(zoom)) * a);
             if (fabsf(zoom / zoom_to - 1) < 1e-3f) zoom = zoom_to;
         }
-        for (int k = 0; k < 3; k++) BX_S->cam[k] = BX_S->look[k] + (BX_S->cam[k] - BX_S->look[k]) * zoom;   /* kept till the next frame: picks see this picture */
+        /* the camera comes in as far as it may (short of what is in front of it); the rest of the zoom is the lens */
+        float zd = zoom < zoom_lim ? zoom_lim : zoom;
+        for (int k = 0; k < 3; k++) BX_S->cam[k] = BX_S->look[k] + (BX_S->cam[k] - BX_S->look[k]) * zd;   /* kept till the next frame: picks see this picture */
+        if (zd > zoom) { fov_real = BX_S->fov; BX_S->fov = 360 / PI_F * atanf(tanf(fov_real * PI_F / 360) * zoom / zd); }
         if (pan[0] != 0 || pan[1] != 0) {          /* the pan: camera and target together, across the view */
             float f[3] = { BX_S->look[0] - BX_S->cam[0], BX_S->look[1] - BX_S->cam[1], BX_S->look[2] - BX_S->cam[2] };
             float L = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
@@ -993,12 +1007,46 @@ static void activate(int i)
         float k = (float)BX_C.w / B.tgt.w; sx = (x0 + x1) / 2 * k + 1; sy = (y0 + y1) / 2 * k;
     }
     if (K.up) { if (HOT[i].node == K.nR) bk_next(0); else if (HOT[i].node == K.nL) bk_prev(0); return; }
+    bx_view_home(600);                                 /* on to something else: the view goes back smoothly */
+    cam_unzoom();                                      /* (the scene works with its own camera; the zoom goes back on next frame) */
     BX_SC->activate(HOT[i].node, sx, sy);
 }
 
+/* how close the zoom may go: the camera stops short of the nearest thing in front of it (it never goes into or past what
+   it is looking at). The nearest point of every shown mesh roughly in view, measured along the view from the unzoomed camera */
+static float zoom_near_limit(void)
+{
+    const float *c = cam_real[2] != 0 ? cam_real : BX_S->cam;
+    float f[3] = { bx_look[0] - c[0], bx_look[1] - c[1], bx_look[2] - c[2] };
+    float L = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (L < 1e-3f) return 0;
+    for (int k = 0; k < 3; k++) f[k] /= L;
+    float cone = tanf((fov_real > 0 ? fov_real : BX_S->fov) * PI_F / 360) * 2.2f, dn = 1e9f;
+    r3_update(BX_S);
+    for (int i = 0; i < BX_S->nmeshes; i++) {
+        r3_mesh *m = &BX_S->meshes[i];
+        if (!r3_visible(BX_S, m->node)) continue;
+        const float *W = r3_world(BX_S, m->node);
+        for (int v = 0; v < m->nv; v++) {
+            const float *p = m->v + v * 8;
+            float q[3];
+            for (int a = 0; a < 3; a++) q[a] = W[a * 4] * p[0] + W[a * 4 + 1] * p[1] + W[a * 4 + 2] * p[2] + W[a * 4 + 3] - c[a];
+            float d = q[0] * f[0] + q[1] * f[1] + q[2] * f[2];
+            if (d <= 0 || d >= dn) continue;
+            float s0 = q[0] - f[0] * d, s1 = q[1] - f[1] * d, s2 = q[2] - f[2] * d;
+            if (s0 * s0 + s1 * s1 + s2 * s2 > (d * cone) * (d * cone)) continue;   /* off to the side: not in the way */
+            dn = d;
+        }
+    }
+    if (dn > 1e8f) return 0;
+    float margin = BX_S->znear + 1.5f;
+    return 1 - (dn - margin) / L;                      /* the zoom at which the camera is margin short of it */
+}
 static void zoom_clamp(void)
 {
-    float lo = K.up ? .55f : .35f;
+    float lo = K.up ? .55f : .12f;                     /* (in close, the lens does the rest: fine print can be read) */
+    zoom_lim = K.up ? 0 : zoom_near_limit();
+    if (zoom_lim > 1) zoom_lim = 1;
     if (zoom_to < lo) zoom_to = lo;
     if (zoom_to > 2.2f) zoom_to = 2.2f;
 }
@@ -1069,7 +1117,7 @@ static void input(void *ud, const ob_screen_ev *e)
     }
     if (V.up && e->kind != OB_SCREEN_OK) { view_key(e->kind); return; }
     if (K.up && !V.up && (e->kind != OB_SCREEN_OK || B.kb < 0)) { if (bk_key(e->kind)) { B.kb = -1; return; } }
-    if (e->kind == OB_SCREEN_BACK) { if (V.up) view_close(0); else BX_SC->back(); B.kb = -1; return; }
+    if (e->kind == OB_SCREEN_BACK) { if (V.up) view_close(0); else { bx_view_home(600); cam_unzoom(); BX_SC->back(); } B.kb = -1; return; }
     if (e->kind == OB_SCREEN_OK) {
         if (B.kb >= 0 && B.kb < nhot) { int k = B.kb; B.kb = -1; B.focus_first = 1; activate(k); }
         else if (V.up) view_key(OB_SCREEN_OK);
