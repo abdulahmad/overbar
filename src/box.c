@@ -466,7 +466,7 @@ static void bk_layout(void)
     else { l = bk_left(K.s); r = bk_right(K.s); bx_n(K.nT)->vis = 0; }
     bk_face(K.nL, K.mL, l); bk_face(K.nR, K.mR, r);
     bx_n(K.nBL)->vis = l >= 0 || (K.dir != 0); bx_n(K.nBR)->vis = r >= 0 || (K.dir != 0);
-    if (K.dir == 0) { bx_n(K.nBL)->vis = l >= 0; bx_n(K.nBR)->vis = r >= 0; }
+    if (K.dir == 0 || K.anchor > 0) { bx_n(K.nBL)->vis = l >= 0; bx_n(K.nBR)->vis = r >= 0; }   /* (in the scene, no bare board while the cover turns) */
 }
 static float bk_shift(int s) { return bk_left(s) < 0 ? -K.W / 2 : bk_right(s) < 0 ? K.W / 2 : 0; }
 static float bk_ease(float t) { return t < .5f ? 2 * t * t : 1 - (-2 * t + 2) * (-2 * t + 2) / 2; }
